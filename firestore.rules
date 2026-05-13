@@ -11,25 +11,18 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() >= 1 && id.size() <= 128;
-    }
-
     // --- User Profile Rules ---
     match /users/{userId} {
-      allow get: if isOwner(userId) && isValidId(userId);
+      // Allow user to read their own profile
+      allow get: if isSignedIn() && request.auth.uid == userId;
       
-      allow create: if isOwner(userId) 
-        && isValidId(userId) 
+      // Allow user to create their own profile with mandatory fields and server-side validation
+      allow create: if isSignedIn() && request.auth.uid == userId
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.onboardedAt == request.time;
 
-      allow update: if isOwner(userId) 
-        && isValidId(userId)
+      // Allow user to update their own profile, but email and onboardedAt are immutable
+      allow update: if isSignedIn() && request.auth.uid == userId
         && request.resource.data.email == resource.data.email
         && request.resource.data.onboardedAt == resource.data.onboardedAt;
     }
