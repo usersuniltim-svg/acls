@@ -302,6 +302,15 @@ export default function App() {
     return `${min}:${sec.toString().padStart(2, '0')}`;
   };
 
+  const formatClockTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+  };
+
   const cprProgress = (state.cprTimeLeft / CPR_CYCLE_DURATION) * 100;
   const epiProgress = (state.epiTimeLeft / EPI_INTERVAL) * 100;
 
@@ -417,7 +426,7 @@ export default function App() {
               {state.logs.map((log) => (
                 <div key={log.id} className="flex gap-3 items-start border-l border-slate-800 pl-3">
                   <span className="text-[9px] font-mono text-slate-600 shrink-0">
-                    {formatTime(Math.floor((log.timestamp - (state.codeStartTime || log.timestamp)) / 1000))}
+                    {formatClockTime(log.timestamp)}
                   </span>
                   <span className="text-[10px] font-mono text-slate-400 uppercase tracking-tight leading-tight">{log.description}</span>
                 </div>
@@ -886,7 +895,7 @@ export default function App() {
                       <div>
                         <p className="text-xs font-bold text-slate-200">{log.description}</p>
                         <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                          {new Date(log.timestamp).toLocaleTimeString()} • {formatTime(Math.floor((log.timestamp - (state.codeStartTime || log.timestamp)) / 1000))} into code
+                          {formatClockTime(log.timestamp)} • {formatTime(Math.floor((log.timestamp - (state.codeStartTime || log.timestamp)) / 1000))} into code
                         </p>
                       </div>
                     </div>
