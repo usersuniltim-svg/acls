@@ -1,0 +1,27 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Professional profile of the medical personnel using the app.",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "description": "Full name of the user" },
+        "profession": { "type": "string", "enum": ["doctor", "nurse", "paramedics"] },
+        "highestDegree": { "type": "string" },
+        "dob": { "type": "string", "format": "date" },
+        "sex": { "type": "string", "enum": ["male", "female", "other"] },
+        "councilRegistration": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "onboardedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fullName", "profession", "highestDegree", "dob", "sex", "councilRegistration", "email", "phone", "onboardedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles indexed by their Firebase Auth UID."
+    }
+  }
+}
