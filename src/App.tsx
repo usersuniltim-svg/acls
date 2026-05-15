@@ -33,13 +33,14 @@ import {
 import { MedicalAudio } from './lib/audio';
 import { auth, signInWithGoogle, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import OnboardingForm from './components/OnboardingForm';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const profileUnsubscribeRef = useRef<(() => void) | null>(null);
 
   const [state, setState] = useState<AclsState>(() => {
     const savedDefibType = localStorage.getItem('acls_defib_type');
@@ -65,24 +66,55 @@ export default function App() {
 
   // Auth & Profile Logic
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    console.log("Initializing Auth observer...");
+    console.log("Firebase Runtime Config:", {
+      projectId: auth.app.options.projectId,
+      apiKey: auth.app.options.apiKey ? "PRESENT" : "MISSING",
+      databaseId: db.type === 'firestore' ? (db as any)._databaseId?.databaseId : "UNKNOWN"
+    });
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      console.log("Auth state changed. User:", currentUser ? currentUser.uid : "None");
+      
+      // Cleanup previous profile listener if exists
+      if (profileUnsubscribeRef.current) {
+        profileUnsubscribeRef.current();
+        profileUnsubscribeRef.current = null;
+      }
+
       setUser(currentUser);
       if (currentUser) {
-        try {
-          const userDocRef = doc(db, 'users', currentUser.uid);
-          const docSnap = await getDoc(userDocRef);
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        console.log("Setting up profile listener for:", userDocRef.path);
+        
+        profileUnsubscribeRef.current = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
+            console.log("Profile updated from snapshot");
             setProfile(docSnap.data() as UserProfile);
+          } else {
+            console.log("No profile found in snapshot");
+            setProfile(null);
           }
-        } catch (err) {
-          handleFirestoreError(err, OperationType.GET, `users/${currentUser.uid}`);
-        }
+          setLoading(false);
+        }, (err) => {
+          console.error("Profile snapshot error:", err);
+          setProfile(null);
+          setLoading(false);
+        });
       } else {
         setProfile(null);
+        setLoading(false);
       }
+    }, (error) => {
+      console.error("Auth state observer fatal error:", error);
       setLoading(false);
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribe();
+      if (profileUnsubscribeRef.current) {
+        profileUnsubscribeRef.current();
+      }
+    };
   }, []);
 
   const [activeTab, setActiveTab] = useState<'timer' | 'algorithm' | 'logs' | 'settings'>('timer');
@@ -277,39 +309,18 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-medical-dark flex flex-col items-center justify-center p-6 text-center">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="max-w-md w-full glass-panel p-10 space-y-8"
-        >
-          <div className="w-20 h-20 bg-medical-blue/20 rounded-3xl flex items-center justify-center text-medical-blue mx-auto shadow-2xl shadow-medical-blue/20">
-            <Heart className="w-10 h-10 fill-current" />
-          </div>
-          <div>
-            <h1 className="text-4xl font-display font-bold text-white mb-2 tracking-tighter">ACLS 2025</h1>
-            <p className="text-slate-500 uppercase tracking-widest text-[10px] font-bold">Clinical Companion • Kathmandu</p>
-          </div>
-          <p className="text-slate-400 text-sm leading-relaxed">
-            Professional protocol enforcement and lifecycle monitoring system. Authenticate to access clinical algorithms.
-          </p>
-          <button 
-            onClick={signInWithGoogle}
-            className="w-full h-14 bg-white text-medical-dark hover:bg-slate-100 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl uppercase tracking-widest text-xs"
-          >
-            <LogIn className="w-5 h-5" />
-            Continue with Google
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  if (!profile) {
-    return <OnboardingForm onComplete={() => window.location.reload()} />;
-  }
+  // Use guest profile if not logged in or onboarded
+  const effectiveProfile: UserProfile = profile || {
+    fullName: "Guest Practitioner",
+    profession: "External Observer",
+    highestDegree: "MD / Equivalent",
+    dob: "1990-01-01",
+    sex: "Other",
+    councilRegistration: "GUEST-001",
+    email: user?.email || "guest@example.com",
+    phone: "0000000000",
+    onboardedAt: Date.now()
+  };
 
   return (
     <div className="min-h-screen bg-medical-dark text-slate-100 font-sans flex overflow-hidden" id="acls-root">
@@ -426,9 +437,9 @@ export default function App() {
               <User className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-2xl font-display font-bold tracking-tighter text-white">{profile.fullName}</h2>
+              <h2 className="text-2xl font-display font-bold tracking-tighter text-white">{effectiveProfile.fullName}</h2>
               <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-bold mt-1">
-                {profile.profession} • {profile.highestDegree} • REG: {profile.councilRegistration}
+                {effectiveProfile.profession} • {effectiveProfile.highestDegree} • REG: {effectiveProfile.councilRegistration}
               </p>
             </div>
           </div>
