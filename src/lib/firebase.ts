@@ -1,12 +1,25 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Using initializeFirestore with settings to help with potential connectivity issues in iframes
+export const db = initializeFirestore(app, {
+  // Using long polling and forcing it can help in environments where WebSockets are blocked
+  experimentalForceLongPolling: true,
+  // This can help with some proxy issues
+  experimentalAutoDetectLongPolling: false,
+}, (firebaseConfig as any).firestoreDatabaseId && (firebaseConfig as any).firestoreDatabaseId !== '(default)' 
+  ? (firebaseConfig as any).firestoreDatabaseId 
+  : undefined);
+
+console.log("Firestore initialized with experimentalForceLongPolling: true and experimentalAutoDetectLongPolling: false");
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Removed premature connection test to avoid misleading console errors before login.
 
 export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
 
