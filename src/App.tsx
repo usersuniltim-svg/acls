@@ -53,10 +53,14 @@ export default function App() {
       totalTime: 0,
       shocksCount: 0,
       epiCount: 0,
+      amioCount: 0,
+      lidoCount: 0,
+      codeStartTime: null,
       currentRhythm: 'UNKNOWN',
       cprCycleCount: 0,
       logs: [],
       showHsAndTs: false,
+      checkedHsAndTs: [],
       activePrompt: 'RHYTHM_CHECK',
       rhythmCheckTimeLeft: 0,
       defibType: (savedDefibType as 'BIPHASIC' | 'MONOPHASIC') || 'BIPHASIC',
@@ -131,8 +135,9 @@ export default function App() {
   useEffect(() => {
     let metronomeInterval: NodeJS.Timeout | null = null;
     
-    // Only play metronome during active CPR (timer running, no active pause/prompt)
-    if (state.isTimerRunning && state.rhythmCheckTimeLeft === 0 && !state.activePrompt) {
+    // Only play metronome during active CPR (timer running, no active rhythm check prompt)
+    const isPausedForRhythmCheck = state.activePrompt === 'RHYTHM_CHECK' || state.rhythmCheckTimeLeft > 0;
+    if (state.isTimerRunning && !isPausedForRhythmCheck) {
       metronomeInterval = setInterval(() => {
         MedicalAudio.playMetronomeBeat();
       }, 545); // 60000 / 110 = 545.45ms
@@ -212,14 +217,16 @@ export default function App() {
   };
 
   const toggleTimer = () => {
-    if (!state.isTimerRunning && state.totalTime === 0) {
+    const isInitialStart = !state.isTimerRunning && state.totalTime === 0;
+    if (isInitialStart) {
       addLog('CPR_START', 'Resuscitation started - CPR Cycle #1');
       MedicalAudio.playAlert();
     }
     setState(prev => ({ 
       ...prev, 
       isTimerRunning: !prev.isTimerRunning,
-      cprCycleCount: (!prev.isTimerRunning && prev.totalTime === 0) ? 1 : prev.cprCycleCount,
+      codeStartTime: isInitialStart ? Date.now() : prev.codeStartTime,
+      cprCycleCount: isInitialStart ? 1 : prev.cprCycleCount,
       activePrompt: prev.activePrompt === 'RHYTHM_CHECK' ? null : prev.activePrompt
     }));
   };
@@ -260,6 +267,35 @@ export default function App() {
     addLog('DRUG_EPI', `Epinephrine 1mg administered (#${state.epiCount + 1})`);
   };
 
+  const handleAmio = () => {
+    MedicalAudio.playMetronomeTick();
+    const dose = state.amioCount === 0 ? '300mg' : '150mg';
+    setState(prev => ({
+      ...prev,
+      amioCount: prev.amioCount + 1,
+    }));
+    addLog('DRUG_AMIO', `Amiodarone ${dose} administered (#${state.amioCount + 1})`);
+  };
+
+  const handleLido = () => {
+    MedicalAudio.playMetronomeTick();
+    const dose = state.lidoCount === 0 ? '1-1.5 mg/kg' : '0.5-0.75 mg/kg';
+    setState(prev => ({
+      ...prev,
+      lidoCount: prev.lidoCount + 1,
+    }));
+    addLog('DRUG_LIDO', `Lidocaine ${dose} administered (#${state.lidoCount + 1})`);
+  };
+
+  const toggleHsAndTs = (term: string) => {
+    setState(prev => ({
+      ...prev,
+      checkedHsAndTs: prev.checkedHsAndTs.includes(term)
+        ? prev.checkedHsAndTs.filter(t => t !== term)
+        : [...prev.checkedHsAndTs, term]
+    }));
+  };
+
   const handleRhythmSelect = (rhythm: PatientRhythm) => {
     setState(prev => {
       let nextPrompt: 'SHOCK_ADVISED' | 'RHYTHM_CHECK' | 'EPI_ADVISED' | 'EPI_DUE' | null = null;
@@ -296,6 +332,15 @@ export default function App() {
     const min = Math.floor(seconds / 60);
     const sec = seconds % 60;
     return `${min}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  const formatClockTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
   };
 
   const cprProgress = (state.cprTimeLeft / CPR_CYCLE_DURATION) * 100;
@@ -392,7 +437,7 @@ export default function App() {
               {state.logs.map((log) => (
                 <div key={log.id} className="flex gap-3 items-start border-l border-slate-800 pl-3">
                   <span className="text-[9px] font-mono text-slate-600 shrink-0">
-                    {formatTime(Math.floor((log.timestamp - (state.logs[state.logs.length-1]?.timestamp || Date.now())) / 1000))}
+                    {formatClockTime(log.timestamp)}
                   </span>
                   <span className="text-[10px] font-mono text-slate-400 uppercase tracking-tight leading-tight">{log.description}</span>
                 </div>
@@ -498,7 +543,7 @@ export default function App() {
           </section>
 
           {/* Action Grid (The Core Buttons) */}
-          <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <button 
               onClick={handleShock}
               className="h-28 glass-panel border-medical-red/40 bg-medical-red/10 text-medical-red font-bold flex flex-col items-center justify-center gap-2 hover:bg-medical-red hover:text-white transition-all active:scale-95 shadow-xl shadow-medical-red/10"
@@ -512,6 +557,20 @@ export default function App() {
             >
               <Syringe className="w-6 h-6 shrink-0" />
               <span className="text-xs uppercase tracking-widest">Epi ({state.epiCount})</span>
+            </button>
+            <button
+              onClick={handleAmio}
+              className="h-28 glass-panel border-amber-500/40 bg-amber-500/10 text-amber-500 font-bold flex flex-col items-center justify-center gap-2 hover:bg-amber-500 hover:text-white transition-all active:scale-95 shadow-xl shadow-amber-500/10"
+            >
+              <Activity className="w-6 h-6" />
+              <span className="text-xs uppercase tracking-widest">Amio ({state.amioCount})</span>
+            </button>
+            <button
+              onClick={handleLido}
+              className="h-28 glass-panel border-purple-500/40 bg-purple-500/10 text-purple-500 font-bold flex flex-col items-center justify-center gap-2 hover:bg-purple-500 hover:text-white transition-all active:scale-95 shadow-xl shadow-purple-500/10"
+            >
+              <Activity className="w-6 h-6" />
+              <span className="text-xs uppercase tracking-widest">Lido ({state.lidoCount})</span>
             </button>
             <button 
               onClick={() => handleRhythmSelect('SHOCKABLE')}
@@ -536,8 +595,15 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2">
                 {HS_AND_TS.map((item, idx) => (
                   <label key={idx} className="flex items-center gap-3 p-2 rounded-xl bg-slate-900/30 border border-white/5 cursor-pointer hover:border-white/10 transition-colors group">
-                    <input type="checkbox" className="w-3 h-3 rounded border-slate-700 bg-slate-900 checked:bg-emerald-500 transition-all pointer-events-none" />
-                    <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-200 uppercase tracking-tight">{item.term}</span>
+                    <input
+                      type="checkbox"
+                      className="w-3 h-3 rounded border-slate-700 bg-slate-900 checked:bg-emerald-500 transition-all cursor-pointer"
+                      checked={state.checkedHsAndTs.includes(item.term)}
+                      onChange={() => toggleHsAndTs(item.term)}
+                    />
+                    <span className={`text-[10px] font-bold uppercase tracking-tight ${state.checkedHsAndTs.includes(item.term) ? 'text-emerald-500' : 'text-slate-400 group-hover:text-slate-200'}`}>
+                      {item.term}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -620,6 +686,21 @@ export default function App() {
                     <h2 className="text-3xl font-display font-bold tracking-tight text-medical-red mb-2 uppercase">Shock Advised</h2>
                     <p className="text-slate-100 text-sm font-bold uppercase tracking-[0.2em]">Clear the patient!</p>
                   </div>
+
+                  {/* 2025 Dynamic Reminders */}
+                  <div className="space-y-2">
+                    {state.shocksCount >= 2 && state.epiCount === 0 && (
+                      <div className="p-3 rounded-xl bg-medical-blue/10 border border-medical-blue/30 text-medical-blue">
+                        <p className="text-[10px] font-bold uppercase tracking-widest">Give Epinephrine 1mg ASAP</p>
+                      </div>
+                    )}
+                    {state.shocksCount >= 3 && state.amioCount === 0 && state.lidoCount === 0 && (
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500">
+                        <p className="text-[10px] font-bold uppercase tracking-widest">Give Amiodarone 300mg or Lidocaine 1-1.5mg/kg</p>
+                      </div>
+                    )}
+                  </div>
+
                   <button 
                     onClick={handleShock}
                     className="w-full h-20 rounded-2xl bg-medical-red text-white btn-action text-xl shadow-2xl shadow-medical-red/40 animate-med-pulse border-none"
@@ -661,13 +742,13 @@ export default function App() {
                       <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20 shrink-0">
                         <PlusSquare className="w-4 h-4" />
                       </div>
-                      <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest text-left leading-tight">IV/IO Access</span>
+                      <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest text-left leading-tight">IV Access (Preferred)</span>
                     </div>
                     <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50 flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-500 border border-indigo-500/20 shrink-0">
                         <Activity className="w-4 h-4" />
                       </div>
-                      <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest text-left leading-tight">Adv. Airway</span>
+                      <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest text-left leading-tight">Waveform Capnography</span>
                     </div>
                   </div>
 
@@ -764,6 +845,12 @@ export default function App() {
 
       {/* Navigation Overlay (Minimized) */}
       <nav className="fixed right-6 bottom-20 flex flex-col gap-4 z-40">
+        <button
+          onClick={() => setActiveTab(activeTab === 'logs' ? 'timer' : 'logs')}
+          className={`w-12 h-12 rounded-full flex items-center justify-center glass-panel shadow-2xl transition-all ${activeTab === 'logs' ? 'bg-medical-blue text-white' : 'text-slate-400'}`}
+        >
+          <History className="w-5 h-5" />
+        </button>
         <button 
           onClick={() => setActiveTab(activeTab === 'algorithm' ? 'timer' : 'algorithm')}
           className={`w-12 h-12 rounded-full flex items-center justify-center glass-panel shadow-2xl transition-all ${activeTab === 'algorithm' ? 'bg-medical-blue text-white' : 'text-slate-400'}`}
@@ -779,6 +866,60 @@ export default function App() {
       </nav>
 
       <AnimatePresence>
+        {activeTab === 'logs' && (
+          <motion.div
+            initial={{ opacity: 0, x: '100%' }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: '100%' }}
+            className="fixed inset-0 z-[100] bg-medical-dark flex flex-col p-4 overflow-hidden"
+          >
+            <div className="flex items-center justify-between mb-6 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-medical-blue/10 rounded-lg text-medical-blue">
+                  <History className="w-5 h-5" />
+                </div>
+                <h2 className="font-display font-bold text-xl tracking-tighter">Full Event Journal</h2>
+              </div>
+              <button
+                onClick={() => setActiveTab('timer')}
+                className="p-3 rounded-2xl bg-slate-800 text-slate-400 hover:text-white transition-colors uppercase text-[10px] font-bold tracking-widest"
+              >
+                Close Logs
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar pb-20">
+              {state.logs.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-600">
+                  <History className="w-12 h-12 mb-4 opacity-20" />
+                  <p className="uppercase text-[10px] font-bold tracking-widest">No events recorded yet</p>
+                </div>
+              ) : (
+                state.logs.map((log) => (
+                  <div key={log.id} className="glass-panel p-4 flex items-center justify-between border-white/5 hover:border-white/10 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-2 h-2 rounded-full ${
+                        log.type === 'SHOCK' ? 'bg-medical-red' :
+                        log.type === 'ROSC' ? 'bg-emerald-500' :
+                        log.type.startsWith('DRUG') ? 'bg-medical-blue' : 'bg-slate-700'
+                      }`} />
+                      <div>
+                        <p className="text-xs font-bold text-slate-200">{log.description}</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                          {formatClockTime(log.timestamp)} • {formatTime(Math.floor((log.timestamp - (state.codeStartTime || log.timestamp)) / 1000))} into code
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-600 bg-slate-900/50 px-2 py-1 rounded">
+                      {log.type}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+
         {activeTab === 'algorithm' && (
           <motion.div 
             initial={{ opacity: 0, x: '100%' }}
@@ -832,7 +973,7 @@ export default function App() {
                       <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
                       <div className="glass-panel p-3 bg-slate-900/50">
                         <h5 className="font-bold text-[10px] uppercase">CPR 2 Min</h5>
-                        <p className="text-[9px] text-slate-500 mt-1 uppercase">Obtain IV/IO Access</p>
+                        <p className="text-[9px] text-slate-500 mt-1 uppercase">Obtain IV Access (Preferred)</p>
                       </div>
                       <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
                       <div className="glass-panel p-3 border-indigo-500/30 bg-indigo-500/5">
@@ -841,7 +982,12 @@ export default function App() {
                       <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
                       <div className="glass-panel p-3 border-medical-red/40 bg-medical-red/5">
                         <h5 className="font-bold text-[10px] uppercase text-medical-red">Shock + CPR 2m</h5>
-                        <p className="text-[9px] text-slate-400 mt-1 uppercase font-bold text-medical-blue">Epinephrine Q3-5M</p>
+                        <p className="text-[9px] text-slate-400 mt-1 uppercase font-bold text-medical-blue">Epinephrine Q3-5M (After 2nd Shock)</p>
+                      </div>
+                      <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
+                      <div className="glass-panel p-3 border-amber-500/40 bg-amber-500/5">
+                        <h5 className="font-bold text-[10px] uppercase text-amber-500">Amio or Lido</h5>
+                        <p className="text-[9px] text-slate-400 mt-1 uppercase font-bold">After 3rd Shock</p>
                       </div>
                     </div>
                   </div>
@@ -865,9 +1011,9 @@ export default function App() {
                       <div className="glass-panel p-3 bg-slate-900/50">
                         <h5 className="font-bold text-[10px] uppercase">CPR 2 Min</h5>
                         <ul className="text-[8px] text-slate-500 mt-1 uppercase space-y-1 list-disc list-inside">
-                          <li>IV/IO Access</li>
+                          <li>IV Access (Preferred)</li>
                           <li>Advanced Airway?</li>
-                          <li>Capnography</li>
+                          <li>Waveform Capnography</li>
                         </ul>
                       </div>
                       <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
@@ -921,8 +1067,18 @@ export default function App() {
                     <h4 className="font-bold text-xs text-emerald-500 mb-2 uppercase italic tracking-tighter">Advanced Airway</h4>
                     <ul className="text-[10px] text-slate-400 uppercase font-bold space-y-1">
                       <li>• ET Intubation or Supraglottic</li>
-                      <li>• Waveform Capnography</li>
+                      <li>• Waveform Capnography Mandatory</li>
                       <li>• 1 Breath Every 6 Sec (10/Min)</li>
+                    </ul>
+                  </div>
+
+                  <div className="medical-card p-4 border-l-4 border-l-pink-500 bg-slate-900/40 rounded-xl">
+                    <h4 className="font-bold text-xs text-pink-500 mb-2 uppercase italic tracking-tighter">Post-ROSC Care Bundle</h4>
+                    <ul className="text-[10px] text-slate-400 uppercase font-bold space-y-1">
+                      <li>• Oxygenation: SpO2 92-98%</li>
+                      <li>• Ventilation: PaCO2 35-45 mmHg</li>
+                      <li>• Hemodynamics: SBP {'>'} 90 mmHg; MAP {'>'} 65 mmHg</li>
+                      <li>• Neuroprognostication: Wait {'>'} 72h after TTM</li>
                     </ul>
                   </div>
                 </div>

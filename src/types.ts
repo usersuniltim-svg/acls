@@ -18,10 +18,14 @@ export interface AclsState {
   totalTime: number; // seconds
   shocksCount: number;
   epiCount: number;
+  amioCount: number;
+  lidoCount: number;
+  codeStartTime: number | null;
   currentRhythm: PatientRhythm;
   cprCycleCount: number;
   logs: LogEvent[];
   showHsAndTs: boolean;
+  checkedHsAndTs: string[];
   activePrompt: 'RHYTHM_CHECK' | 'SHOCK_ADVISED' | 'EPI_ADVISED' | 'EPI_DUE' | null;
   rhythmCheckTimeLeft: number;
   defibType: 'BIPHASIC' | 'MONOPHASIC';
