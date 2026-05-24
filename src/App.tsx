@@ -1,21 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Play, 
-  Pause, 
   RotateCcw, 
   Zap, 
   Syringe, 
   Activity, 
-  History, 
   Settings, 
   AlertCircle,
-  ClipboardList,
-  ChevronRight,
-  PlusSquare,
   Heart,
-  LogIn,
-  LogOut,
-  User
+  Smartphone,
+  Laptop
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -28,19 +22,35 @@ import {
 import { 
   CPR_CYCLE_DURATION, 
   EPI_INTERVAL, 
-  HS_AND_TS 
 } from './constants';
 import { MedicalAudio } from './lib/audio';
-import { auth, signInWithGoogle, db, handleFirestoreError, OperationType } from './lib/firebase';
+import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import OnboardingForm from './components/OnboardingForm';
+import MobileDashboard from './components/MobileDashboard';
+import DesktopDashboard from './components/DesktopDashboard';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const profileUnsubscribeRef = useRef<(() => void) | null>(null);
+  const [hasSessionStarted, setHasSessionStarted] = useState(false);
+
+  // Android & PWA App Variables
+  const [deviceMode, setDeviceMode] = useState<'standalone' | 'phone_demo'>('phone_demo');
+  const [phoneTime, setPhoneTime] = useState('08:00');
+  const [batteryLevel, setBatteryLevel] = useState(87);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+  const [isVibrating, setIsVibrating] = useState(false);
+  
+  // Mobile Responsive detection
+  const [isMobileScreen, setIsMobileScreen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'timer' | 'interventions' | 'algorithm' | 'logs' | 'settings'>('timer');
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [metronomeCount, setMetronomeCount] = useState(0);
 
   const [state, setState] = useState<AclsState>(() => {
     const savedDefibType = localStorage.getItem('acls_defib_type');
@@ -53,54 +63,109 @@ export default function App() {
       totalTime: 0,
       shocksCount: 0,
       epiCount: 0,
-      amioCount: 0,
-      lidoCount: 0,
-      codeStartTime: null,
       currentRhythm: 'UNKNOWN',
       cprCycleCount: 0,
       logs: [],
       showHsAndTs: false,
-      checkedHsAndTs: [],
-      activePrompt: 'RHYTHM_CHECK',
+      activePrompt: null,
       rhythmCheckTimeLeft: 0,
       defibType: (savedDefibType as 'BIPHASIC' | 'MONOPHASIC') || 'BIPHASIC',
       selectedEnergy: savedEnergy ? parseInt(savedEnergy, 10) : 200,
+      epiDueElapsed: 0,
     };
   });
 
-  // Auth & Profile Logic
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Screen size listener
   useEffect(() => {
-    console.log("Initializing Auth observer...");
-    console.log("Firebase Runtime Config:", {
-      projectId: auth.app.options.projectId,
-      apiKey: auth.app.options.apiKey ? "PRESENT" : "MISSING",
-      databaseId: db.type === 'firestore' ? (db as any)._databaseId?.databaseId : "UNKNOWN"
-    });
+    const handleResize = () => {
+      setIsMobileScreen(window.innerWidth < 1024);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Clock updates
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setPhoneTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }));
+    };
+    updateTime();
+    const clockInterval = setInterval(updateTime, 1000);
+    return () => clearInterval(clockInterval);
+  }, []);
+
+  // Battery status API
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && (navigator as any).getBattery) {
+      (navigator as any).getBattery().then((battery: any) => {
+        setBatteryLevel(Math.floor(battery.level * 100));
+        battery.addEventListener('levelchange', () => {
+          setBatteryLevel(Math.floor(battery.level * 100));
+        });
+      });
+    }
+  }, []);
+
+  // PWA listener hook
+  useEffect(() => {
+    const handleBeforePrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforePrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforePrompt);
+  }, []);
+
+  const triggerPwaInstall = async () => {
+    if (!deferredPrompt) {
+      alert("Nepal ACLS app PWA is already cached or manual installation via Chrome menu is required on this device browser.");
+      return;
+    }
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User choice outcome: ${outcome}`);
+    setDeferredPrompt(null);
+    setIsInstallable(false);
+  };
+
+  const vibrateDevice = (pattern: number | number[]) => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate(pattern);
+      } catch (e) {
+        // Safe fail in sandbox iframe
+      }
+    }
+    if (Array.isArray(pattern) && pattern.length > 2) {
+      setIsVibrating(true);
+      setTimeout(() => setIsVibrating(false), 600);
+    }
+  };
+
+  // Auth monitoring SNAP
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      console.log("Auth state changed. User:", currentUser ? currentUser.uid : "None");
-      
-      // Cleanup previous profile listener if exists
       if (profileUnsubscribeRef.current) {
         profileUnsubscribeRef.current();
         profileUnsubscribeRef.current = null;
       }
-
       setUser(currentUser);
       if (currentUser) {
         const userDocRef = doc(db, 'users', currentUser.uid);
-        console.log("Setting up profile listener for:", userDocRef.path);
-        
         profileUnsubscribeRef.current = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
-            console.log("Profile updated from snapshot");
             setProfile(docSnap.data() as UserProfile);
           } else {
-            console.log("No profile found in snapshot");
             setProfile(null);
           }
           setLoading(false);
         }, (err) => {
-          console.error("Profile snapshot error:", err);
+          console.error("Profile error:", err);
           setProfile(null);
           setLoading(false);
         });
@@ -109,7 +174,7 @@ export default function App() {
         setLoading(false);
       }
     }, (error) => {
-      console.error("Auth state observer fatal error:", error);
+      console.error("Auth fatal state error:", error);
       setLoading(false);
     });
 
@@ -121,76 +186,94 @@ export default function App() {
     };
   }, []);
 
-  const [activeTab, setActiveTab] = useState<'timer' | 'algorithm' | 'logs' | 'settings'>('timer');
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Persistence Effect
+  // Sync Defibrillator configuration to LocalStorage
   useEffect(() => {
     localStorage.setItem('acls_defib_type', state.defibType);
     localStorage.setItem('acls_selected_energy', state.selectedEnergy.toString());
   }, [state.defibType, state.selectedEnergy]);
 
-
-  // Metronome Effect (110 BPM)
+  // Metronome Sound and Click Sync
   useEffect(() => {
     let metronomeInterval: NodeJS.Timeout | null = null;
     
-    // Only play metronome during active CPR (timer running, no active rhythm check prompt)
-    const isPausedForRhythmCheck = state.activePrompt === 'RHYTHM_CHECK' || state.rhythmCheckTimeLeft > 0;
-    if (state.isTimerRunning && !isPausedForRhythmCheck) {
+    if (state.isTimerRunning && state.rhythmCheckTimeLeft === 0 && (!state.activePrompt || state.activePrompt === 'EPI_DUE')) {
       metronomeInterval = setInterval(() => {
-        MedicalAudio.playMetronomeBeat();
-      }, 545); // 60000 / 110 = 545.45ms
+        if (soundEnabled) {
+          MedicalAudio.playMetronomeBeat();
+        }
+        setMetronomeCount(prev => (prev + 1) % 4);
+      }, 545); // ~110 BPM
     }
 
     return () => {
       if (metronomeInterval) clearInterval(metronomeInterval);
     };
-  }, [state.isTimerRunning, state.rhythmCheckTimeLeft, state.activePrompt]);
+  }, [state.isTimerRunning, state.rhythmCheckTimeLeft, state.activePrompt, soundEnabled]);
 
+  // Active Resuscitation Timer Core Loop tick
   useEffect(() => {
-    if (state.isTimerRunning) {
+    if (hasSessionStarted && (state.isTimerRunning || state.activePrompt === 'RHYTHM_CHECK')) {
       timerRef.current = setInterval(() => {
         setState(prev => {
+          let nextTotal = prev.totalTime;
           let nextCpr = prev.cprTimeLeft;
           let nextEpi = prev.epiTimeLeft > 0 ? prev.epiTimeLeft - 1 : 0;
-          let nextRhythmCheck = prev.rhythmCheckTimeLeft;
+          let nextRhythmCheckLeft = prev.rhythmCheckTimeLeft;
           let nextActivePrompt = prev.activePrompt;
-          let nextIsRunning = true;
+          let nextIsRunning = prev.isTimerRunning;
 
-          // 1. Handle Rhythm Check Countdown
-          if (nextRhythmCheck > 0) {
-            nextRhythmCheck -= 1;
-            if (nextRhythmCheck === 0) {
-              nextActivePrompt = 'RHYTHM_CHECK';
-              nextIsRunning = false;
-              MedicalAudio.playUrgent();
-            }
-          } else if (nextCpr > 0) {
-            // 2. Handle Normal CPR Cycle
+          // Increment Total
+          if (nextIsRunning || nextActivePrompt === 'RHYTHM_CHECK') {
+            nextTotal += 1;
+          }
+
+          // CPR cycle ticker - should NOT stop when nextActivePrompt is 'EPI_DUE'
+          if (nextIsRunning && nextCpr > 0 && (nextActivePrompt === null || nextActivePrompt === 'EPI_DUE')) {
             nextCpr -= 1;
             if (nextCpr === 0) {
-              nextRhythmCheck = 5;
-              addLog('RHYTHM_CHECK', '2-minute cycle complete. 5s Rhythm Check evaluation started.');
+              // Time's up: prompt rhythm check evaluation
+              nextActivePrompt = 'RHYTHM_CHECK';
+              nextRhythmCheckLeft = 10;
+              nextIsRunning = false;
               MedicalAudio.playCycleEnd();
             }
           }
 
-          // 3. Handle Epinephrine Due
-          if (prev.epiTimeLeft > 0 && nextEpi === 0) {
+          // Rhythm Evaluation evaluation ticking
+          if (nextActivePrompt === 'RHYTHM_CHECK' && nextRhythmCheckLeft > 0) {
+            nextRhythmCheckLeft -= 1;
+            if (nextRhythmCheckLeft === 0) {
+              // Sound alert on 10s interruption breach
+              MedicalAudio.playUrgent();
+            }
+          }
+
+          // Epinephrine Drug reminder ticker
+          let nextEpiDueElapsed = prev.epiDueElapsed !== undefined ? prev.epiDueElapsed : 0;
+          if (nextIsRunning && prev.epiTimeLeft > 0 && nextEpi === 0) {
             nextActivePrompt = 'EPI_DUE';
-            // We don't necessarily stop CPR, but we show the overlay
+            nextEpiDueElapsed = 0;
             MedicalAudio.playAlert();
           }
-          
+
+          if (nextActivePrompt === 'EPI_DUE') {
+            nextEpiDueElapsed += 1;
+            if (nextEpiDueElapsed > 0 && nextEpiDueElapsed % 7 === 0) {
+              MedicalAudio.playAlert();
+            }
+          } else {
+            nextEpiDueElapsed = 0;
+          }
+
           return {
             ...prev,
+            totalTime: nextTotal,
             cprTimeLeft: nextCpr,
             epiTimeLeft: nextEpi,
-            rhythmCheckTimeLeft: nextRhythmCheck,
-            totalTime: prev.totalTime + 1,
+            rhythmCheckTimeLeft: nextRhythmCheckLeft,
             activePrompt: nextActivePrompt,
-            isTimerRunning: nextIsRunning
+            isTimerRunning: nextIsRunning,
+            epiDueElapsed: nextEpiDueElapsed,
           };
         });
       }, 1000);
@@ -201,11 +284,11 @@ export default function App() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [state.isTimerRunning]);
+  }, [hasSessionStarted, state.isTimerRunning, state.activePrompt]);
 
   const addLog = (type: EventType, description: string) => {
     const newLog: LogEvent = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).substring(2, 11),
       timestamp: Date.now(),
       type,
       description,
@@ -217,32 +300,35 @@ export default function App() {
   };
 
   const toggleTimer = () => {
-    const isInitialStart = !state.isTimerRunning && state.totalTime === 0;
-    if (isInitialStart) {
-      addLog('CPR_START', 'Resuscitation started - CPR Cycle #1');
+    vibrateDevice(40);
+    if (!state.isTimerRunning && state.totalTime === 0) {
+      addLog('CPR_START', 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.');
       MedicalAudio.playAlert();
     }
     setState(prev => ({ 
       ...prev, 
       isTimerRunning: !prev.isTimerRunning,
-      codeStartTime: isInitialStart ? Date.now() : prev.codeStartTime,
-      cprCycleCount: isInitialStart ? 1 : prev.cprCycleCount,
-      activePrompt: prev.activePrompt === 'RHYTHM_CHECK' ? null : prev.activePrompt
+      cprCycleCount: (!prev.isTimerRunning && prev.totalTime === 0) ? 1 : prev.cprCycleCount,
+      activePrompt: prev.activePrompt === 'RHYTHM_CHECK' ? null : prev.activePrompt,
+      rhythmCheckTimeLeft: prev.activePrompt === 'RHYTHM_CHECK' ? 0 : prev.rhythmCheckTimeLeft
     }));
   };
 
   const resetCprTimer = () => {
+    vibrateDevice(75);
     setState(prev => ({ 
       ...prev, 
       cprTimeLeft: CPR_CYCLE_DURATION,
       cprCycleCount: prev.cprCycleCount + 1,
       activePrompt: null,
+      rhythmCheckTimeLeft: 0,
       isTimerRunning: true
     }));
-    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`);
+    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} finalized & restarted`);
   };
 
   const handleShock = () => {
+    vibrateDevice([300, 100, 300, 100, 450]);
     MedicalAudio.playUrgent();
     setState(prev => ({ 
       ...prev, 
@@ -251,57 +337,31 @@ export default function App() {
       cprCycleCount: prev.cprCycleCount + 1,
       currentRhythm: 'SHOCKABLE',
       activePrompt: null,
+      rhythmCheckTimeLeft: 0,
       isTimerRunning: true
     }));
-    addLog('SHOCK', `Shock #${state.shocksCount + 1} delivered - CPR Cycle #${state.cprCycleCount + 1} started`);
+    addLog('SHOCK', `Defibrillation administered: ${state.selectedEnergy}J (Shock #${state.shocksCount + 1}) - Resuming CPR Cycle immediately`);
   };
 
   const handleEpi = () => {
-    MedicalAudio.playMetronomeTick();
+    vibrateDevice([150, 80, 150]);
+    MedicalAudio.playAlert();
     setState(prev => ({ 
       ...prev, 
       epiCount: prev.epiCount + 1,
       epiTimeLeft: EPI_INTERVAL,
-      activePrompt: prev.activePrompt === 'EPI_DUE' ? null : prev.activePrompt
+      activePrompt: prev.activePrompt === 'EPI_DUE' ? null : prev.activePrompt,
+      epiDueElapsed: 0
     }));
-    addLog('DRUG_EPI', `Epinephrine 1mg administered (#${state.epiCount + 1})`);
-  };
-
-  const handleAmio = () => {
-    MedicalAudio.playMetronomeTick();
-    const dose = state.amioCount === 0 ? '300mg' : '150mg';
-    setState(prev => ({
-      ...prev,
-      amioCount: prev.amioCount + 1,
-    }));
-    addLog('DRUG_AMIO', `Amiodarone ${dose} administered (#${state.amioCount + 1})`);
-  };
-
-  const handleLido = () => {
-    MedicalAudio.playMetronomeTick();
-    const dose = state.lidoCount === 0 ? '1-1.5 mg/kg' : '0.5-0.75 mg/kg';
-    setState(prev => ({
-      ...prev,
-      lidoCount: prev.lidoCount + 1,
-    }));
-    addLog('DRUG_LIDO', `Lidocaine ${dose} administered (#${state.lidoCount + 1})`);
-  };
-
-  const toggleHsAndTs = (term: string) => {
-    setState(prev => ({
-      ...prev,
-      checkedHsAndTs: prev.checkedHsAndTs.includes(term)
-        ? prev.checkedHsAndTs.filter(t => t !== term)
-        : [...prev.checkedHsAndTs, term]
-    }));
+    addLog('DRUG_EPI', `Administered 1mg Epinephrine IV/IO (Total Dose Count: #${state.epiCount + 1}) - 3m countdown running`);
   };
 
   const handleRhythmSelect = (rhythm: PatientRhythm) => {
+    vibrateDevice(50);
     setState(prev => {
-      let nextPrompt: 'SHOCK_ADVISED' | 'RHYTHM_CHECK' | 'EPI_ADVISED' | 'EPI_DUE' | null = null;
+      let nextPrompt: 'SHOCK_ADVISED' | 'EPI_ADVISED' | null = null;
       if (rhythm === 'SHOCKABLE') {
         nextPrompt = 'SHOCK_ADVISED';
-        MedicalAudio.playUrgent();
       } else if (rhythm === 'NON_SHOCKABLE') {
         nextPrompt = 'EPI_ADVISED';
         MedicalAudio.playAlert();
@@ -311,36 +371,44 @@ export default function App() {
         ...prev, 
         currentRhythm: rhythm,
         activePrompt: nextPrompt,
-        // Keep paused for instructions if prompt is active
         isTimerRunning: nextPrompt ? false : true,
+        rhythmCheckTimeLeft: 0, 
         cprTimeLeft: rhythm === 'NON_SHOCKABLE' ? CPR_CYCLE_DURATION : prev.cprTimeLeft
       };
     });
-    addLog('RHYTHM_CHECK', `Rhythm identified: ${rhythm}`);
+    addLog('RHYTHM_CHECK', `Rhythm Evaluation: Selected ${rhythm}`);
   };
 
   const handleRosc = () => {
+    vibrateDevice([60, 60, 60, 60, 400]);
     setState(prev => ({ 
       ...prev, 
       isTimerRunning: false,
       activePrompt: null
     }));
-    addLog('ROSC', 'ROSC ACHIEVED - Initiating Post-Cardiac Arrest Care');
+    addLog('ROSC', 'ROSC ACHIEVED - Initiating Post-Cardiac Arrest Care Protocol');
+  };
+
+  const handleStartCPR = () => {
+    vibrateDevice(100);
+    setState(prev => ({
+      ...prev,
+      isTimerRunning: false,
+      cprCycleCount: 0,
+      activePrompt: 'RHYTHM_CHECK',
+      rhythmCheckTimeLeft: 10,
+      totalTime: 0,
+      cprTimeLeft: CPR_CYCLE_DURATION,
+      epiTimeLeft: EPI_INTERVAL,
+    }));
+    addLog('CPR_START', 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.');
+    setHasSessionStarted(true);
   };
 
   const formatTime = (seconds: number) => {
     const min = Math.floor(seconds / 60);
     const sec = seconds % 60;
     return `${min}:${sec.toString().padStart(2, '0')}`;
-  };
-
-  const formatClockTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
   };
 
   const cprProgress = (state.cprTimeLeft / CPR_CYCLE_DURATION) * 100;
@@ -354,425 +422,233 @@ export default function App() {
     );
   }
 
-  // Use guest profile if not logged in or onboarded
+  // Fallback Practitioner profile info
   const effectiveProfile: UserProfile = profile || {
     fullName: "Guest Practitioner",
-    profession: "External Observer",
-    highestDegree: "MD / Equivalent",
+    profession: "doctor",
+    highestDegree: "MD / Specialist",
     dob: "1990-01-01",
-    sex: "Other",
-    councilRegistration: "GUEST-001",
-    email: user?.email || "guest@example.com",
-    phone: "0000000000",
+    sex: "other",
+    councilRegistration: "GUEST-KMC-003",
+    email: user?.email || "guest@resuscitation.org",
+    phone: "9800000000",
     onboardedAt: Date.now()
   };
 
-  return (
-    <div className="min-h-screen bg-medical-dark text-slate-100 font-sans flex overflow-hidden" id="acls-root">
-      
-      {/* Sidebar Monitor (Persistent) */}
-      <aside className="w-80 glass-panel m-4 mr-0 rounded-3xl flex flex-col overflow-hidden border-r-0 shrink-0 select-none">
-        <div className="p-6 border-b border-white/5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="bg-medical-red px-2 py-1 rounded text-[10px] font-bold tracking-widest uppercase shadow-lg shadow-medical-red/20">LIVE CODE</div>
-            <div className="flex items-center gap-2 text-slate-500 font-mono text-xs">
-              <span className={`w-2 h-2 rounded-full ${state.isTimerRunning ? 'bg-medical-red animate-pulse' : 'bg-slate-700'}`} />
-              {state.isTimerRunning ? 'ACTIVE' : 'STANDBY'}
-            </div>
-          </div>
-          
-          <div className="text-center py-4">
-            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Total Time</div>
-            <div className="font-mono text-4xl tabular-nums tracking-tighter text-white">{formatTime(state.totalTime)}</div>
-          </div>
-        </div>
+  // Onboarding check if they logged in but never entered credentials
+  if (user && !profile) {
+    return (
+      <div className="min-h-screen bg-medical-dark flex items-center justify-center p-6">
+        <OnboardingForm onComplete={() => {}} />
+      </div>
+    );
+  }
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
-          {/* Main CPR Monitoring */}
-          <div className="relative w-48 h-48 mx-auto flex items-center justify-center">
-            <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="6" className="text-slate-800" />
-              <motion.circle 
-                cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="6" 
-                className={state.cprTimeLeft < 30 ? 'text-medical-red' : 'text-medical-blue'}
-                strokeDasharray="283"
-                animate={{ strokeDashoffset: 283 - (283 * cprProgress) / 100 }}
-                transition={{ ease: "linear" }}
-              />
-            </svg>
-            <div className="text-center z-10">
-              <div className={`text-4xl font-mono font-bold tabular-nums tracking-tighter ${state.rhythmCheckTimeLeft > 0 ? 'text-emerald-400' : state.cprTimeLeft < 30 ? 'text-medical-red' : 'text-slate-100'}`}>
-                {state.rhythmCheckTimeLeft > 0 ? formatTime(state.rhythmCheckTimeLeft) : formatTime(state.cprTimeLeft)}
-              </div>
-              <p className={`text-[9px] uppercase tracking-widest mt-1 font-bold ${state.rhythmCheckTimeLeft > 0 ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`}>
-                {state.rhythmCheckTimeLeft > 0 ? 'Check Rhythm' : 'Next Check'}
-              </p>
-            </div>
-          </div>
+  const renderInMobileLayout = isMobileScreen || deviceMode === 'phone_demo';
 
-          {/* Med Waitlist */}
-          <div className="space-y-4">
-            <h3 className="text-[10px] uppercase text-slate-500 font-bold tracking-widest border-b border-white/5 pb-2">Drug Monitoring</h3>
-            <div className="glass-panel bg-slate-900/50 p-4 border-medical-blue/20">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-[10px] font-bold text-medical-blue uppercase">Epinephrine</span>
-                <span className="text-[10px] font-mono text-slate-400">#{state.epiCount} Given</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <motion.div className="h-full bg-medical-blue" animate={{ width: `${epiProgress}%` }} />
-                </div>
-                <span className="font-mono text-sm text-medical-blue">{formatTime(state.epiTimeLeft)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Event Log (Condensed) */}
-          <div className="space-y-3 pt-4 border-t border-white/5">
-            <div className="flex justify-between items-center">
-              <h3 className="text-[10px] uppercase text-slate-500 font-bold tracking-widest leading-none">Journal</h3>
-              <History className="w-3 h-3 text-slate-600" />
-            </div>
-            <div className="space-y-2 h-40 overflow-y-auto pr-2 custom-scrollbar">
-              {state.logs.map((log) => (
-                <div key={log.id} className="flex gap-3 items-start border-l border-slate-800 pl-3">
-                  <span className="text-[9px] font-mono text-slate-600 shrink-0">
-                    {formatClockTime(log.timestamp)}
-                  </span>
-                  <span className="text-[10px] font-mono text-slate-400 uppercase tracking-tight leading-tight">{log.description}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Stats Bar */}
-          <div className="px-6 py-4 grid grid-cols-2 gap-4 border-t border-white/5 bg-slate-900/30">
-            <div className="text-center">
-              <div className="text-[8px] text-slate-500 uppercase font-bold tracking-widest mb-1">CPR Cycles</div>
-              <div className="text-xl font-mono font-bold text-white leading-none">{state.cprCycleCount}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-[8px] text-slate-500 uppercase font-bold tracking-widest mb-1">Epi Doses</div>
-              <div className="text-xl font-mono font-bold text-medical-blue leading-none">{state.epiCount}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 bg-slate-900/80 border-t border-white/5 flex gap-2">
-          <button onClick={toggleTimer} className="flex-1 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center transition-all active:scale-95">
-            {state.isTimerRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-          </button>
-          <button onClick={resetCprTimer} className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center transition-all active:scale-95">
-            <RotateCcw className="w-4 h-4" />
-          </button>
-          <button onClick={() => setActiveTab('settings')} className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center transition-all active:scale-95">
-            <Settings className="w-4 h-4" />
-          </button>
-          <button onClick={() => auth.signOut()} className="w-10 h-10 rounded-xl bg-slate-800/50 hover:bg-red-500/10 text-slate-600 hover:text-red-500 flex items-center justify-center transition-all active:scale-95 shadow-inner">
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Algorithm Stage */}
-      <main className="flex-1 flex flex-col p-6 overflow-hidden relative">
-        <header className="flex justify-between items-center mb-8">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-medical-blue/10 rounded-2xl flex items-center justify-center text-medical-blue border border-medical-blue/20">
-              <User className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-display font-bold tracking-tighter text-white">{effectiveProfile.fullName}</h2>
-              <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-bold mt-1">
-                {effectiveProfile.profession} • {effectiveProfile.highestDegree} • REG: {effectiveProfile.councilRegistration}
-              </p>
-            </div>
-          </div>
-          <button 
-            onClick={() => setActiveTab('algorithm')}
-            className="px-4 py-2 glass-panel border-emerald-500/30 text-emerald-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-emerald-500 hover:text-white transition-all"
+  const renderAppContent = () => {
+    if (!hasSessionStarted) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none bg-medical-dark overflow-y-auto" id="landing-screen">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="max-w-md w-full glass-panel p-6 space-y-6 border-medical-blue/20 shadow-2xl"
           >
-            <ClipboardList className="w-4 h-4" /> Full Flowchart
-          </button>
-        </header>
-
-        <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
-          {/* Phase: Current Step */}
-          <section className="glass-panel p-8 bg-slate-800/20 border-medical-blue/20 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-8 opacity-5 -mr-4 -mt-4">
-              <Activity className="w-32 h-32" />
-            </div>
-            
-            <div className="relative z-10">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-2 h-2 rounded-full bg-medical-blue shadow-[0_0_8px_#3b82f6]" />
-                <span className="text-[10px] font-bold text-medical-blue uppercase tracking-widest">Active Phase: Intervention</span>
+            {/* Pulse cardiology heart */}
+            <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
+              <motion.div 
+                animate={{ scale: [1, 1.15, 1] }}
+                transition={{ repeat: Infinity, duration: 1.2 }}
+                className="absolute inset-0 bg-red-500/10 rounded-full blur-xl"
+              />
+              <div className="w-14 h-14 bg-red-500/15 border border-red-500/25 rounded-2xl flex items-center justify-center text-red-500 shadow-md">
+                <Heart className="w-7 h-7 fill-current animate-pulse animate-med-pulse" />
               </div>
-              
-              <h3 className="text-4xl font-display font-bold tracking-tighter text-slate-100 mb-2">
-                {state.currentRhythm === 'UNKNOWN' ? 'Confirm Patient Status' : 
-                 state.currentRhythm === 'SHOCKABLE' ? 'VF / PULSELESS VT' : 'ASYSTOLE / PEA'}
-              </h3>
-              
-              <p className="text-slate-400 font-medium leading-relaxed max-w-xl">
-                {state.currentRhythm === 'SHOCKABLE' 
-                  ? "Shockable rhythm identified. Immediate high-energy shock required followed by resume CPR. Prepare first dose Epinephrine if 2nd shock failure." 
-                  : state.currentRhythm === 'NON_SHOCKABLE'
-                  ? "Non-shockable rhythm. Focus on high-quality compressions and immediate Epinephrine. Search for H's and T's aggressively."
-                  : "Clinical assessment required. Check pulse and rhythm simultaneously. If pulseless, start CPR immediately."}
+            </div>
+
+            <div>
+              <span className="text-[8px] text-slate-550 uppercase tracking-[0.25em] font-black block mb-1">Nepal Resuscitation Registry • Kathmandu</span>
+              <h1 className="text-2xl font-display font-bold text-white tracking-tight">ACLS Companion</h1>
+              <p className="text-[#3B82F6] text-[8.5px] uppercase tracking-widest font-mono font-bold mt-1">Practice & Live Monitor System • v3.0</p>
+            </div>
+
+            <div className="p-3 bg-slate-900/40 rounded-xl border border-white/5 space-y-1 text-center font-sans">
+              <span className="text-[7.5px] uppercase tracking-widest text-[#64748B] font-heavy block">Identified Resuscicater</span>
+              <span className="text-xs font-black text-slate-200 block">{effectiveProfile.fullName}</span>
+              <p className="text-[8px] text-slate-450 font-mono">
+                {effectiveProfile.profession.toUpperCase()} • REG: {effectiveProfile.councilRegistration}
               </p>
-
-              {/* Reversible Causes Prompt */}
-              {((state.currentRhythm === 'NON_SHOCKABLE' && state.cprCycleCount >= 2) || 
-                (state.currentRhythm === 'SHOCKABLE' && state.cprCycleCount >= 3)) && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-6 p-4 rounded-2xl bg-medical-red/10 border border-medical-red/20 flex items-center gap-4"
-                >
-                  <div className="w-10 h-10 rounded-full bg-medical-red/20 flex items-center justify-center text-medical-red shadow-[0_0_15px_rgba(239,68,68,0.2)]">
-                    <AlertCircle className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-medical-red uppercase tracking-widest">Identify Reversible Causes</h4>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">Cycle #{state.cprCycleCount} - H's and T's prioritization required</p>
-                  </div>
-                </motion.div>
-              )}
             </div>
-          </section>
 
-          {/* Action Grid (The Core Buttons) */}
-          <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <button 
-              onClick={handleShock}
-              className="h-28 glass-panel border-medical-red/40 bg-medical-red/10 text-medical-red font-bold flex flex-col items-center justify-center gap-2 hover:bg-medical-red hover:text-white transition-all active:scale-95 shadow-xl shadow-medical-red/10"
-            >
-              <Zap className="w-6 h-6 fill-current" />
-              <span className="text-xs uppercase tracking-widest">Shock ({state.shocksCount})</span>
-            </button>
-            <button 
-              onClick={handleEpi}
-              className={`h-28 glass-panel border-medical-blue/40 bg-medical-blue/10 text-medical-blue font-bold flex flex-col items-center justify-center gap-2 hover:bg-medical-blue hover:text-white transition-all active:scale-95 shadow-xl shadow-medical-blue/10 ${state.epiTimeLeft === 0 ? 'animate-med-pulse' : ''}`}
-            >
-              <Syringe className="w-6 h-6 shrink-0" />
-              <span className="text-xs uppercase tracking-widest">Epi ({state.epiCount})</span>
-            </button>
-            <button
-              onClick={handleAmio}
-              className="h-28 glass-panel border-amber-500/40 bg-amber-500/10 text-amber-500 font-bold flex flex-col items-center justify-center gap-2 hover:bg-amber-500 hover:text-white transition-all active:scale-95 shadow-xl shadow-amber-500/10"
-            >
-              <Activity className="w-6 h-6" />
-              <span className="text-xs uppercase tracking-widest">Amio ({state.amioCount})</span>
-            </button>
-            <button
-              onClick={handleLido}
-              className="h-28 glass-panel border-purple-500/40 bg-purple-500/10 text-purple-500 font-bold flex flex-col items-center justify-center gap-2 hover:bg-purple-500 hover:text-white transition-all active:scale-95 shadow-xl shadow-purple-500/10"
-            >
-              <Activity className="w-6 h-6" />
-              <span className="text-xs uppercase tracking-widest">Lido ({state.lidoCount})</span>
-            </button>
-            <button 
-              onClick={() => handleRhythmSelect('SHOCKABLE')}
-              className="h-28 glass-panel border-slate-700 bg-slate-900/50 flex flex-col items-center justify-center gap-2 hover:border-medical-red/50 hover:text-white transition-all text-slate-400"
-            >
-              <Activity className="w-6 h-6" />
-              <span className="text-xs uppercase tracking-widest font-bold">VF/pVT</span>
-            </button>
-            <button 
-              onClick={() => handleRhythmSelect('NON_SHOCKABLE')}
-              className="h-28 glass-panel border-slate-700 bg-slate-900/50 flex flex-col items-center justify-center gap-2 hover:border-medical-blue/50 hover:text-white transition-all text-slate-400"
-            >
-              <Activity className="w-6 h-6" />
-              <span className="text-xs uppercase tracking-widest font-bold">PEA/Asystole</span>
-            </button>
-          </section>
+            <p className="text-slate-400 text-[10px] leading-relaxed max-w-sm mx-auto">
+              Please calibrate defibrillation joules. In case of active arrest code, click below immediately to activate resuscitation logs.
+            </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Reversible Causes Checklist */}
-            <section className="glass-panel p-6">
-              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">H's & T's Quick Scan</h4>
-              <div className="grid grid-cols-2 gap-2">
-                {HS_AND_TS.map((item, idx) => (
-                  <label key={idx} className="flex items-center gap-3 p-2 rounded-xl bg-slate-900/30 border border-white/5 cursor-pointer hover:border-white/10 transition-colors group">
-                    <input
-                      type="checkbox"
-                      className="w-3 h-3 rounded border-slate-700 bg-slate-900 checked:bg-emerald-500 transition-all cursor-pointer"
-                      checked={state.checkedHsAndTs.includes(item.term)}
-                      onChange={() => toggleHsAndTs(item.term)}
-                    />
-                    <span className={`text-[10px] font-bold uppercase tracking-tight ${state.checkedHsAndTs.includes(item.term) ? 'text-emerald-500' : 'text-slate-400 group-hover:text-slate-200'}`}>
-                      {item.term}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </section>
-
-            {/* Interventions Section */}
-            <section className="glass-panel p-6 flex flex-col gap-4">
-              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active Interventions</h4>
-              <div className="grid grid-cols-1 gap-2">
-                <button 
-                  onClick={handleRosc}
-                  className="w-full h-12 rounded-2xl bg-emerald-600/20 border border-emerald-500/30 text-emerald-500 font-bold uppercase text-[10px] tracking-widest hover:bg-emerald-600 hover:text-white transition-all shadow-lg shadow-emerald-500/10"
-                >
-                  Confirm ROSC
-                </button>
-                <div className="grid grid-cols-2 gap-2">
-                  <button className="h-10 rounded-xl bg-slate-800 text-[9px] font-bold uppercase tracking-widest text-slate-400 border border-white/5 hover:text-white">Adv. Airway</button>
-                  <button className="h-10 rounded-xl bg-slate-800 text-[9px] font-bold uppercase tracking-widest text-slate-400 border border-white/5 hover:text-white">IV/IO Acc.</button>
-                </div>
-              </div>
-            </section>
-          </div>
+            <button 
+              id="start-cpr-btn"
+              onClick={() => {
+                vibrateDevice(80);
+                setActiveTab('timer');
+                handleStartCPR();
+              }}
+              className="w-full h-12 bg-red-650 hover:bg-red-500 text-white rounded-xl font-black flex items-center justify-center gap-2 transition-all active:scale-95 shadow-xl shadow-red-500/10 uppercase tracking-widest text-[10px] border-none cursor-pointer"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" /> Initialize Code Timer
+            </button>
+          </motion.div>
         </div>
+      );
+    }
 
-        {/* Footer info */}
-        <footer className="mt-6 flex justify-between text-[10px] text-slate-600 uppercase tracking-[0.2em] font-bold select-none shrink-0">
-          <div>System: Clinical Intern Monitoring System</div>
-          <div>Location: Critical Care Unit - Kathmandu</div>
-          <div>Sync Status: Operational</div>
-        </footer>
-      </main>
+    if (renderInMobileLayout) {
+      return (
+        <MobileDashboard 
+          state={state}
+          setState={setState}
+          hasSessionStarted={hasSessionStarted}
+          setHasSessionStarted={setHasSessionStarted}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          phoneTime={phoneTime}
+          batteryLevel={batteryLevel}
+          isVibrating={isVibrating}
+          soundEnabled={soundEnabled}
+          setSoundEnabled={setSoundEnabled}
+          metronomeCount={metronomeCount}
+          triggerPwaInstall={triggerPwaInstall}
+          vibrateDevice={vibrateDevice}
+          formatTime={formatTime}
+          cprProgress={cprProgress}
+          epiProgress={epiProgress}
+          toggleTimer={toggleTimer}
+          resetCprTimer={resetCprTimer}
+          handleShock={handleShock}
+          handleEpi={handleEpi}
+          handleRosc={handleRosc}
+          handleRhythmSelect={handleRhythmSelect}
+          addLog={addLog}
+          effectiveProfile={effectiveProfile}
+          handleStartCPR={handleStartCPR}
+        />
+      );
+    } else {
+      return (
+        <DesktopDashboard 
+          state={state}
+          toggleTimer={toggleTimer}
+          resetCprTimer={resetCprTimer}
+          setActiveTab={setActiveTab}
+          handleShock={handleShock}
+          handleEpi={handleEpi}
+          handleRosc={handleRosc}
+          handleRhythmSelect={handleRhythmSelect}
+          effectiveProfile={effectiveProfile}
+          formatTime={formatTime}
+          cprProgress={cprProgress}
+          epiProgress={epiProgress}
+        />
+      );
+    }
+  };
 
-      {/* Prompt Overlay */}
+  // Global Dialog Overlay modals
+  const renderGlobalPromptModals = () => {
+    return (
       <AnimatePresence>
-        {state.activePrompt && (
+        {state.activePrompt && state.activePrompt !== 'EPI_DUE' && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-medical-dark/90 backdrop-blur-md flex items-center justify-center p-6"
+            className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-6 select-none"
           >
             <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
+              initial={{ scale: 0.92, y: 15 }}
               animate={{ scale: 1, y: 0 }}
-              className="glass-panel w-full max-w-sm p-8 text-center border-medical-blue/30 shadow-[0_0_50px_rgba(59,130,246,0.2)]"
+              className="glass-panel w-full max-w-sm p-6 text-center border-blue-500/25 bg-[#090e18] shadow-2xl rounded-2xl border"
             >
               {state.activePrompt === 'RHYTHM_CHECK' && (
-                <div className="space-y-6">
-                  <div className="w-20 h-20 bg-medical-blue/10 rounded-full flex items-center justify-center mx-auto text-medical-blue animate-pulse">
-                    <Activity className="w-10 h-10" />
+                <div className="space-y-4">
+                  <div className="w-14 h-14 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto text-blue-400 animate-pulse border border-blue-500/30">
+                    <Activity className="w-7 h-7" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-display font-bold tracking-tight mb-2 uppercase">Rhythm Check</h2>
-                    <p className="text-slate-400 text-sm uppercase tracking-widest font-bold">Is the rhythm shockable?</p>
+                    <h3 className="text-xl font-display font-black text-white uppercase tracking-tight">Rhythm Evaluation Pause</h3>
+                    <p className="text-[#94A3B8] text-[9px] uppercase tracking-widest font-bold mt-1">Interrupted Chest Compressions (Max 10s)</p>
                   </div>
-                  <div className="grid grid-cols-1 gap-3">
+
+                  {/* Progress evaluation timer bar */}
+                  <div className="space-y-1 pb-1">
+                    <div className="flex justify-between items-center text-[9px] font-mono font-bold text-slate-550">
+                      <span>EVALUATION INTERRUPTED</span>
+                      <span className={state.rhythmCheckTimeLeft <= 3 ? 'text-red-400 font-bold animate-ping' : 'text-blue-400'}>{state.rhythmCheckTimeLeft}s</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
+                      <motion.div className="h-full bg-blue-500" animate={{ width: `${(state.rhythmCheckTimeLeft / 10) * 100}%` }} />
+                    </div>
+                    {state.rhythmCheckTimeLeft === 0 && (
+                      <p className="text-[8px] text-red-500 uppercase font-black tracking-wider animate-pulse pt-0.5">⚠️ BREACH ALERT: RESUME CPR IMMEDIATELY</p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2">
                     <button 
                       onClick={() => handleRhythmSelect('SHOCKABLE')}
-                      className="h-16 rounded-2xl bg-medical-red text-white btn-action flex items-center justify-center gap-2 group shadow-lg shadow-medical-red/20"
+                      className="h-11 rounded-xl bg-red-650 hover:bg-red-500 text-white text-[10px] font-bold uppercase tracking-widest transition-transform cursor-pointer border-none shadow-lg shadow-red-600/15"
                     >
-                      <Zap className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                      YES (VF / pVT)
+                      VF / pulseless VT (YES SHOCK)
                     </button>
                     <button 
                       onClick={() => handleRhythmSelect('NON_SHOCKABLE')}
-                      className="h-16 rounded-2xl bg-slate-800 text-slate-100 btn-action border border-white/5"
+                      className="h-11 rounded-xl bg-slate-800 text-slate-350 hover:text-white hover:bg-slate-700 text-[10px] font-bold uppercase tracking-widest transition-transform cursor-pointer border-none"
                     >
-                      NO (ASYSTOLE / PEA)
+                      Asystole / PEA (NO SHOCK)
                     </button>
                   </div>
                 </div>
               )}
 
               {state.activePrompt === 'SHOCK_ADVISED' && (
-                <div className="space-y-6">
-                  <div className="w-24 h-24 bg-medical-red/10 rounded-full flex items-center justify-center mx-auto text-medical-red animate-med-pulse status-glow border border-medical-red/30">
-                    <Zap className="w-12 h-12 fill-current" />
+                <div className="space-y-4">
+                  <div className="w-14 h-14 bg-red-500/10 rounded-full flex items-center justify-center mx-auto text-red-400 border border-red-500/20 shadow shadow-red-500/10">
+                    <Zap className="w-7 h-7 fill-current animate-bounce animate-pulse" />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-display font-bold tracking-tight text-medical-red mb-2 uppercase">Shock Advised</h2>
-                    <p className="text-slate-100 text-sm font-bold uppercase tracking-[0.2em]">Clear the patient!</p>
+                    <h3 className="text-xl font-display font-black text-red-500 uppercase tracking-tight">Shock Advised!</h3>
+                    <p className="text-[#E2E8F0] text-xs font-black uppercase tracking-wider">CLEAR ALL STANDERS</p>
                   </div>
-
-                  {/* 2025 Dynamic Reminders */}
-                  <div className="space-y-2">
-                    {state.shocksCount >= 2 && state.epiCount === 0 && (
-                      <div className="p-3 rounded-xl bg-medical-blue/10 border border-medical-blue/30 text-medical-blue">
-                        <p className="text-[10px] font-bold uppercase tracking-widest">Give Epinephrine 1mg ASAP</p>
-                      </div>
-                    )}
-                    {state.shocksCount >= 3 && state.amioCount === 0 && state.lidoCount === 0 && (
-                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500">
-                        <p className="text-[10px] font-bold uppercase tracking-widest">Give Amiodarone 300mg or Lidocaine 1-1.5mg/kg</p>
-                      </div>
-                    )}
-                  </div>
-
+                  
                   <button 
                     onClick={handleShock}
-                    className="w-full h-20 rounded-2xl bg-medical-red text-white btn-action text-xl shadow-2xl shadow-medical-red/40 animate-med-pulse border-none"
+                    className="w-full h-12 rounded-xl bg-red-650 text-white font-bold uppercase text-[10px] tracking-widest border-none shadow-lg shadow-red-650/20"
                   >
-                    DELIVER SHOCK ({state.selectedEnergy}J)
+                    DELIVER RESCUE SHOCK ({state.selectedEnergy}J)
                   </button>
-                  
-                  {state.cprCycleCount >= 2 && (
-                    <div className="p-4 rounded-xl bg-medical-red/10 border border-medical-red/30 animate-pulse">
-                      <div className="flex items-center gap-2 text-medical-red mb-1">
-                        <AlertCircle className="w-4 h-4" />
-                        <span className="text-[10px] font-bold uppercase tracking-widest">Reversible Causes</span>
-                      </div>
-                      <p className="text-[9px] text-slate-300 uppercase font-bold text-left leading-tight">
-                        Consider H's and T's aggressively. This patient remains in a shockable rhythm.
-                      </p>
-                    </div>
-                  )}
-
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest leading-relaxed font-bold">
-                    Immediately resume CPR after shock delivery
-                  </p>
                 </div>
               )}
 
               {state.activePrompt === 'EPI_ADVISED' && (
-                <div className="space-y-6">
-                  <div className="w-20 h-20 bg-medical-blue/10 rounded-full flex items-center justify-center mx-auto text-medical-blue animate-pulse status-glow border border-medical-blue/30">
-                    <Syringe className="w-10 h-10" />
+                <div className="space-y-4">
+                  <div className="w-14 h-14 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto text-blue-400 border border-blue-500/20">
+                    <Syringe className="w-7 h-7" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-display font-bold tracking-tight text-medical-blue mb-1 uppercase">Non-Shockable Action</h2>
-                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Asystole / PEA Protocol</p>
+                    <h3 className="text-xl font-display font-black text-blue-400 uppercase tracking-tight">Non-Shockable protocol</h3>
+                    <p className="text-[#94A3B8] text-[9.5px] uppercase font-bold tracking-widest mt-1">Dispense drug & continue chest loops</p>
                   </div>
 
-                  {/* Reminders Grid */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20 shrink-0">
-                        <PlusSquare className="w-4 h-4" />
-                      </div>
-                      <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest text-left leading-tight">IV Access (Preferred)</span>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-500 border border-indigo-500/20 shrink-0">
-                        <Activity className="w-4 h-4" />
-                      </div>
-                      <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest text-left leading-tight">Waveform Capnography</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-1 gap-2 pt-2">
                     <button 
-                      onClick={() => {
-                        handleEpi();
-                      }}
-                      className={`w-full h-16 rounded-2xl flex items-center justify-center gap-3 transition-all font-bold uppercase tracking-widest text-sm ${
-                        state.epiCount > 0 
-                          ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30' 
-                          : 'bg-medical-blue text-white shadow-lg shadow-medical-blue/20 animate-med-pulse'
-                      }`}
+                      onClick={handleEpi}
+                      className="w-full h-11 rounded-xl bg-blue-500 text-white font-bold uppercase text-[9.5px] tracking-widest border-none flex items-center justify-center gap-1 shadow-md"
                     >
-                      <Syringe className="w-5 h-5" />
-                      {state.epiCount > 0 ? `Epinephrine Given (${formatTime(state.epiTimeLeft)})` : 'Administer Epinephrine NOW'}
+                      <Syringe className="w-3.5 h-3.5" /> Administer 1mg Epi
                     </button>
                     
                     <button 
                       onClick={() => {
-                        if (state.epiCount === 0) {
-                          addLog('INFO', 'CPR started before 1st Epi dose (Non-shockable rhythm)');
-                        }
-                        addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} Initialized`);
+                        addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} finalized & started`);
                         setState(prev => ({ 
                           ...prev, 
                           activePrompt: null, 
@@ -780,415 +656,177 @@ export default function App() {
                           cprCycleCount: prev.cprCycleCount + 1
                         }));
                       }}
-                      className="w-full h-16 rounded-2xl bg-white text-medical-dark hover:bg-slate-100 flex items-center justify-center gap-3 transition-all font-bold uppercase tracking-widest text-sm shadow-xl"
+                      className="w-full h-11 rounded-xl bg-white text-medical-dark font-bold uppercase text-[9.5px] tracking-widest"
                     >
-                      <Play className="w-5 h-5 fill-current" />
-                      Start CPR Cycle #{state.cprCycleCount + 1}
-                    </button>
-                    
-                    {state.currentRhythm === 'NON_SHOCKABLE' && state.cprCycleCount >= 1 && (
-                      <div className="p-4 rounded-xl bg-medical-red/10 border border-medical-red/30 animate-pulse">
-                        <div className="flex items-center gap-2 text-medical-red mb-1">
-                          <AlertCircle className="w-4 h-4" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest">Reversible Causes</span>
-                        </div>
-                        <p className="text-[9px] text-slate-300 uppercase font-bold text-left leading-tight">
-                          Consider H's and T's aggressively during this cycle.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest leading-relaxed font-bold">
-                    Epinephrine should be given ASAP. Do not delay CPR if drug is not ready.
-                  </p>
-                </div>
-              )}
-              {state.activePrompt === 'EPI_DUE' && (
-                <div className="space-y-6">
-                  <div className="w-20 h-20 bg-medical-blue/10 rounded-full flex items-center justify-center mx-auto text-medical-blue animate-pulse status-glow border border-medical-blue/30">
-                    <Syringe className="w-10 h-10" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-display font-bold tracking-tight text-medical-blue mb-1 uppercase">Epinephrine Due</h2>
-                    <p className="text-slate-100 text-sm font-bold uppercase tracking-[0.2em]">Push 1mg ASAP!</p>
-                  </div>
-                  
-                  <div className="flex flex-col gap-3">
-                    <button 
-                      onClick={handleEpi}
-                      className="w-full h-16 rounded-2xl bg-medical-blue text-white btn-action text-lg shadow-xl shadow-medical-blue/30 border-none uppercase font-bold flex items-center justify-center gap-3"
-                    >
-                      <Syringe className="w-6 h-6" />
-                      Administer 1mg
-                    </button>
-                    
-                    <button 
-                      onClick={() => {
-                        setState(prev => ({ ...prev, activePrompt: null }));
-                      }}
-                      className="w-full h-16 rounded-2xl bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center justify-center gap-3 transition-all font-bold uppercase tracking-widest text-sm"
-                    >
-                      Continue CPR
+                      Bypass to CPR Cycle #{state.cprCycleCount + 1}
                     </button>
                   </div>
-
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest leading-relaxed font-bold">
-                    Do not interrupt CPR for drug administration
-                  </p>
                 </div>
               )}
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+    );
+  };
 
-      {/* Navigation Overlay (Minimized) */}
-      <nav className="fixed right-6 bottom-20 flex flex-col gap-4 z-40">
-        <button
-          onClick={() => setActiveTab(activeTab === 'logs' ? 'timer' : 'logs')}
-          className={`w-12 h-12 rounded-full flex items-center justify-center glass-panel shadow-2xl transition-all ${activeTab === 'logs' ? 'bg-medical-blue text-white' : 'text-slate-400'}`}
-        >
-          <History className="w-5 h-5" />
-        </button>
-        <button 
-          onClick={() => setActiveTab(activeTab === 'algorithm' ? 'timer' : 'algorithm')}
-          className={`w-12 h-12 rounded-full flex items-center justify-center glass-panel shadow-2xl transition-all ${activeTab === 'algorithm' ? 'bg-medical-blue text-white' : 'text-slate-400'}`}
-        >
-          <ClipboardList className="w-5 h-5" />
-        </button>
-        <button 
-          onClick={() => setActiveTab(activeTab === 'settings' ? 'timer' : 'settings')}
-          className={`w-12 h-12 rounded-full flex items-center justify-center glass-panel shadow-2xl transition-all ${activeTab === 'settings' ? 'bg-medical-blue text-white' : 'text-slate-400'}`}
-        >
-          <Settings className="w-5 h-5" />
-        </button>
-      </nav>
-
-      <AnimatePresence>
-        {activeTab === 'logs' && (
-          <motion.div
-            initial={{ opacity: 0, x: '100%' }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: '100%' }}
-            className="fixed inset-0 z-[100] bg-medical-dark flex flex-col p-4 overflow-hidden"
-          >
-            <div className="flex items-center justify-between mb-6 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-medical-blue/10 rounded-lg text-medical-blue">
-                  <History className="w-5 h-5" />
+  return (
+    <div className="min-h-screen bg-[#050B16] text-[#E2E8F0] font-sans antialiased flex flex-col" id="acls-app-root">
+      
+      {/* If phone_demo or simulated on desktop, render simulated pixel container */}
+      {deviceMode === 'phone_demo' && !isMobileScreen ? (
+        <div className="flex-1 flex flex-col lg:flex-row items-center justify-center p-4 lg:p-8 gap-8 overflow-hidden relative" id="emulator-workspace">
+          
+          {/* Workstation layout info panel */}
+          <div className="max-w-md w-full flex flex-col justify-between py-6 space-y-5 text-left shrink-0 select-none z-10" id="emulator-panel">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-400 border border-emerald-500/20">
+                  <Smartphone className="w-4.5 h-4.5 fill-current" />
                 </div>
-                <h2 className="font-display font-bold text-xl tracking-tighter">Full Event Journal</h2>
+                <div>
+                  <h1 className="text-xl font-display font-black tracking-tight text-white uppercase leading-none">Nepal ACLS Companion</h1>
+                  <span className="text-[7.5px] text-[#22C55E] font-black tracking-widest uppercase bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 mt-1 block w-fit">ANDROID PROTOCOL OK</span>
+                </div>
               </div>
-              <button
-                onClick={() => setActiveTab('timer')}
-                className="p-3 rounded-2xl bg-slate-800 text-slate-400 hover:text-white transition-colors uppercase text-[10px] font-bold tracking-widest"
-              >
-                Close Logs
-              </button>
+              <p className="text-[11px] text-slate-400 leading-normal uppercase font-bold">
+                Interact with on-screen tablets. In active codes, use haptic feedback vibration monitors to track metrics accurately.
+              </p>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar pb-20">
-              {state.logs.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-600">
-                  <History className="w-12 h-12 mb-4 opacity-20" />
-                  <p className="uppercase text-[10px] font-bold tracking-widest">No events recorded yet</p>
+            {/* Config Selectors */}
+            <div className="p-3 bg-slate-900/50 border border-slate-800 rounded-xl space-y-2">
+              <span className="text-[8px] uppercase tracking-wider text-slate-500 font-bold block">Viewport mode selector</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button 
+                  onClick={() => {
+                    vibrateDevice(50);
+                    setDeviceMode('phone_demo');
+                  }}
+                  className={`py-2 px-3 rounded-lg font-bold uppercase text-[8.5px] tracking-wider flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${deviceMode === 'phone_demo' ? 'bg-emerald-600 text-white shadow shadow-emerald-500/10' : 'bg-slate-850 text-slate-400'}`}
+                >
+                  <Smartphone className="w-3.5 h-3.5 fill-current" /> Phone Demo
+                </button>
+                <button 
+                  onClick={() => {
+                    vibrateDevice(50);
+                    setDeviceMode('standalone');
+                  }}
+                  className={`py-2 px-3 rounded-lg font-bold uppercase text-[8.5px] tracking-wider flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${deviceMode === 'standalone' ? 'bg-[#3B82F6] text-white shadow shadow-blue-500/10' : 'bg-slate-850 text-slate-400'}`}
+                >
+                  <Laptop className="w-3.5 h-3.5" /> Fullscreen View
+                </button>
+              </div>
+            </div>
+
+            {/* Specs */}
+            <div className="p-3.5 bg-slate-900/50 border border-slate-800 rounded-xl space-y-2 font-mono text-[9px]">
+              <div className="flex items-center justify-between border-b border-white/5 pb-1">
+                <span className="text-slate-500 font-bold">ANDROID RUNTIME</span>
+                <span className="text-emerald-400 font-bold">ACTIVE REGISTRY SENDER (LTE)</span>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Android OS API:</span>
+                  <span className="text-slate-200">API 34 (Android 14)</span>
                 </div>
-              ) : (
-                state.logs.map((log) => (
-                  <div key={log.id} className="glass-panel p-4 flex items-center justify-between border-white/5 hover:border-white/10 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-2 h-2 rounded-full ${
-                        log.type === 'SHOCK' ? 'bg-medical-red' :
-                        log.type === 'ROSC' ? 'bg-emerald-500' :
-                        log.type.startsWith('DRUG') ? 'bg-medical-blue' : 'bg-slate-700'
-                      }`} />
-                      <div>
-                        <p className="text-xs font-bold text-slate-200">{log.description}</p>
-                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                          {formatClockTime(log.timestamp)} • {formatTime(Math.floor((log.timestamp - (state.codeStartTime || log.timestamp)) / 1000))} into code
-                        </p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono text-slate-600 bg-slate-900/50 px-2 py-1 rounded">
-                      {log.type}
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Battery Status:</span>
+                  <span className="text-slate-200">{batteryLevel}% (Optimized)</span>
+                </div>
+                <div className="flex justify-between items-center text-[8.5px]">
+                  <span className="text-slate-500">Haptics Core vibrator:</span>
+                  <div className="flex items-center gap-1 font-bold">
+                    <span className={`w-1.5 h-1.5 rounded-full ${isVibrating ? 'bg-red-500 animate-ping' : 'bg-slate-700'}`} />
+                    <span className={isVibrating ? 'text-red-400 animate-pulse' : 'text-slate-550'}>
+                      {isVibrating ? 'TACTILE SHOCK PULSING' : 'VIBRATOR READY'}
                     </span>
                   </div>
-                ))
-              )}
-            </div>
-          </motion.div>
-        )}
-
-        {activeTab === 'algorithm' && (
-          <motion.div 
-            initial={{ opacity: 0, x: '100%' }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: '100%' }}
-            className="fixed inset-0 z-[100] bg-medical-dark flex flex-col p-4 overflow-hidden"
-          >
-            <div className="flex items-center justify-between mb-6 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500">
-                  <ClipboardList className="w-5 h-5" />
-                </div>
-                <h2 className="font-display font-bold text-xl tracking-tighter">Decision Algorithm</h2>
-              </div>
-              <button 
-                onClick={() => setActiveTab('timer')}
-                className="p-3 rounded-2xl bg-slate-800 text-slate-400 hover:text-white transition-colors uppercase text-[10px] font-bold tracking-widest"
-              >
-                Exit Portal
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar pb-20">
-              {/* Node 1: Entry */}
-              <div className="flex flex-col items-center">
-                <div className="glass-panel p-4 w-full border-medical-blue/30 bg-medical-blue/5 text-center">
-                  <span className="text-[10px] font-bold text-medical-blue uppercase tracking-widest block mb-1">Step 1</span>
-                  <h4 className="font-bold text-sm uppercase">Start CPR</h4>
-                  <p className="text-[10px] text-slate-400 mt-1 uppercase">Give Oxygen • Attach Monitor/Defib</p>
-                </div>
-                <div className="h-6 w-0.5 bg-slate-700"></div>
-                <div className="glass-panel px-6 py-3 border-indigo-500/30 text-center">
-                  <h4 className="font-bold text-xs uppercase text-indigo-400">Rhythm Shockable?</h4>
-                </div>
-                <div className="flex w-full justify-center">
-                  <div className="w-1/2 flex flex-col items-center">
-                    <div className="h-6 w-0.5 bg-slate-700"></div>
-                    <div className="w-full h-px bg-slate-700 mr-[-50%]"></div>
-                    <div className="h-6 w-0.5 bg-slate-700"></div>
-                    <span className="text-[9px] font-bold text-medical-red absolute mt-[-20px] ml-[-40px]">YES</span>
-                    
-                    {/* Shockable Path */}
-                    <div className="space-y-4 w-full px-2">
-                      <div className="glass-panel p-3 border-medical-red/40 bg-medical-red/5">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[8px] font-bold text-medical-red uppercase tracking-widest">VF/pVT</span>
-                          <Zap className="w-3 h-3 text-medical-red" />
-                        </div>
-                        <h5 className="font-bold text-[10px] uppercase">Shock (120-200J)</h5>
-                      </div>
-                      <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
-                      <div className="glass-panel p-3 bg-slate-900/50">
-                        <h5 className="font-bold text-[10px] uppercase">CPR 2 Min</h5>
-                        <p className="text-[9px] text-slate-500 mt-1 uppercase">Obtain IV Access (Preferred)</p>
-                      </div>
-                      <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
-                      <div className="glass-panel p-3 border-indigo-500/30 bg-indigo-500/5">
-                        <h5 className="font-bold text-[10px] uppercase">Rhythm Shockable?</h5>
-                      </div>
-                      <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
-                      <div className="glass-panel p-3 border-medical-red/40 bg-medical-red/5">
-                        <h5 className="font-bold text-[10px] uppercase text-medical-red">Shock + CPR 2m</h5>
-                        <p className="text-[9px] text-slate-400 mt-1 uppercase font-bold text-medical-blue">Epinephrine Q3-5M (After 2nd Shock)</p>
-                      </div>
-                      <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
-                      <div className="glass-panel p-3 border-amber-500/40 bg-amber-500/5">
-                        <h5 className="font-bold text-[10px] uppercase text-amber-500">Amio or Lido</h5>
-                        <p className="text-[9px] text-slate-400 mt-1 uppercase font-bold">After 3rd Shock</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="w-1/2 flex flex-col items-center">
-                    <div className="h-6 w-0.5 bg-slate-700"></div>
-                    <div className="w-full h-px bg-slate-700 ml-[-50%]"></div>
-                    <div className="h-6 w-0.5 bg-slate-700"></div>
-                    <span className="text-[9px] font-bold text-medical-blue absolute mt-[-20px] mr-[-40px]">NO</span>
-
-                    {/* Non-Shockable Path */}
-                    <div className="space-y-4 w-full px-2">
-                      <div className="glass-panel p-3 border-medical-blue/40 bg-medical-blue/5">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[8px] font-bold text-medical-blue uppercase tracking-widest">Asystole/PEA</span>
-                          <Syringe className="w-3 h-3 text-medical-blue" />
-                        </div>
-                        <h5 className="font-bold text-[10px] uppercase text-medical-blue">Epinephrine ASAP</h5>
-                      </div>
-                      <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
-                      <div className="glass-panel p-3 bg-slate-900/50">
-                        <h5 className="font-bold text-[10px] uppercase">CPR 2 Min</h5>
-                        <ul className="text-[8px] text-slate-500 mt-1 uppercase space-y-1 list-disc list-inside">
-                          <li>IV Access (Preferred)</li>
-                          <li>Advanced Airway?</li>
-                          <li>Waveform Capnography</li>
-                        </ul>
-                      </div>
-                      <div className="flex justify-center"><div className="h-4 w-0.5 bg-slate-800"></div></div>
-                      <div className="glass-panel p-3 border-emerald-500/30 bg-emerald-500/5">
-                        <h4 className="font-bold text-[10px] uppercase text-emerald-400">Treat Reversible Causes</h4>
-                        <p className="text-[8px] text-slate-500 mt-1 italic">Scan H's & T's</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Reference Sections */}
-              <div className="space-y-4 pt-8 border-t border-slate-800">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Quick Reference Guides</h3>
-                
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="medical-card p-4 border-l-4 border-l-medical-red bg-slate-900/40 rounded-xl">
-                    <h4 className="font-bold text-xs text-medical-red mb-2 uppercase italic tracking-tighter">Shock Energy (Active: {state.defibType === 'BIPHASIC' ? 'Biphasic' : 'Monophasic'} {state.selectedEnergy}J)</h4>
-                    <div className="grid grid-cols-2 gap-4 text-[10px] uppercase font-bold text-slate-400">
-                      <div className={state.defibType === 'BIPHASIC' ? 'text-white' : ''}>
-                        <div className="text-slate-500 mb-1">Biphasic</div>
-                        <p className="text-slate-200">120 - 200 J</p>
-                      </div>
-                      <div className={state.defibType === 'MONOPHASIC' ? 'text-white' : ''}>
-                        <div className="text-slate-500 mb-1">Monophasic</div>
-                        <p className="text-slate-200">360 J</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="medical-card p-4 border-l-4 border-l-medical-blue bg-slate-900/40 rounded-xl">
-                    <h4 className="font-bold text-xs text-medical-blue mb-2 uppercase italic tracking-tighter">Drug Dosages</h4>
-                    <div className="space-y-3 text-[10px]">
-                      <div className="flex justify-between border-b border-slate-800 pb-2">
-                        <span className="text-slate-500 font-bold uppercase">Epinephrine</span>
-                        <span className="text-slate-200 font-mono">1mg Q3-5M</span>
-                      </div>
-                      <div className="flex justify-between border-b border-slate-800 pb-2">
-                        <span className="text-slate-500 font-bold uppercase">Amiodarone</span>
-                        <span className="text-slate-200 font-mono">300mg / 150mg</span>
-                      </div>
-                      <div className="flex justify-between border-b border-slate-800 pb-2">
-                        <span className="text-slate-500 font-bold uppercase">Lidocaine</span>
-                        <span className="text-slate-200 font-mono">1.5mg/kg / 0.75mg/kg</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="medical-card p-4 border-l-4 border-l-emerald-500 bg-slate-900/40 rounded-xl">
-                    <h4 className="font-bold text-xs text-emerald-500 mb-2 uppercase italic tracking-tighter">Advanced Airway</h4>
-                    <ul className="text-[10px] text-slate-400 uppercase font-bold space-y-1">
-                      <li>• ET Intubation or Supraglottic</li>
-                      <li>• Waveform Capnography Mandatory</li>
-                      <li>• 1 Breath Every 6 Sec (10/Min)</li>
-                    </ul>
-                  </div>
-
-                  <div className="medical-card p-4 border-l-4 border-l-pink-500 bg-slate-900/40 rounded-xl">
-                    <h4 className="font-bold text-xs text-pink-500 mb-2 uppercase italic tracking-tighter">Post-ROSC Care Bundle</h4>
-                    <ul className="text-[10px] text-slate-400 uppercase font-bold space-y-1">
-                      <li>• Oxygenation: SpO2 92-98%</li>
-                      <li>• Ventilation: PaCO2 35-45 mmHg</li>
-                      <li>• Hemodynamics: SBP {'>'} 90 mmHg; MAP {'>'} 65 mmHg</li>
-                      <li>• Neuroprognostication: Wait {'>'} 72h after TTM</li>
-                    </ul>
-                  </div>
                 </div>
               </div>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
-      <AnimatePresence>
-        {activeTab === 'settings' && (
-          <motion.div 
-            initial={{ opacity: 0, x: '100%' }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: '100%' }}
-            className="fixed inset-0 z-[100] bg-medical-dark flex flex-col p-8 overflow-hidden"
-          >
-            <div className="flex items-center justify-between mb-8 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-medical-blue/10 rounded-lg text-medical-blue border border-medical-blue/20">
-                  <Settings className="w-5 h-5" />
-                </div>
-                <h2 className="font-display font-bold text-xl tracking-tighter uppercase">Device Config</h2>
-              </div>
-              <button 
-                onClick={() => setActiveTab('timer')} 
-                className="p-3 rounded-2xl bg-slate-800 text-slate-400 hover:text-white transition-colors uppercase text-[10px] font-bold tracking-widest border border-white/5"
-              >
-                Close Settings
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar pb-20">
-              <section className="space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Defibrillator Type</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <button 
-                    onClick={() => setState(prev => ({ ...prev, defibType: 'BIPHASIC', selectedEnergy: 200 }))}
-                    className={`p-6 rounded-2xl border transition-all text-left ${state.defibType === 'BIPHASIC' ? 'bg-medical-blue/10 border-medical-blue text-medical-blue shadow-[0_0_20px_rgba(59,130,246,0.1)]' : 'bg-slate-900/50 border-slate-800 text-slate-500'}`}
-                  >
-                    <div className="text-sm font-bold uppercase mb-1">Biphasic</div>
-                    <div className="text-[10px] uppercase font-bold tracking-tight opacity-70">AHA Standard</div>
-                  </button>
-                  <button 
-                    onClick={() => setState(prev => ({ ...prev, defibType: 'MONOPHASIC', selectedEnergy: 360 }))}
-                    className={`p-6 rounded-2xl border transition-all text-left ${state.defibType === 'MONOPHASIC' ? 'bg-medical-blue/10 border-medical-blue text-medical-blue shadow-[0_0_20px_rgba(59,130,246,0.1)]' : 'bg-slate-900/50 border-slate-800 text-slate-500'}`}
-                  >
-                    <div className="text-sm font-bold uppercase mb-1">Monophasic</div>
-                    <div className="text-[10px] uppercase font-bold tracking-tight opacity-70">Legacy</div>
-                  </button>
-                </div>
-              </section>
-
-              {state.defibType === 'BIPHASIC' && (
-                <section className="space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Shock Energy (Initial & Subsequent)</h3>
-                  <div className="grid grid-cols-3 gap-3">
-                    {[120, 150, 200].map((joules) => (
-                      <button 
-                        key={joules}
-                        onClick={() => setState(prev => ({ ...prev, selectedEnergy: joules }))}
-                        className={`py-6 rounded-xl border transition-all font-mono text-sm font-bold ${state.selectedEnergy === joules ? 'bg-medical-red border-medical-red text-white shadow-lg shadow-medical-red/20' : 'bg-slate-900/50 border-slate-800 text-slate-500'}`}
-                      >
-                        {joules}J
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {state.defibType === 'MONOPHASIC' && (
-                <section className="space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Fixed Energy</h3>
-                  <div className="glass-panel p-8 border-medical-red/20 bg-medical-red/5 flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-2xl text-medical-red font-mono">360 JOULES</h4>
-                      <p className="text-[10px] text-slate-500 uppercase font-bold mt-1">Default for monophasic devices</p>
+            {/* Diagnostics logger */}
+            <div className="p-3.5 bg-slate-900/50 border border-slate-800 rounded-xl space-y-1.5">
+              <span className="text-[8.5px] uppercase tracking-wider text-slate-500 font-bold block">Developer notifications Feed</span>
+              <div className="bg-slate-950 p-2 rounded-lg border border-white/5 h-16 overflow-y-auto font-mono text-[8.5px] text-[#A7F3D0] space-y-0.5 scroll-smooth">
+                {state.logs.length === 0 ? (
+                  <span className="text-slate-700 block">NO DIAGNOSTIC LOGS TRANSMITTED IN ACTIVE SESSION.</span>
+                ) : (
+                  [...state.logs].reverse().map((lg, i) => (
+                    <div key={i} className="flex gap-1">
+                      <span className="text-slate-600 shrink-0">[{new Date(lg.timestamp).toLocaleTimeString([], { hour12: false })}]</span>
+                      <span className="text-emerald-400 uppercase leading-snug">{lg.description}</span>
                     </div>
-                    <Zap className="text-medical-red w-10 h-10 opacity-20" />
-                  </div>
-                </section>
-              )}
-
-              <section className="pt-8 border-t border-slate-800">
-                <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-medical-blue" /> AHA Guidelines Note
-                  </h4>
-                  <p className="text-[11px] text-slate-500 leading-relaxed uppercase font-bold">
-                    Use manufacturer recommended energy dose. If unknown, use the maximal dose. Biphasic waveforms are preferred for greater efficacy and lower risk of myocardial injury.
-                  </p>
-                </div>
-              </section>
+                  ))
+                )}
+              </div>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
 
+          {/* PHYSICAL ANDROID PHONE MOCKUP */}
+          <div className="relative flex items-center justify-center select-none" id="android-device-shell">
+            <div className={`absolute -inset-3.5 rounded-[55px] blur-xl transition-all duration-300 pointer-events-none -z-10 ${
+              isVibrating ? 'bg-[#EF4444]/15 scale-102 border-2 border-red-500/10' : 'bg-transparent'
+            }`} />
+
+            <div className="absolute right-[-14px] top-[140px] w-1 h-14 bg-slate-800 rounded-l border border-slate-700 border-r-0" />
+            <div className="absolute right-[-14px] top-[220px] w-1 h-10 bg-slate-800 rounded-l border border-slate-700 border-r-0" />
+
+            <div className="relative bg-[#020617] border-[10px] border-[#334155]/90 rounded-[48px] shadow-[0_25px_65px_-12px_rgba(0,0,0,0.92)] flex flex-col w-[360px] h-[720px] shrink-0 overflow-hidden">
+              {/* hole-punch */}
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-slate-950 border border-slate-900 flex items-center justify-center z-[150] shadow-inner">
+                <div className="w-1 h-1 rounded-full bg-[#1e293b]/45" />
+              </div>
+
+              {/* Status Header Bar */}
+              <div className="h-6.5 w-full bg-slate-950 px-4 flex items-center justify-between z-[140] select-none text-[8.5px] font-bold text-slate-350 font-mono shrink-0 border-b border-white/5">
+                <div className="flex items-center gap-1">
+                  <span className="font-display font-black text-emerald-400">NT-RESUSCITATE</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span>🔋 {batteryLevel}%</span>
+                  <span className="font-sans text-[9px] text-white font-extrabold">{phoneTime}</span>
+                </div>
+              </div>
+
+              <div className="flex-1 w-full flex flex-col overflow-hidden relative">
+                {renderAppContent()}
+              </div>
+
+              {/* Pill android home */}
+              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-28 h-0.5 bg-[#475569] rounded-full z-[140] opacity-80" />
+            </div>
+          </div>
+
+        </div>
+      ) : (
+        /* Standalone view */
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          <div className="h-5.5 w-full bg-slate-950 px-4 flex items-center justify-between z-50 select-none text-[8px] font-bold text-slate-350 font-mono shrink-0 border-b border-light/5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-emerald-400 font-bold block">Nepal Resuscitation Command PWA</span>
+            </div>
+            {!isMobileScreen && (
+              <div className="flex gap-3 font-sans text-[8.5px] text-slate-500">
+                <button onClick={() => setDeviceMode('phone_demo')} className="hover:text-emerald-400">📱 Mobile Emulator Mode</button>
+                <div className="text-white">💻 Standard Desktop Workspace</div>
+              </div>
+            )}
+            <div>
+              <span>🔋 {batteryLevel}%</span>
+              <span className="text-white font-sans ml-1">{phoneTime}</span>
+            </div>
+          </div>
+
+          <div className="flex-1 w-full flex flex-col overflow-hidden relative">
+            {renderAppContent()}
+          </div>
+        </div>
+      )}
+
+      {/* Global Modals for alarms, shocks and rhythms check evaluations */}
+      {renderGlobalPromptModals()}
     </div>
-  );
-}
-
-function NavButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: any; label: string }) {
-  return (
-    <button 
-      onClick={onClick}
-      className={`flex flex-col items-center p-2 rounded-xl transition-all ${active ? 'text-medical-blue bg-medical-blue/10' : 'text-slate-500 hover:text-slate-300'}`}
-    >
-      <Icon className={`w-5 h-5 ${active ? 'fill-current' : ''}`} />
-      <span className="text-[10px] font-bold mt-1 uppercase tracking-tighter">{label}</span>
-    </button>
   );
 }

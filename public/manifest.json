@@ -1,0 +1,19 @@
+{
+  "short_name": "ACLS 2025",
+  "name": "ACLS Kathmandu Companion",
+  "description": "Nepal Clinical Resuscitation Protocol Guard & Lifecycle Metronome Monitor",
+  "icons": [
+    {
+      "src": "/android-chrome.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#090d16",
+  "theme_color": "#090d16",
+  "display": "standalone",
+  "orientation": "portrait",
+  "display_override": ["standalone", "fullscreen"]
+}
