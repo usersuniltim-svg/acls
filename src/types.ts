@@ -1,3 +1,4 @@
+import { Timestamp } from 'firebase/firestore';
 import { LucideIcon } from 'lucide-react';
 
 export type EventType = 'CPR_START' | 'SHOCK' | 'DRUG_EPI' | 'DRUG_AMIO' | 'DRUG_LIDO' | 'ROSC' | 'RHYTHM_CHECK' | 'ADVANCED_AIRWAY' | 'INFO';
@@ -38,5 +39,5 @@ export interface UserProfile {
   councilRegistration: string;
   email: string;
   phone: string;
-  onboardedAt: any; // Firestore Timestamp
+  onboardedAt: Timestamp; // Firestore Timestamp
 }
