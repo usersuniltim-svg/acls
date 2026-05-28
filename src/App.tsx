@@ -26,7 +26,7 @@ import {
 import { MedicalAudio } from './lib/audio';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 import OnboardingForm from './components/OnboardingForm';
 import MobileDashboard from './components/MobileDashboard';
 import DesktopDashboard from './components/DesktopDashboard';
@@ -432,7 +432,7 @@ export default function App() {
     councilRegistration: "GUEST-KMC-003",
     email: user?.email || "guest@resuscitation.org",
     phone: "9800000000",
-    onboardedAt: Date.now()
+    onboardedAt: Timestamp.now()
   };
 
   // Onboarding check if they logged in but never entered credentials
