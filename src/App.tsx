@@ -100,8 +100,8 @@ export default function App() {
 
   // Battery status API
   useEffect(() => {
-    if (typeof navigator !== 'undefined' && (navigator as any).getBattery) {
-      (navigator as any).getBattery().then((battery: any) => {
+    if (typeof navigator !== 'undefined' && navigator.getBattery) {
+      navigator.getBattery().then((battery) => {
         setBatteryLevel(Math.floor(battery.level * 100));
         battery.addEventListener('levelchange', () => {
           setBatteryLevel(Math.floor(battery.level * 100));
