@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   Play, 
   Pause, 
@@ -51,6 +51,14 @@ export default function DesktopDashboard({
   cprProgress,
   epiProgress
 }: DesktopDashboardProps) {
+
+  const memoizedLogs = useMemo(() => {
+    return state.logs.map(log => ({
+      ...log,
+      formattedTime: new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    }));
+  }, [state.logs]);
+
   return (
     <div className="flex-1 flex overflow-hidden w-full h-full" id="desktop-viewport">
       {/* Sidebar Monitor (Persistent) */}
@@ -117,10 +125,10 @@ export default function DesktopDashboard({
               <History className="w-3.5 h-3.5 text-slate-600" />
             </div>
             <div className="space-y-2 h-32 overflow-y-auto pr-2 custom-scrollbar text-left font-mono">
-              {state.logs.map((log) => (
+              {memoizedLogs.map((log) => (
                 <div key={log.id} className="flex gap-2.5 items-start pl-2">
                   <span className="text-[8px] text-slate-500 shrink-0">
-                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                    {log.formattedTime}
                   </span>
                   <span className="text-[9px] text-slate-400 uppercase leading-snug">{log.description}</span>
                 </div>
