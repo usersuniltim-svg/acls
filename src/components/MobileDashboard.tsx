@@ -34,7 +34,7 @@ interface MobileDashboardProps {
   hasSessionStarted: boolean;
   setHasSessionStarted: (started: boolean) => void;
   activeTab: 'timer' | 'interventions' | 'algorithm' | 'logs' | 'settings';
-  setActiveTab: (tab: any) => void;
+  setActiveTab: (tab: 'timer' | 'interventions' | 'algorithm' | 'logs' | 'settings') => void;
   phoneTime: string;
   batteryLevel: number;
   isVibrating: boolean;
