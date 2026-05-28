@@ -1,0 +1,5 @@
+🧪 [testing improvement] Add test suite for MobileDashboard component
+
+🎯 **What:** Added tests for the `MobileDashboard` component as they were missing. Addressed the testing gap to ensure reliability of this component.
+📊 **Coverage:** Covered happy paths including navigation, displaying content according to settings (e.g. correct energy for shock based on defibType), and interaction scenarios (e.g. triggering timers and ROSC handler, toggling timer states).
+✨ **Result:** Improved test coverage for `MobileDashboard.tsx`, ensuring proper functionality across UI tabs and component interactions without breaking tests due to unmocked animations.
