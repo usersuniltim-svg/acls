@@ -1,8 +1,54 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidProfileData() {
+      let data = request.resource.data;
+      let requiredFields = ['fullName', 'profession', 'highestDegree', 'dob', 'sex', 'councilRegistration', 'email', 'phone', 'onboardedAt'];
+      let hasOnlyAllowedFields = data.keys().hasOnly(requiredFields);
+      let hasAllRequiredFields = data.keys().hasAll(requiredFields);
+
+      let validTypes = data.fullName is string &&
+                       data.profession is string &&
+                       data.highestDegree is string &&
+                       data.dob is string &&
+                       data.sex is string &&
+                       data.councilRegistration is string &&
+                       data.email is string &&
+                       data.phone is string &&
+                       data.onboardedAt is timestamp;
+
+      let validLimits = data.fullName.size() < 1000 && data.phone.size() < 50;
+
+      return hasOnlyAllowedFields && hasAllRequiredFields && validTypes && validLimits;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidProfileData() &&
+                       request.resource.data.email == request.auth.token.email &&
+                       request.resource.data.onboardedAt == request.time;
+
+      allow update: if isOwner(userId) &&
+                       isValidProfileData() &&
+                       request.resource.data.email == resource.data.email &&
+                       request.resource.data.onboardedAt == resource.data.onboardedAt;
+    }
+
+    // Default fallback to prevent access to any other collections
+    // Only 'users' collection is currently in use according to codebase analysis.
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
