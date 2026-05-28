@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Play, 
   Pause, 
@@ -88,6 +88,14 @@ export default function MobileDashboard({
 
   // Signature Pad canvas logic
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const memoizedLogs = useMemo(() => {
+    return state.logs.map(log => ({
+      ...log,
+      formattedTime: new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    }));
+  }, [state.logs]);
+
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSigned, setHasSigned] = useState(false);
 
@@ -465,10 +473,10 @@ export default function MobileDashboard({
             {state.logs.length === 0 ? (
               <div className="text-center py-6 text-[8px] uppercase text-slate-650 tracking-wider">No active events recorded. Start timers to generate logs.</div>
             ) : (
-              state.logs.map((log) => (
+              memoizedLogs.map((log) => (
                 <div key={log.id} className="flex gap-2 items-start pl-2 border-l border-slate-800">
                   <span className="text-[8px] font-mono text-slate-500 shrink-0 font-bold">
-                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                    {log.formattedTime}
                   </span>
                   <div>
                     <span className="text-[9px] uppercase font-bold text-slate-300 leading-tight block">{log.description}</span>
