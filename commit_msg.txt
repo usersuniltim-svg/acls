@@ -1,0 +1,6 @@
+🧹 Explicitly type tab setter in setActiveTab
+
+🎯 **What:** Replaced the `any` type in the `setActiveTab` function signature with explicit literal types (`'timer' | 'interventions' | 'algorithm' | 'logs' | 'settings'`) in both `DesktopDashboard.tsx` and `MobileDashboard.tsx`.
+💡 **Why:** This improves maintainability and code readability by providing strong type safety. It ensures that only valid tab names can be passed to the function, reducing the risk of bugs.
+✅ **Verification:** Ran `npm run lint` and `npm run build` to verify there are no typing errors or build failures. The changes are purely type annotations and do not alter runtime functionality.
+✨ **Result:** Enhanced code health through stronger and more precise typing.
