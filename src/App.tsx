@@ -30,6 +30,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import OnboardingForm from './components/OnboardingForm';
 import MobileDashboard from './components/MobileDashboard';
 import DesktopDashboard from './components/DesktopDashboard';
+import { isNavigatorAvailable } from './lib/utils';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -100,7 +101,7 @@ export default function App() {
 
   // Battery status API
   useEffect(() => {
-    if (typeof navigator !== 'undefined' && (navigator as any).getBattery) {
+    if (isNavigatorAvailable() && (navigator as any).getBattery) {
       (navigator as any).getBattery().then((battery: any) => {
         setBatteryLevel(Math.floor(battery.level * 100));
         battery.addEventListener('levelchange', () => {
@@ -134,7 +135,7 @@ export default function App() {
   };
 
   const vibrateDevice = (pattern: number | number[]) => {
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    if (isNavigatorAvailable() && navigator.vibrate) {
       try {
         navigator.vibrate(pattern);
       } catch (e) {
