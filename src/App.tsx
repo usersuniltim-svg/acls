@@ -753,12 +753,15 @@ export default function App() {
                 {state.logs.length === 0 ? (
                   <span className="text-slate-700 block">NO DIAGNOSTIC LOGS TRANSMITTED IN ACTIVE SESSION.</span>
                 ) : (
-                  [...state.logs].reverse().map((lg, i) => (
-                    <div key={i} className="flex gap-1">
-                      <span className="text-slate-600 shrink-0">[{new Date(lg.timestamp).toLocaleTimeString([], { hour12: false })}]</span>
-                      <span className="text-emerald-400 uppercase leading-snug">{lg.description}</span>
-                    </div>
-                  ))
+                  state.logs.map((_, i, arr) => {
+                    const lg = arr[arr.length - 1 - i];
+                    return (
+                      <div key={lg.id || i} className="flex gap-1">
+                        <span className="text-slate-600 shrink-0">[{new Date(lg.timestamp).toLocaleTimeString([], { hour12: false })}]</span>
+                        <span className="text-emerald-400 uppercase leading-snug">{lg.description}</span>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
