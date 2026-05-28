@@ -26,7 +26,7 @@ interface DesktopDashboardProps {
   state: AclsState;
   toggleTimer: () => void;
   resetCprTimer: () => void;
-  setActiveTab: (tab: any) => void;
+  setActiveTab: (tab: 'timer' | 'interventions' | 'algorithm' | 'logs' | 'settings') => void;
   handleShock: () => void;
   handleEpi: () => void;
   handleRosc: () => void;
