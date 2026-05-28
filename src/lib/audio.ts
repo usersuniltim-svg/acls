@@ -1,10 +1,16 @@
+declare global {
+  interface Window {
+    webkitAudioContext: typeof AudioContext;
+  }
+}
+
 
 export class MedicalAudio {
   private static context: AudioContext | null = null;
 
   private static init() {
     if (!this.context) {
-      this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      this.context = new (window.AudioContext || window.webkitAudioContext)();
     }
     if (this.context.state === 'suspended') {
       this.context.resume();
