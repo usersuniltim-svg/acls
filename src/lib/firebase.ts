@@ -15,7 +15,6 @@ export const db = initializeFirestore(app, {
   ? (firebaseConfig as any).firestoreDatabaseId 
   : undefined);
 
-console.log("Firestore initialized with experimentalForceLongPolling: true and experimentalAutoDetectLongPolling: false");
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
