@@ -27,6 +27,7 @@ import {
   UserProfile 
 } from '../types';
 import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
+import { Clock } from './Clock';
 
 interface MobileDashboardProps {
   state: AclsState;
@@ -35,8 +36,7 @@ interface MobileDashboardProps {
   setHasSessionStarted: (started: boolean) => void;
   activeTab: 'timer' | 'interventions' | 'algorithm' | 'logs' | 'settings';
   setActiveTab: (tab: any) => void;
-  phoneTime: string;
-  batteryLevel: number;
+    batteryLevel: number;
   isVibrating: boolean;
   soundEnabled: boolean;
   setSoundEnabled: React.Dispatch<React.SetStateAction<boolean>>;
@@ -64,8 +64,7 @@ export default function MobileDashboard({
   setHasSessionStarted,
   activeTab,
   setActiveTab,
-  phoneTime,
-  batteryLevel,
+    batteryLevel,
   isVibrating,
   soundEnabled,
   setSoundEnabled,

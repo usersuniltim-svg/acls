@@ -29,6 +29,7 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import OnboardingForm from './components/OnboardingForm';
 import MobileDashboard from './components/MobileDashboard';
+import { Clock } from './components/Clock';
 import DesktopDashboard from './components/DesktopDashboard';
 
 export default function App() {
@@ -38,9 +39,11 @@ export default function App() {
   const profileUnsubscribeRef = useRef<(() => void) | null>(null);
   const [hasSessionStarted, setHasSessionStarted] = useState(false);
 
+
+
   // Android & PWA App Variables
   const [deviceMode, setDeviceMode] = useState<'standalone' | 'phone_demo'>('phone_demo');
-  const [phoneTime, setPhoneTime] = useState('08:00');
+
   const [batteryLevel, setBatteryLevel] = useState(87);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState(false);
@@ -87,18 +90,7 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Clock updates
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      setPhoneTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }));
-    };
-    updateTime();
-    const clockInterval = setInterval(updateTime, 1000);
-    return () => clearInterval(clockInterval);
-  }, []);
-
-  // Battery status API
+    // Battery status API
   useEffect(() => {
     if (typeof navigator !== 'undefined' && (navigator as any).getBattery) {
       (navigator as any).getBattery().then((battery: any) => {
@@ -510,7 +502,7 @@ export default function App() {
           setHasSessionStarted={setHasSessionStarted}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          phoneTime={phoneTime}
+
           batteryLevel={batteryLevel}
           isVibrating={isVibrating}
           soundEnabled={soundEnabled}
@@ -786,7 +778,7 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span>🔋 {batteryLevel}%</span>
-                  <span className="font-sans text-[9px] text-white font-extrabold">{phoneTime}</span>
+                  <Clock className="font-sans text-[9px] text-white font-extrabold" />
                 </div>
               </div>
 
@@ -815,7 +807,7 @@ export default function App() {
             )}
             <div>
               <span>🔋 {batteryLevel}%</span>
-              <span className="text-white font-sans ml-1">{phoneTime}</span>
+              <Clock className="text-white font-sans ml-1" />
             </div>
           </div>
 
