@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Play, 
   Pause, 
@@ -85,6 +85,20 @@ export default function MobileDashboard({
   effectiveProfile,
   handleStartCPR
 }: MobileDashboardProps) {
+
+  const timeFormatter = useMemo(() => new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }), []);
+
+  const formattedLogs = useMemo(() => {
+    return state.logs.map(log => ({
+      ...log,
+      formattedTime: timeFormatter.format(new Date(log.timestamp))
+    }));
+  }, [state.logs, timeFormatter]);
 
   // Signature Pad canvas logic
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -462,13 +476,13 @@ export default function MobileDashboard({
         <div className="glass-panel p-3 bg-slate-900/40 border-white/5 text-left rounded-xl space-y-2">
           <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block border-b border-white/5 pb-1">Chronological Events</span>
           <div className="space-y-2.5 max-h-40 overflow-y-auto pr-1 select-text custom-scrollbar">
-            {state.logs.length === 0 ? (
+            {formattedLogs.length === 0 ? (
               <div className="text-center py-6 text-[8px] uppercase text-slate-650 tracking-wider">No active events recorded. Start timers to generate logs.</div>
             ) : (
-              state.logs.map((log) => (
+              formattedLogs.map((log) => (
                 <div key={log.id} className="flex gap-2 items-start pl-2 border-l border-slate-800">
                   <span className="text-[8px] font-mono text-slate-500 shrink-0 font-bold">
-                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                    {log.formattedTime}
                   </span>
                   <div>
                     <span className="text-[9px] uppercase font-bold text-slate-300 leading-tight block">{log.description}</span>
