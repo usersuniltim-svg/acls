@@ -127,8 +127,7 @@ export default function App() {
       return;
     }
     deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    console.log(`User choice outcome: ${outcome}`);
+    await deferredPrompt.userChoice;
     setDeferredPrompt(null);
     setIsInstallable(false);
   };
