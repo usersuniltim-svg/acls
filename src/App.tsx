@@ -506,7 +506,7 @@ export default function App() {
     );
   }
 
-  const renderInMobileLayout = isMobileScreen || deviceMode === 'phone_demo';
+  const renderInMobileLayout = isMobileScreen;
 
   const renderAppContent = () => {
     if (!hasSessionStarted) {
@@ -746,159 +746,23 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050B16] text-[#E2E8F0] font-sans antialiased flex flex-col" id="acls-app-root">
-      
-      {/* If phone_demo or simulated on desktop, render simulated pixel container */}
-      {deviceMode === 'phone_demo' && !isMobileScreen ? (
-        <div className="flex-1 flex flex-col lg:flex-row items-center justify-center p-4 lg:p-8 gap-8 overflow-hidden relative" id="emulator-workspace">
-          
-          {/* Workstation layout info panel */}
-          <div className="max-w-md w-full flex flex-col justify-between py-6 space-y-5 text-left shrink-0 select-none z-10" id="emulator-panel">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-400 border border-emerald-500/20">
-                  <Smartphone className="w-4.5 h-4.5 fill-current" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-display font-black tracking-tight text-white uppercase leading-none">Nepal ACLS Companion</h1>
-                  <span className="text-[7.5px] text-[#22C55E] font-black tracking-widest uppercase bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 mt-1 block w-fit">ANDROID PROTOCOL OK</span>
-                </div>
-              </div>
-              <p className="text-[11px] text-slate-400 leading-normal uppercase font-bold">
-                Interact with on-screen tablets. In active codes, use haptic feedback vibration monitors to track metrics accurately.
-              </p>
-            </div>
-
-            {/* Config Selectors */}
-            <div className="p-3 bg-slate-900/50 border border-slate-800 rounded-xl space-y-2">
-              <span className="text-[8px] uppercase tracking-wider text-slate-500 font-bold block">Viewport mode selector</span>
-              <div className="grid grid-cols-2 gap-2">
-                <button 
-                  onClick={() => {
-                    vibrateDevice(50);
-                    setDeviceMode('phone_demo');
-                  }}
-                  className={`py-2 px-3 rounded-lg font-bold uppercase text-[8.5px] tracking-wider flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${deviceMode === 'phone_demo' ? 'bg-emerald-600 text-white shadow shadow-emerald-500/10' : 'bg-slate-850 text-slate-400'}`}
-                >
-                  <Smartphone className="w-3.5 h-3.5 fill-current" /> Phone Demo
-                </button>
-                <button 
-                  onClick={() => {
-                    vibrateDevice(50);
-                    setDeviceMode('standalone');
-                  }}
-                  className={`py-2 px-3 rounded-lg font-bold uppercase text-[8.5px] tracking-wider flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${deviceMode === 'standalone' ? 'bg-[#3B82F6] text-white shadow shadow-blue-500/10' : 'bg-slate-850 text-slate-400'}`}
-                >
-                  <Laptop className="w-3.5 h-3.5" /> Fullscreen View
-                </button>
-              </div>
-            </div>
-
-            {/* Specs */}
-            <div className="p-3.5 bg-slate-900/50 border border-slate-800 rounded-xl space-y-2 font-mono text-[9px]">
-              <div className="flex items-center justify-between border-b border-white/5 pb-1">
-                <span className="text-slate-500 font-bold">ANDROID RUNTIME</span>
-                <span className="text-emerald-400 font-bold">ACTIVE REGISTRY SENDER (LTE)</span>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Android OS API:</span>
-                  <span className="text-slate-200">API 34 (Android 14)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Battery Status:</span>
-                  <span className="text-slate-200">{batteryLevel}% (Optimized)</span>
-                </div>
-                <div className="flex justify-between items-center text-[8.5px]">
-                  <span className="text-slate-500">Haptics Core vibrator:</span>
-                  <div className="flex items-center gap-1 font-bold">
-                    <span className={`w-1.5 h-1.5 rounded-full ${isVibrating ? 'bg-red-500 animate-ping' : 'bg-slate-700'}`} />
-                    <span className={isVibrating ? 'text-red-400 animate-pulse' : 'text-slate-550'}>
-                      {isVibrating ? 'TACTILE SHOCK PULSING' : 'VIBRATOR READY'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Diagnostics logger */}
-            <div className="p-3.5 bg-slate-900/50 border border-slate-800 rounded-xl space-y-1.5">
-              <span className="text-[8.5px] uppercase tracking-wider text-slate-500 font-bold block">Developer notifications Feed</span>
-              <div className="bg-slate-950 p-2 rounded-lg border border-white/5 h-16 overflow-y-auto font-mono text-[8.5px] text-[#A7F3D0] space-y-0.5 scroll-smooth">
-                {state.logs.length === 0 ? (
-                  <span className="text-slate-700 block">NO DIAGNOSTIC LOGS TRANSMITTED IN ACTIVE SESSION.</span>
-                ) : (
-                  [...state.logs].reverse().map((lg, i) => (
-                    <div key={i} className="flex gap-1">
-                      <span className="text-slate-600 shrink-0">[{new Date(lg.timestamp).toLocaleTimeString([], { hour12: false })}]</span>
-                      <span className="text-emerald-400 uppercase leading-snug">{lg.description}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* PHYSICAL ANDROID PHONE MOCKUP */}
-          <div className="relative flex items-center justify-center select-none" id="android-device-shell">
-            <div className={`absolute -inset-3.5 rounded-[55px] blur-xl transition-all duration-300 pointer-events-none -z-10 ${
-              isVibrating ? 'bg-[#EF4444]/15 scale-102 border-2 border-red-500/10' : 'bg-transparent'
-            }`} />
-
-            <div className="absolute right-[-14px] top-[140px] w-1 h-14 bg-slate-800 rounded-l border border-slate-700 border-r-0" />
-            <div className="absolute right-[-14px] top-[220px] w-1 h-10 bg-slate-800 rounded-l border border-slate-700 border-r-0" />
-
-            <div className="relative bg-[#020617] border-[10px] border-[#334155]/90 rounded-[48px] shadow-[0_25px_65px_-12px_rgba(0,0,0,0.92)] flex flex-col w-[360px] h-[720px] shrink-0 overflow-hidden">
-              {/* hole-punch */}
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-slate-950 border border-slate-900 flex items-center justify-center z-[150] shadow-inner">
-                <div className="w-1 h-1 rounded-full bg-[#1e293b]/45" />
-              </div>
-
-              {/* Status Header Bar */}
-              <div className="h-6.5 w-full bg-slate-950 px-4 flex items-center justify-between z-[140] select-none text-[8.5px] font-bold text-slate-350 font-mono shrink-0 border-b border-white/5">
-                <div className="flex items-center gap-1">
-                  <span className="font-display font-black text-emerald-400">NT-RESUSCITATE</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span>🔋 {batteryLevel}%</span>
-                  <span className="font-sans text-[9px] text-white font-extrabold">{phoneTime}</span>
-                </div>
-              </div>
-
-              <div className="flex-1 w-full flex flex-col overflow-hidden relative">
-                {renderAppContent()}
-              </div>
-
-              {/* Pill android home */}
-              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-28 h-0.5 bg-[#475569] rounded-full z-[140] opacity-80" />
-            </div>
-          </div>
-
+    <div className="min-h-screen bg-[#050B16] text-[#E2E8F0] font-sans antialiased flex flex-col w-full" id="acls-app-root">
+      {/* Top minimal status bar for quick time / session info */}
+      <div className="h-7 w-full bg-slate-950 px-4 flex items-center justify-between z-50 select-none text-[9px] font-bold text-slate-400 font-mono shrink-0 border-b border-white/5">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-emerald-400 font-bold uppercase tracking-wider">Nepal Resuscitation Command</span>
         </div>
-      ) : (
-        /* Standalone view */
-        <div className="flex-1 flex flex-col overflow-hidden relative">
-          <div className="h-5.5 w-full bg-slate-950 px-4 flex items-center justify-between z-50 select-none text-[8px] font-bold text-slate-350 font-mono shrink-0 border-b border-light/5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-emerald-400 font-bold block">Nepal Resuscitation Command PWA</span>
-            </div>
-            {!isMobileScreen && (
-              <div className="flex gap-3 font-sans text-[8.5px] text-slate-500">
-                <button onClick={() => setDeviceMode('phone_demo')} className="hover:text-emerald-400">📱 Mobile Emulator Mode</button>
-                <div className="text-white">💻 Standard Desktop Workspace</div>
-              </div>
-            )}
-            <div>
-              <span>🔋 {batteryLevel}%</span>
-              <span className="text-white font-sans ml-1">{phoneTime}</span>
-            </div>
-          </div>
-
-          <div className="flex-1 w-full flex flex-col overflow-hidden relative">
-            {renderAppContent()}
-          </div>
+        <div className="flex items-center gap-3">
+          <span className="text-slate-500 font-sans hidden sm:inline">{effectiveProfile.fullName} ({effectiveProfile.profession.toUpperCase()})</span>
+          <span>🔋 {batteryLevel}%</span>
+          <span className="text-white font-sans ml-1 font-bold">{phoneTime}</span>
         </div>
-      )}
+      </div>
+
+      <div className="flex-1 w-full flex flex-col overflow-hidden relative">
+        {renderAppContent()}
+      </div>
 
       {/* Global Modals for alarms, shocks and rhythms check evaluations */}
       {renderGlobalPromptModals()}
