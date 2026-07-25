@@ -11,7 +11,10 @@ import {
   AlertCircle,
   ClipboardList,
   LogOut,
-  User
+  User,
+  Vibrate,
+  Smartphone,
+  Download
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { 
@@ -19,14 +22,17 @@ import {
   UserProfile,
   PatientRhythm
 } from '../types';
-import { CPR_CYCLE_DURATION, HS_AND_TS } from '../constants';
+import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
 import { auth } from '../lib/firebase';
 
 interface DesktopDashboardProps {
   state: AclsState;
+  setState?: React.Dispatch<React.SetStateAction<AclsState>>;
+  setHasSessionStarted?: (started: boolean) => void;
+  activeTab?: 'timer' | 'interventions' | 'algorithm' | 'logs' | 'settings';
+  setActiveTab: (tab: any) => void;
   toggleTimer: () => void;
   resetCprTimer: () => void;
-  setActiveTab: (tab: any) => void;
   handleShock: () => void;
   handleEpi: () => void;
   handleRosc: () => void;
@@ -35,13 +41,22 @@ interface DesktopDashboardProps {
   formatTime: (seconds: number) => string;
   cprProgress: number;
   epiProgress: number;
+  vibrateDevice?: (pattern: number | number[]) => void;
+  triggerPwaInstall?: () => Promise<void>;
+  hapticDuration?: number;
+  setHapticDuration?: React.Dispatch<React.SetStateAction<number>>;
+  hapticIntensity?: number;
+  setHapticIntensity?: React.Dispatch<React.SetStateAction<number>>;
 }
 
 export default function DesktopDashboard({
   state,
+  setState,
+  setHasSessionStarted,
+  activeTab = 'timer',
+  setActiveTab,
   toggleTimer,
   resetCprTimer,
-  setActiveTab,
   handleShock,
   handleEpi,
   handleRosc,
@@ -49,8 +64,197 @@ export default function DesktopDashboard({
   effectiveProfile,
   formatTime,
   cprProgress,
-  epiProgress
+  epiProgress,
+  vibrateDevice,
+  triggerPwaInstall,
+  hapticDuration,
+  setHapticDuration,
+  hapticIntensity,
+  setHapticIntensity
 }: DesktopDashboardProps) {
+
+  const renderDesktopSettings = () => {
+    return (
+      <div className="space-y-6 text-left max-w-2xl">
+        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+          <div>
+            <h3 className="text-xl font-display font-bold text-white uppercase tracking-tight">System & Hardware Configuration</h3>
+            <p className="text-[10px] text-slate-500 uppercase font-mono font-bold mt-1">Calibrate haptics, defib energy, and device offline sync</p>
+          </div>
+          <button 
+            type="button"
+            onClick={() => setActiveTab('timer')}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer border-none"
+          >
+            ← Back to Workstation
+          </button>
+        </div>
+
+        {/* Haptic Vibration Feedback Panel */}
+        <div className="glass-panel p-5 bg-slate-900/50 border-white/5 rounded-2xl space-y-5">
+          <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+            <div className="flex items-center gap-2 text-blue-400">
+              <Vibrate className="w-5 h-5" />
+              <h4 className="text-sm font-bold uppercase tracking-wider">Haptic Vibration Feedback</h4>
+            </div>
+            <span className="text-[9px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+              TACTILE MONITOR ACTIVE
+            </span>
+          </div>
+
+          {/* Duration Slider */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-xs font-bold uppercase">
+              <label htmlFor="desktop-haptic-duration-slider" className="text-slate-300">Timer Event Vibration Duration</label>
+              <span className="text-blue-400 font-mono font-bold text-xs bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                {hapticDuration || 150} ms
+              </span>
+            </div>
+            <input 
+              id="desktop-haptic-duration-slider"
+              type="range"
+              min="50"
+              max="500"
+              step="10"
+              value={hapticDuration || 150}
+              onChange={(e) => setHapticDuration && setHapticDuration(parseInt(e.target.value, 10))}
+              className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            />
+            <div className="flex justify-between text-[8.5px] text-slate-500 font-mono uppercase font-bold">
+              <span>50ms (Short Burst)</span>
+              <span>250ms (Standard Resus)</span>
+              <span>500ms (Long Alert Pulse)</span>
+            </div>
+          </div>
+
+          {/* Intensity Slider */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-xs font-bold uppercase">
+              <label htmlFor="desktop-haptic-intensity-slider" className="text-slate-300">Vibration Pulse Intensity</label>
+              <span className="text-emerald-400 font-mono font-bold text-xs bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                Level {hapticIntensity || 3} ({ (hapticIntensity || 3) === 1 ? 'Soft' : (hapticIntensity || 3) === 2 ? 'Light' : (hapticIntensity || 3) === 3 ? 'Medium' : (hapticIntensity || 3) === 4 ? 'Strong' : 'Maximum' })
+              </span>
+            </div>
+            <input 
+              id="desktop-haptic-intensity-slider"
+              type="range"
+              min="1"
+              max="5"
+              step="1"
+              value={hapticIntensity || 3}
+              onChange={(e) => setHapticIntensity && setHapticIntensity(parseInt(e.target.value, 10))}
+              className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+            />
+            <div className="flex justify-between text-[8.5px] text-slate-500 font-mono uppercase font-bold">
+              <span>L1 (Subtle Pulse)</span>
+              <span>L3 (Standard Feedback)</span>
+              <span>L5 (Maximum Tactile Pulse)</span>
+            </div>
+          </div>
+
+          {/* Test Vibration Pattern Button */}
+          <button 
+            id="desktop-test-haptic-btn"
+            type="button"
+            onClick={() => vibrateDevice && vibrateDevice([150, 80, 200])}
+            className="w-full h-10 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 shadow"
+          >
+            <Activity className="w-4 h-4" /> Test Haptic Vibration Pattern
+          </button>
+        </div>
+
+        {/* Defibrillator Config */}
+        {setState && (
+          <div className="glass-panel p-5 bg-slate-900/40 border-white/5 rounded-2xl space-y-4">
+            <h4 className="text-xs uppercase font-bold text-slate-400 border-b border-white/5 pb-2">Defibrillator Energy Parameters</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <button 
+                type="button"
+                onClick={() => setState(prev => ({ ...prev, defibType: 'BIPHASIC', selectedEnergy: Math.min(200, prev.selectedEnergy) }))}
+                className={`py-2 rounded-xl border text-center transition-colors uppercase text-xs font-black cursor-pointer ${state.defibType === 'BIPHASIC' ? 'bg-blue-500/10 border-blue-500 text-blue-400' : 'bg-[#0b0f19] border-slate-800 text-slate-500'}`}
+              >
+                Biphasic
+              </button>
+              <button 
+                type="button"
+                onClick={() => setState(prev => ({ ...prev, defibType: 'MONOPHASIC', selectedEnergy: 360 }))}
+                className={`py-2 rounded-xl border text-center transition-colors uppercase text-xs font-black cursor-pointer ${state.defibType === 'MONOPHASIC' ? 'bg-blue-500/10 border-blue-500 text-blue-400' : 'bg-[#0b0f19] border-slate-800 text-slate-500'}`}
+              >
+                Monophasic
+              </button>
+            </div>
+
+            {state.defibType === 'BIPHASIC' && (
+              <div className="space-y-2 pt-1">
+                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">Shock Energy Level Selection</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {[120, 150, 200].map((joules) => (
+                    <button 
+                      key={joules}
+                      type="button"
+                      onClick={() => setState(prev => ({ ...prev, selectedEnergy: joules }))}
+                      className={`py-2 rounded-lg border text-xs font-mono font-bold transition-colors cursor-pointer ${state.selectedEnergy === joules ? 'bg-red-500 border-red-500 text-white' : 'bg-[#0b0f19] border-slate-800 text-slate-500'}`}
+                    >
+                      {joules} Joules
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* PWA offline */}
+        {triggerPwaInstall && (
+          <div className="glass-panel p-5 bg-emerald-950/10 border-emerald-500/20 rounded-2xl space-y-3">
+            <div className="flex items-center gap-2 text-emerald-400">
+              <Smartphone className="w-5 h-5" />
+              <h4 className="text-xs font-bold uppercase tracking-wider">Android PWA Direct Installer</h4>
+            </div>
+            <p className="text-xs text-slate-400 leading-normal uppercase font-bold">
+              Enable offline, sandboxed, fast operations inside emergency departments by pinning to tablet homescreen.
+            </p>
+            <button 
+              type="button"
+              onClick={triggerPwaInstall}
+              className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase text-xs tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer border-none shadow-md shadow-emerald-600/15"
+            >
+              <Download className="w-4 h-4" /> Add App to Tablet
+            </button>
+          </div>
+        )}
+
+        {/* Clear session */}
+        {setState && setHasSessionStarted && (
+          <button 
+            type="button"
+            onClick={() => {
+              if (confirm("Reset current resuscitation timers and delete recent code logs?")) {
+                setState(prev => ({
+                  ...prev,
+                  isTimerRunning: false,
+                  cprTimeLeft: CPR_CYCLE_DURATION,
+                  epiTimeLeft: EPI_INTERVAL,
+                  totalTime: 0,
+                  shocksCount: 0,
+                  epiCount: 0,
+                  currentRhythm: 'UNKNOWN',
+                  cprCycleCount: 0,
+                  logs: [],
+                  activePrompt: null,
+                  rhythmCheckTimeLeft: 0,
+                }));
+                setHasSessionStarted(false);
+              }
+            }}
+            className="w-full h-10 bg-red-650/15 border border-red-500/20 hover:bg-red-600 hover:text-white text-red-400/90 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          >
+            Wipe Patient Session
+          </button>
+        )}
+      </div>
+    );
+  };
   return (
     <div className="flex-1 flex overflow-hidden w-full h-full" id="desktop-viewport">
       {/* Sidebar Monitor (Persistent) */}
@@ -172,17 +376,37 @@ export default function DesktopDashboard({
               </span>
             </div>
           </div>
-          <button 
-            type="button"
-            onClick={() => setActiveTab('algorithm')}
-            className="px-3.5 py-1.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-emerald-400 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 hover:bg-emerald-500 hover:text-white transition-all cursor-pointer"
-          >
-            <ClipboardList className="w-4 h-4" /> Expand Flowchart
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              type="button"
+              onClick={() => setActiveTab('timer')}
+              className={`px-3 py-1.5 rounded-xl border text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'timer' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-white/10 text-slate-400'}`}
+            >
+              <Activity className="w-3.5 h-3.5" /> Workstation
+            </button>
+            <button 
+              type="button"
+              onClick={() => setActiveTab('algorithm')}
+              className={`px-3 py-1.5 rounded-xl border text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'algorithm' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-white/10 text-slate-400'}`}
+            >
+              <ClipboardList className="w-3.5 h-3.5" /> Flowchart
+            </button>
+            <button 
+              type="button"
+              onClick={() => setActiveTab('settings')}
+              className={`px-3 py-1.5 rounded-xl border text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'settings' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-white/10 text-slate-400'}`}
+            >
+              <Settings className="w-3.5 h-3.5" /> Settings
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
-          {/* Phase: Current Step */}
+          {activeTab === 'settings' ? (
+            renderDesktopSettings()
+          ) : (
+            <>
+              {/* Phase: Current Step */}
           <section className="glass-panel p-6 bg-slate-900/30 border-blue-500/10 relative overflow-hidden text-left rounded-2xl border border-white/5">
             <div className="relative z-10">
               <div className="flex items-center gap-1.5 mb-2">
@@ -281,6 +505,8 @@ export default function DesktopDashboard({
               </div>
             </section>
           </div>
+          </>
+          )}
         </div>
 
         {/* Footer info logs */}

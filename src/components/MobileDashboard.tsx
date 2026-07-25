@@ -16,7 +16,9 @@ import {
   Volume2,
   VolumeX,
   Lock,
-  Download
+  Download,
+  Vibrate,
+  Sliders
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -55,6 +57,10 @@ interface MobileDashboardProps {
   addLog: (type: EventType, description: string) => void;
   effectiveProfile: UserProfile;
   handleStartCPR: () => void;
+  hapticDuration: number;
+  setHapticDuration: React.Dispatch<React.SetStateAction<number>>;
+  hapticIntensity: number;
+  setHapticIntensity: React.Dispatch<React.SetStateAction<number>>;
 }
 
 export default function MobileDashboard({
@@ -83,7 +89,11 @@ export default function MobileDashboard({
   handleRhythmSelect,
   addLog,
   effectiveProfile,
-  handleStartCPR
+  handleStartCPR,
+  hapticDuration,
+  setHapticDuration,
+  hapticIntensity,
+  setHapticIntensity
 }: MobileDashboardProps) {
 
   // Signature Pad canvas logic
@@ -526,6 +536,77 @@ export default function MobileDashboard({
         <div>
           <h2 className="text-md font-display font-bold text-white uppercase tracking-tight">Configuration</h2>
           <p className="text-[8px] text-slate-500 uppercase font-black tracking-widest mt-0.5">Parameters & mobile device offline installations</p>
+        </div>
+
+        {/* Haptic Vibration Feedback Settings Panel */}
+        <div className="glass-panel p-3.5 bg-slate-900/50 border-white/5 rounded-xl space-y-3.5">
+          <div className="flex items-center justify-between border-b border-white/5 pb-1.5">
+            <div className="flex items-center gap-1.5 text-blue-400">
+              <Vibrate className="w-4 h-4" />
+              <span className="text-[9px] uppercase tracking-wider font-bold">Haptic Vibration Feedback</span>
+            </div>
+            <span className="text-[8px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+              TACTILE ACTIVE
+            </span>
+          </div>
+
+          {/* Slider 1: Vibration Duration */}
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-center text-[8.5px] uppercase font-bold">
+              <label htmlFor="mobile-haptic-duration-slider" className="text-slate-300">Vibration Burst Duration</label>
+              <span className="text-blue-400 font-mono font-bold text-[9.5px]">{hapticDuration} ms</span>
+            </div>
+            <input 
+              id="mobile-haptic-duration-slider"
+              type="range"
+              min="50"
+              max="500"
+              step="10"
+              value={hapticDuration}
+              onChange={(e) => setHapticDuration(parseInt(e.target.value, 10))}
+              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            />
+            <div className="flex justify-between text-[7.5px] text-slate-500 font-mono uppercase font-bold">
+              <span>50ms (Short)</span>
+              <span>250ms (Standard)</span>
+              <span>500ms (Long)</span>
+            </div>
+          </div>
+
+          {/* Slider 2: Vibration Intensity */}
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-center text-[8.5px] uppercase font-bold">
+              <label htmlFor="mobile-haptic-intensity-slider" className="text-slate-300">Vibration Pulse Intensity</label>
+              <span className="text-emerald-400 font-mono font-bold text-[9.5px]">
+                Level {hapticIntensity} ({hapticIntensity === 1 ? 'Soft' : hapticIntensity === 2 ? 'Light' : hapticIntensity === 3 ? 'Medium' : hapticIntensity === 4 ? 'Strong' : 'Maximum'})
+              </span>
+            </div>
+            <input 
+              id="mobile-haptic-intensity-slider"
+              type="range"
+              min="1"
+              max="5"
+              step="1"
+              value={hapticIntensity}
+              onChange={(e) => setHapticIntensity(parseInt(e.target.value, 10))}
+              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+            />
+            <div className="flex justify-between text-[7.5px] text-slate-500 font-mono uppercase font-bold">
+              <span>L1 (Subtle)</span>
+              <span>L3 (Standard)</span>
+              <span>L5 (Max Pulse)</span>
+            </div>
+          </div>
+
+          {/* Test Vibration Pattern Button */}
+          <button 
+            id="mobile-test-haptic-btn"
+            type="button"
+            onClick={() => vibrateDevice([150, 80, 200])}
+            className="w-full h-8.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:text-white rounded-lg text-[8.5px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shadow"
+          >
+            <Activity className="w-3.5 h-3.5" /> Test Haptic Vibration Pattern
+          </button>
         </div>
 
         {/* defib config */}

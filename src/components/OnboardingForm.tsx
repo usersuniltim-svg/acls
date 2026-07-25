@@ -32,20 +32,20 @@ export default function OnboardingForm({ onComplete }: OnboardingFormProps) {
     setError(null);
 
     try {
-      const userDocRef = doc(db, 'users', auth.currentUser.uid);
-      console.log("Saving profile to:", userDocRef.path);
+      const profileDocRef = doc(db, 'profiles', auth.currentUser.uid);
+      console.log("Saving profile to:", profileDocRef.path);
       const dataToSave = {
         ...formData,
         email: auth.currentUser.email,
-        onboardedAt: serverTimestamp(),
+        onboardedAt: Date.now(),
       };
       console.log("Payload:", dataToSave);
-      await setDoc(userDocRef, dataToSave);
+      await setDoc(profileDocRef, dataToSave);
       console.log("Profile saved successfully");
       onComplete();
     } catch (err) {
       setError("Failed to save profile. Please try again.");
-      handleFirestoreError(err, OperationType.CREATE, `users/${auth.currentUser.uid}`);
+      handleFirestoreError(err, OperationType.CREATE, `profiles/${auth.currentUser.uid}`);
     } finally {
       setIsSubmitting(false);
     }

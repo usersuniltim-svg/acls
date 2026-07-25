@@ -46,6 +46,25 @@ export default function App() {
   const [isInstallable, setIsInstallable] = useState(false);
   const [isVibrating, setIsVibrating] = useState(false);
   
+  // Haptic Vibration Settings
+  const [hapticDuration, setHapticDuration] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('acls_haptic_duration');
+      return saved ? parseInt(saved, 10) : 150;
+    } catch (e) {
+      return 150;
+    }
+  });
+
+  const [hapticIntensity, setHapticIntensity] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('acls_haptic_intensity');
+      return saved ? parseInt(saved, 10) : 3;
+    } catch (e) {
+      return 3;
+    }
+  });
+
   // Mobile Responsive detection
   const [isMobileScreen, setIsMobileScreen] = useState(false);
   const [activeTab, setActiveTab] = useState<'timer' | 'interventions' | 'algorithm' | 'logs' | 'settings'>('timer');
@@ -53,8 +72,14 @@ export default function App() {
   const [metronomeCount, setMetronomeCount] = useState(0);
 
   const [state, setState] = useState<AclsState>(() => {
-    const savedDefibType = localStorage.getItem('acls_defib_type');
-    const savedEnergy = localStorage.getItem('acls_selected_energy');
+    let savedDefibType: string | null = null;
+    let savedEnergy: string | null = null;
+    try {
+      savedDefibType = localStorage.getItem('acls_defib_type');
+      savedEnergy = localStorage.getItem('acls_selected_energy');
+    } catch (e) {
+      // Safe fallback if iframe blocks localStorage
+    }
     
     return {
       isTimerRunning: false,
@@ -133,23 +158,52 @@ export default function App() {
     setIsInstallable(false);
   };
 
+  const getScaledVibrationPattern = (basePattern: number | number[]): number | number[] => {
+    const durationFactor = hapticDuration / 150;
+    const intensityFactor = 0.25 + hapticIntensity * 0.25;
+    const totalFactor = durationFactor * intensityFactor;
+
+    if (typeof basePattern === 'number') {
+      return Math.max(10, Math.round(basePattern * totalFactor));
+    } else {
+      return basePattern.map((val, idx) => {
+        if (idx % 2 === 0) {
+          return Math.max(10, Math.round(val * totalFactor));
+        } else {
+          return Math.max(10, Math.round(val / Math.sqrt(intensityFactor)));
+        }
+      });
+    }
+  };
+
   const vibrateDevice = (pattern: number | number[]) => {
+    const scaledPattern = getScaledVibrationPattern(pattern);
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       try {
-        navigator.vibrate(pattern);
+        navigator.vibrate(scaledPattern);
       } catch (e) {
         // Safe fail in sandbox iframe
       }
     }
-    if (Array.isArray(pattern) && pattern.length > 2) {
-      setIsVibrating(true);
-      setTimeout(() => setIsVibrating(false), 600);
+    let totalDur = 400;
+    if (typeof scaledPattern === 'number') {
+      totalDur = scaledPattern;
+    } else if (Array.isArray(scaledPattern)) {
+      totalDur = scaledPattern.reduce((acc, curr) => acc + curr, 0);
     }
+    setIsVibrating(true);
+    setTimeout(() => setIsVibrating(false), Math.min(Math.max(totalDur, 300), 1200));
   };
 
   // Auth monitoring SNAP
   useEffect(() => {
+    // Fallback timer to ensure app loads even if Firebase Auth response is delayed in iframe sandbox
+    const fallbackTimer = setTimeout(() => {
+      setLoading(false);
+    }, 1000);
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      clearTimeout(fallbackTimer);
       if (profileUnsubscribeRef.current) {
         profileUnsubscribeRef.current();
         profileUnsubscribeRef.current = null;
@@ -174,11 +228,13 @@ export default function App() {
         setLoading(false);
       }
     }, (error) => {
+      clearTimeout(fallbackTimer);
       console.error("Auth fatal state error:", error);
       setLoading(false);
     });
 
     return () => {
+      clearTimeout(fallbackTimer);
       unsubscribe();
       if (profileUnsubscribeRef.current) {
         profileUnsubscribeRef.current();
@@ -186,11 +242,17 @@ export default function App() {
     };
   }, []);
 
-  // Sync Defibrillator configuration to LocalStorage
+  // Sync Defibrillator and Haptic configuration to LocalStorage
   useEffect(() => {
-    localStorage.setItem('acls_defib_type', state.defibType);
-    localStorage.setItem('acls_selected_energy', state.selectedEnergy.toString());
-  }, [state.defibType, state.selectedEnergy]);
+    try {
+      localStorage.setItem('acls_defib_type', state.defibType);
+      localStorage.setItem('acls_selected_energy', state.selectedEnergy.toString());
+      localStorage.setItem('acls_haptic_duration', hapticDuration.toString());
+      localStorage.setItem('acls_haptic_intensity', hapticIntensity.toString());
+    } catch (e) {
+      // Ignore if iframe sandbox blocks local storage
+    }
+  }, [state.defibType, state.selectedEnergy, hapticDuration, hapticIntensity]);
 
   // Metronome Sound and Click Sync
   useEffect(() => {
@@ -530,15 +592,22 @@ export default function App() {
           addLog={addLog}
           effectiveProfile={effectiveProfile}
           handleStartCPR={handleStartCPR}
+          hapticDuration={hapticDuration}
+          setHapticDuration={setHapticDuration}
+          hapticIntensity={hapticIntensity}
+          setHapticIntensity={setHapticIntensity}
         />
       );
     } else {
       return (
         <DesktopDashboard 
           state={state}
+          setState={setState}
+          setHasSessionStarted={setHasSessionStarted}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
           toggleTimer={toggleTimer}
           resetCprTimer={resetCprTimer}
-          setActiveTab={setActiveTab}
           handleShock={handleShock}
           handleEpi={handleEpi}
           handleRosc={handleRosc}
@@ -547,6 +616,12 @@ export default function App() {
           formatTime={formatTime}
           cprProgress={cprProgress}
           epiProgress={epiProgress}
+          vibrateDevice={vibrateDevice}
+          triggerPwaInstall={triggerPwaInstall}
+          hapticDuration={hapticDuration}
+          setHapticDuration={setHapticDuration}
+          hapticIntensity={hapticIntensity}
+          setHapticIntensity={setHapticIntensity}
         />
       );
     }

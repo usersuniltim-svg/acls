@@ -2,5 +2,7 @@
   "name": "ACLS 2025 Companion - Nepal Med",
   "description": "ACLS 2025 timer and algorithm guide for Nepali medical students and interns, following US standards for emergency cardiac care.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
