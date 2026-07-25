@@ -641,7 +641,7 @@ export default function App() {
             <motion.div 
               initial={{ scale: 0.92, y: 15 }}
               animate={{ scale: 1, y: 0 }}
-              className="glass-panel w-full max-w-sm p-6 text-center border-blue-500/25 bg-[#090e18] shadow-2xl rounded-2xl border"
+              className="glass-panel w-full max-w-sm p-6 text-center border-blue-500/25 bg-[#090e18] shadow-2xl rounded-2xl border max-h-[90vh] overflow-y-auto custom-scrollbar"
             >
               {state.activePrompt === 'RHYTHM_CHECK' && (
                 <div className="space-y-4">
@@ -746,7 +746,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050B16] text-[#E2E8F0] font-sans antialiased flex flex-col w-full" id="acls-app-root">
+    <div className="h-screen w-full bg-[#050B16] text-[#E2E8F0] font-sans antialiased flex flex-col overflow-hidden" id="acls-app-root">
       {/* Top minimal status bar for quick time / session info */}
       <div className="h-7 w-full bg-slate-950 px-4 flex items-center justify-between z-50 select-none text-[9px] font-bold text-slate-400 font-mono shrink-0 border-b border-white/5">
         <div className="flex items-center gap-2">
@@ -760,7 +760,7 @@ export default function App() {
         </div>
       </div>
 
-      <div className="flex-1 w-full flex flex-col overflow-hidden relative">
+      <div className="flex-1 w-full h-full flex flex-col overflow-hidden relative">
         {renderAppContent()}
       </div>
 

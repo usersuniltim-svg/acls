@@ -55,7 +55,7 @@ export default function OnboardingForm({ onComplete }: OnboardingFormProps) {
   const labelClasses = "block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1";
 
   return (
-    <div className="min-h-screen bg-medical-dark flex items-center justify-center p-4">
+    <div className="w-full min-h-screen bg-medical-dark flex items-center justify-center p-4 py-12 overflow-y-auto">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
