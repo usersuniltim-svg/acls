@@ -29,9 +29,25 @@ export interface AclsState {
   epiDueElapsed?: number;
 }
 
+export type KycStatus = 'unsubmitted' | 'pending' | 'approved' | 'rejected';
+
+export interface DoctorKyc {
+  councilRegistration: string;
+  degree: string;
+  specialty: string;
+  institution: string;
+  idCardNumber?: string;
+  kycStatus: KycStatus;
+  submittedAt?: number;
+  approvedAt?: number;
+  approvedBy?: string;
+  rejectionReason?: string;
+}
+
 export interface UserProfile {
+  uid?: string;
   fullName: string;
-  profession: 'doctor' | 'nurse' | 'paramedics';
+  profession: 'doctor' | 'nurse' | 'paramedics' | 'student';
   highestDegree: string;
   dob: string;
   sex: 'male' | 'female' | 'other';
@@ -39,4 +55,6 @@ export interface UserProfile {
   email: string;
   phone: string;
   onboardedAt: any; // Firestore Timestamp
+  isAdmin?: boolean;
+  kyc?: DoctorKyc;
 }

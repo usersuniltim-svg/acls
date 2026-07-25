@@ -47,6 +47,9 @@ interface DesktopDashboardProps {
   setHapticDuration?: React.Dispatch<React.SetStateAction<number>>;
   hapticIntensity?: number;
   setHapticIntensity?: React.Dispatch<React.SetStateAction<number>>;
+  onOpenAuth?: () => void;
+  onOpenKyc?: () => void;
+  onOpenAdmin?: () => void;
 }
 
 export default function DesktopDashboard({
@@ -70,7 +73,10 @@ export default function DesktopDashboard({
   hapticDuration,
   setHapticDuration,
   hapticIntensity,
-  setHapticIntensity
+  setHapticIntensity,
+  onOpenAuth,
+  onOpenKyc,
+  onOpenAdmin
 }: DesktopDashboardProps) {
 
   const renderDesktopSettings = () => {
@@ -364,19 +370,47 @@ export default function DesktopDashboard({
 
       {/* Main Algorithm Workstation Stage */}
       <main className="flex-1 flex flex-col p-6 overflow-hidden relative">
-        <header className="flex justify-between items-center mb-6 shrink-0 selection:bg-transparent">
+        <header className="flex flex-wrap justify-between items-center mb-6 shrink-0 gap-3 selection:bg-transparent">
           <div className="flex items-center gap-4">
             <div className="w-11 h-11 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-400 border border-blue-500/25">
               <User className="w-5 h-5" />
             </div>
             <div className="text-left">
-              <h2 className="text-xl font-display font-bold tracking-tight text-white">{effectiveProfile.fullName}</h2>
-              <span className="text-[8.5px] text-slate-500 uppercase tracking-widest font-black mt-1 block">
-                {effectiveProfile.profession.toUpperCase()} • License {effectiveProfile.councilRegistration}
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-display font-bold tracking-tight text-white">{effectiveProfile.fullName}</h2>
+                {effectiveProfile.kyc?.kycStatus === 'approved' && (
+                  <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded uppercase">
+                    ✓ VERIFIED
+                  </span>
+                )}
+              </div>
+              <span className="text-[8.5px] text-slate-500 uppercase tracking-widest font-black mt-0.5 block">
+                {effectiveProfile.profession.toUpperCase()} • NMC: {effectiveProfile.councilRegistration}
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={onOpenAuth}
+              className="px-3 py-1.5 rounded-xl border border-white/10 bg-slate-900 hover:bg-slate-800 text-slate-300 text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer"
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={onOpenKyc}
+              className="px-3 py-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1"
+            >
+              🩺 Doctor KYC
+            </button>
+            <button
+              type="button"
+              onClick={onOpenAdmin}
+              className="px-3 py-1.5 rounded-xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1"
+            >
+              🛡️ Admin
+            </button>
             <button 
               type="button"
               onClick={() => setActiveTab('timer')}
@@ -509,11 +543,21 @@ export default function DesktopDashboard({
           )}
         </div>
 
-        {/* Footer info logs */}
-        <footer className="mt-4 flex justify-between text-[9px] text-slate-600 uppercase tracking-[0.2em] font-bold select-none shrink-0 border-t border-white/5 pt-3">
-          <div>Nepal Resuscitation Registry • CCU Command</div>
-          <div>Location: KATHMANDU CENTRAL HOSPITAL</div>
-          <div>Database Sync: SECURE ENDPOINT</div>
+        {/* Footer info logs with mandatory disclaimer & copyright */}
+        <footer className="mt-4 flex flex-col gap-2 shrink-0 border-t border-white/10 pt-3 select-none">
+          <div className="flex justify-between text-[9px] text-slate-500 uppercase tracking-[0.15em] font-bold">
+            <div>Nepal Resuscitation Registry • CCU Command</div>
+            <div>Location: KATHMANDU CENTRAL HOSPITAL</div>
+            <div>Database Sync: SECURE ENDPOINT</div>
+          </div>
+          <div className="text-center pt-2 border-t border-white/5 space-y-1">
+            <p className="text-[10px] text-amber-300 font-medium leading-relaxed bg-amber-500/10 border border-amber-500/20 rounded-lg py-1.5 px-3 max-w-2xl mx-auto">
+              This app has not been validated clinically as a tool. It is intended to use for academic purpose. Please use cautiously.
+            </p>
+            <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+              Copyright © Dr. Sunil Timilsina, MBBS
+            </p>
+          </div>
         </footer>
       </main>
     </div>

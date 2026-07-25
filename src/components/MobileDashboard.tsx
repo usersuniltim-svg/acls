@@ -61,6 +61,9 @@ interface MobileDashboardProps {
   setHapticDuration: React.Dispatch<React.SetStateAction<number>>;
   hapticIntensity: number;
   setHapticIntensity: React.Dispatch<React.SetStateAction<number>>;
+  onOpenAuth?: () => void;
+  onOpenKyc?: () => void;
+  onOpenAdmin?: () => void;
 }
 
 export default function MobileDashboard({
@@ -93,7 +96,10 @@ export default function MobileDashboard({
   hapticDuration,
   setHapticDuration,
   hapticIntensity,
-  setHapticIntensity
+  setHapticIntensity,
+  onOpenAuth,
+  onOpenKyc,
+  onOpenAdmin
 }: MobileDashboardProps) {
 
   // Signature Pad canvas logic
@@ -180,6 +186,37 @@ export default function MobileDashboard({
   const renderMobileTimerTab = () => {
     return (
       <div className="space-y-4 flex flex-col items-center">
+        {/* Quick Practitioner Auth & KYC Bar */}
+        <div className="w-full flex items-center justify-between gap-1.5 bg-slate-900/80 p-2.5 rounded-xl border border-white/10 shrink-0 text-left">
+          <div className="space-y-0.5 truncate pr-1">
+            <span className="text-[10px] font-bold text-white block truncate">{effectiveProfile.fullName}</span>
+            <span className="text-[8px] text-slate-400 uppercase font-mono block">
+              {effectiveProfile.profession.toUpperCase()} • NMC: {effectiveProfile.councilRegistration}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={onOpenAuth}
+              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[8px] font-bold uppercase tracking-wider cursor-pointer border-none"
+            >
+              Auth
+            </button>
+            <button
+              onClick={onOpenKyc}
+              className="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[8px] font-bold uppercase tracking-wider cursor-pointer"
+            >
+              KYC
+            </button>
+            <button
+              onClick={onOpenAdmin}
+              className="px-2 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 rounded-lg text-[8px] font-bold uppercase tracking-wider cursor-pointer"
+            >
+              Admin
+            </button>
+          </div>
+        </div>
+
         {/* State Badge and Session Time */}
         <div className="w-full flex justify-between items-center bg-slate-900/50 p-3 rounded-xl border border-white/5 shrink-0">
           <div className="flex items-center gap-2">
@@ -734,6 +771,16 @@ export default function MobileDashboard({
         {activeTab === 'algorithm' && renderMobileAlgorithmTab()}
         {activeTab === 'logs' && renderMobileLogsTab()}
         {activeTab === 'settings' && renderMobileSettingsTab()}
+
+        {/* Mandatory Disclaimer & Copyright Notice Footer */}
+        <div className="mt-6 mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-center space-y-1">
+          <p className="text-[9.5px] text-amber-300 font-medium leading-tight">
+            This app has not been validated clinically as a tool. It is intended to use for academic purpose. Please use cautiously.
+          </p>
+          <p className="text-[9.5px] text-slate-400 font-semibold uppercase tracking-wider">
+            Copyright © Dr. Sunil Timilsina, MBBS
+          </p>
+        </div>
       </div>
 
       {/* Persistent Bottom Nav Tab bar */}

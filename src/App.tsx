@@ -30,6 +30,9 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import OnboardingForm from './components/OnboardingForm';
 import MobileDashboard from './components/MobileDashboard';
 import DesktopDashboard from './components/DesktopDashboard';
+import AuthModal from './components/AuthModal';
+import DoctorKycModal from './components/DoctorKycModal';
+import AdminKycPanel from './components/AdminKycPanel';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -37,6 +40,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const profileUnsubscribeRef = useRef<(() => void) | null>(null);
   const [hasSessionStarted, setHasSessionStarted] = useState(false);
+
+  // Modal Dialog States
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isKycModalOpen, setIsKycModalOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
 
   // Android & PWA App Variables
   const [deviceMode, setDeviceMode] = useState<'standalone' | 'phone_demo'>('phone_demo');
@@ -210,14 +218,26 @@ export default function App() {
       }
       setUser(currentUser);
       if (currentUser) {
-        const userDocRef = doc(db, 'users', currentUser.uid);
-        profileUnsubscribeRef.current = onSnapshot(userDocRef, (docSnap) => {
+        const profileDocRef = doc(db, 'profiles', currentUser.uid);
+        profileUnsubscribeRef.current = onSnapshot(profileDocRef, (docSnap) => {
           if (docSnap.exists()) {
             setProfile(docSnap.data() as UserProfile);
+            setLoading(false);
           } else {
-            setProfile(null);
+            // Check legacy 'users' path
+            const userDocRef = doc(db, 'users', currentUser.uid);
+            onSnapshot(userDocRef, (uSnap) => {
+              if (uSnap.exists()) {
+                setProfile(uSnap.data() as UserProfile);
+              } else {
+                setProfile(null);
+              }
+              setLoading(false);
+            }, () => {
+              setProfile(null);
+              setLoading(false);
+            });
           }
-          setLoading(false);
         }, (err) => {
           console.error("Profile error:", err);
           setProfile(null);
@@ -515,7 +535,7 @@ export default function App() {
           <motion.div 
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="max-w-md w-full glass-panel p-6 space-y-6 border-medical-blue/20 shadow-2xl"
+            className="max-w-md w-full glass-panel p-6 space-y-6 border-medical-blue/20 shadow-2xl my-auto"
           >
             {/* Pulse cardiology heart */}
             <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
@@ -535,12 +555,55 @@ export default function App() {
               <p className="text-[#3B82F6] text-[8.5px] uppercase tracking-widest font-mono font-bold mt-1">Practice & Live Monitor System • v3.0</p>
             </div>
 
-            <div className="p-3 bg-slate-900/40 rounded-xl border border-white/5 space-y-1 text-center font-sans">
-              <span className="text-[7.5px] uppercase tracking-widest text-[#64748B] font-heavy block">Identified Resuscicater</span>
+            <div className="p-4 bg-slate-900/60 rounded-xl border border-white/5 space-y-2 text-center font-sans">
+              <div className="flex items-center justify-between">
+                <span className="text-[8px] uppercase tracking-widest text-[#64748B] font-heavy block">Identified Practitioner</span>
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="text-[9px] text-blue-400 font-bold uppercase hover:underline bg-transparent border-none cursor-pointer"
+                >
+                  {user ? 'Sign Out / Switch' : 'Sign In / Register'}
+                </button>
+              </div>
+
               <span className="text-xs font-black text-slate-200 block">{effectiveProfile.fullName}</span>
               <p className="text-[8px] text-slate-450 font-mono">
                 {effectiveProfile.profession.toUpperCase()} • REG: {effectiveProfile.councilRegistration}
               </p>
+
+              {/* KYC and Admin buttons */}
+              <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-center gap-2">
+                {effectiveProfile.kyc?.kycStatus === 'approved' ? (
+                  <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+                    ✓ VERIFIED LICENSED DOCTOR
+                  </span>
+                ) : effectiveProfile.kyc?.kycStatus === 'pending' ? (
+                  <button 
+                    type="button"
+                    onClick={() => setIsKycModalOpen(true)}
+                    className="text-[9px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg cursor-pointer"
+                  >
+                    ⏳ KYC PENDING APPROVAL
+                  </button>
+                ) : (
+                  <button 
+                    type="button"
+                    onClick={() => setIsKycModalOpen(true)}
+                    className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
+                  >
+                    🩺 Doctor KYC Registration
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsAdminPanelOpen(true)}
+                  className="text-[9px] font-bold text-purple-300 bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
+                >
+                  🛡️ Admin Panel
+                </button>
+              </div>
             </div>
 
             <p className="text-slate-400 text-[10px] leading-relaxed max-w-sm mx-auto">
@@ -558,6 +621,16 @@ export default function App() {
             >
               <Play className="w-3.5 h-3.5 fill-current" /> Initialize Code Timer
             </button>
+
+            {/* MANDATORY CLINICAL DISCLAIMER & COPYRIGHT FOOTER */}
+            <div className="pt-4 border-t border-white/10 text-center space-y-2">
+              <p className="text-[10px] text-amber-300 font-medium leading-relaxed bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 shadow-sm">
+                This app has not been validated clinically as a tool. It is intended to use for academic purpose. Please use cautiously.
+              </p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                Copyright © Dr. Sunil Timilsina, MBBS
+              </p>
+            </div>
           </motion.div>
         </div>
       );
@@ -596,6 +669,9 @@ export default function App() {
           setHapticDuration={setHapticDuration}
           hapticIntensity={hapticIntensity}
           setHapticIntensity={setHapticIntensity}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
+          onOpenKyc={() => setIsKycModalOpen(true)}
+          onOpenAdmin={() => setIsAdminPanelOpen(true)}
         />
       );
     } else {
@@ -622,6 +698,9 @@ export default function App() {
           setHapticDuration={setHapticDuration}
           hapticIntensity={hapticIntensity}
           setHapticIntensity={setHapticIntensity}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
+          onOpenKyc={() => setIsKycModalOpen(true)}
+          onOpenAdmin={() => setIsAdminPanelOpen(true)}
         />
       );
     }
@@ -766,6 +845,22 @@ export default function App() {
 
       {/* Global Modals for alarms, shocks and rhythms check evaluations */}
       {renderGlobalPromptModals()}
+
+      {/* Auth, Doctor KYC, and Admin Board Modals */}
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)} 
+      />
+      <DoctorKycModal 
+        isOpen={isKycModalOpen} 
+        onClose={() => setIsKycModalOpen(false)} 
+        userProfile={profile} 
+      />
+      <AdminKycPanel 
+        isOpen={isAdminPanelOpen} 
+        onClose={() => setIsAdminPanelOpen(false)} 
+        currentUserEmail={user?.email || undefined} 
+      />
     </div>
   );
 }
