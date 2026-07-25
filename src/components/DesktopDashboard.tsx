@@ -20,9 +20,11 @@ import { motion } from 'motion/react';
 import { 
   AclsState,
   UserProfile,
-  PatientRhythm
+  PatientRhythm,
+  SavedCase
 } from '../types';
 import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
+import SavedCasesList from './SavedCasesList';
 import { auth } from '../lib/firebase';
 
 interface DesktopDashboardProps {
@@ -50,6 +52,11 @@ interface DesktopDashboardProps {
   onOpenAuth?: () => void;
   onOpenKyc?: () => void;
   onOpenAdmin?: () => void;
+  onOpenAdminPasswordModal?: () => void;
+  onSignOut?: () => void;
+  savedCases?: SavedCase[];
+  onSaveCurrentCase?: (patientCode: string) => boolean;
+  onDeleteCase?: (caseId: string) => void;
 }
 
 export default function DesktopDashboard({
@@ -76,7 +83,12 @@ export default function DesktopDashboard({
   setHapticIntensity,
   onOpenAuth,
   onOpenKyc,
-  onOpenAdmin
+  onOpenAdmin,
+  onOpenAdminPasswordModal,
+  onSignOut,
+  savedCases = [],
+  onSaveCurrentCase,
+  onDeleteCase,
 }: DesktopDashboardProps) {
 
   const renderDesktopSettings = () => {
@@ -362,7 +374,7 @@ export default function DesktopDashboard({
           <button onClick={() => setActiveTab('settings')} className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-755 text-slate-500 hover:text-white flex items-center justify-center transition-all cursor-pointer border-none">
             <Settings className="w-4 h-4" />
           </button>
-          <button onClick={() => auth.signOut()} className="w-10 h-10 rounded-xl bg-slate-850/50 hover:bg-red-500/10 text-slate-650 hover:text-red-500 flex items-center justify-center transition-all cursor-pointer border-none shadow-inner">
+          <button onClick={() => onSignOut ? onSignOut() : auth.signOut()} className="w-10 h-10 rounded-xl bg-slate-850/50 hover:bg-red-500/10 text-slate-650 hover:text-red-500 flex items-center justify-center transition-all cursor-pointer border-none shadow-inner" title="Logout">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
@@ -395,7 +407,7 @@ export default function DesktopDashboard({
               onClick={onOpenAuth}
               className="px-3 py-1.5 rounded-xl border border-white/10 bg-slate-900 hover:bg-slate-800 text-slate-300 text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer"
             >
-              Sign In
+              Sign In / Switch
             </button>
             <button
               type="button"
@@ -404,19 +416,28 @@ export default function DesktopDashboard({
             >
               🩺 Doctor KYC
             </button>
-            <button
-              type="button"
-              onClick={onOpenAdmin}
-              className="px-3 py-1.5 rounded-xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1"
-            >
-              🛡️ Admin
-            </button>
+            {onSignOut && (
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="px-3 py-1.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1"
+              >
+                <LogOut className="w-3.5 h-3.5" /> Logout
+              </button>
+            )}
             <button 
               type="button"
               onClick={() => setActiveTab('timer')}
               className={`px-3 py-1.5 rounded-xl border text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'timer' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-white/10 text-slate-400'}`}
             >
               <Activity className="w-3.5 h-3.5" /> Workstation
+            </button>
+            <button 
+              type="button"
+              onClick={() => setActiveTab('logs')}
+              className={`px-3 py-1.5 rounded-xl border text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'logs' ? 'bg-purple-500/20 border-purple-500 text-purple-300' : 'bg-slate-900 border-white/10 text-slate-400'}`}
+            >
+              <History className="w-3.5 h-3.5" /> Logs & Saved Cases ({savedCases.length}/3)
             </button>
             <button 
               type="button"
@@ -438,6 +459,45 @@ export default function DesktopDashboard({
         <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
           {activeTab === 'settings' ? (
             renderDesktopSettings()
+          ) : activeTab === 'logs' ? (
+            <div className="space-y-6">
+              {/* Active Session Event Logs Stream */}
+              <div className="glass-panel p-5 bg-slate-900/40 border-white/10 rounded-2xl space-y-3 text-left">
+                <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <History className="w-4 h-4 text-blue-400" /> Active Session Resuscitation Timeline
+                  </h3>
+                  <span className="text-[9px] font-mono text-slate-400">Total Events: {state.logs.length}</span>
+                </div>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar font-mono text-xs">
+                  {state.logs.length === 0 ? (
+                    <div className="text-center py-6 text-slate-500 uppercase text-[10px] tracking-wider">
+                      No events recorded in current active session. Start timers to build log stream.
+                    </div>
+                  ) : (
+                    state.logs.map((log) => (
+                      <div key={log.id} className="flex gap-3 items-start p-2 bg-slate-950/60 rounded-xl border border-white/5">
+                        <span className="text-[10px] font-mono text-blue-400 font-bold shrink-0">
+                          {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                        </span>
+                        <span className="text-slate-200 font-sans text-xs uppercase font-semibold">{log.description}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Saved Cases Manager (Max 3 Cases) */}
+              <SavedCasesList
+                savedCases={savedCases}
+                onSaveCurrentCase={onSaveCurrentCase || (() => false)}
+                onDeleteCase={onDeleteCase || (() => {})}
+                hasCurrentLogs={state.logs.length > 0}
+                practitionerName={effectiveProfile.fullName}
+                councilRegistration={effectiveProfile.councilRegistration}
+              />
+            </div>
           ) : (
             <>
               {/* Phase: Current Step */}
@@ -548,7 +608,14 @@ export default function DesktopDashboard({
           <div className="flex justify-between text-[9px] text-slate-500 uppercase tracking-[0.15em] font-bold">
             <div>Nepal Resuscitation Registry • CCU Command</div>
             <div>Location: KATHMANDU CENTRAL HOSPITAL</div>
-            <div>Database Sync: SECURE ENDPOINT</div>
+            <button
+              type="button"
+              onClick={onOpenAdminPasswordModal || onOpenAdmin}
+              className="text-slate-600 hover:text-slate-400 transition-colors bg-transparent border-none cursor-pointer uppercase tracking-[0.15em] font-bold text-[9px] flex items-center gap-1"
+              title="Medical Board Access"
+            >
+              Database Sync: SECURE ENDPOINT 🛡️
+            </button>
           </div>
           <div className="text-center pt-2 border-t border-white/5 space-y-1">
             <p className="text-[10px] text-amber-300 font-medium leading-relaxed bg-amber-500/10 border border-amber-500/20 rounded-lg py-1.5 px-3 max-w-2xl mx-auto">

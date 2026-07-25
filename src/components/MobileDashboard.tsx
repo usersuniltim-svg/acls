@@ -26,9 +26,11 @@ import {
   LogEvent, 
   PatientRhythm, 
   AclsState,
-  UserProfile 
+  UserProfile,
+  SavedCase
 } from '../types';
 import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
+import SavedCasesList from './SavedCasesList';
 
 interface MobileDashboardProps {
   state: AclsState;
@@ -64,6 +66,11 @@ interface MobileDashboardProps {
   onOpenAuth?: () => void;
   onOpenKyc?: () => void;
   onOpenAdmin?: () => void;
+  onOpenAdminPasswordModal?: () => void;
+  onSignOut?: () => void;
+  savedCases?: SavedCase[];
+  onSaveCurrentCase?: (patientCode: string) => boolean;
+  onDeleteCase?: (caseId: string) => void;
 }
 
 export default function MobileDashboard({
@@ -99,7 +106,12 @@ export default function MobileDashboard({
   setHapticIntensity,
   onOpenAuth,
   onOpenKyc,
-  onOpenAdmin
+  onOpenAdmin,
+  onOpenAdminPasswordModal,
+  onSignOut,
+  savedCases = [],
+  onSaveCurrentCase,
+  onDeleteCase,
 }: MobileDashboardProps) {
 
   // Signature Pad canvas logic
@@ -200,7 +212,7 @@ export default function MobileDashboard({
               onClick={onOpenAuth}
               className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[8px] font-bold uppercase tracking-wider cursor-pointer border-none"
             >
-              Auth
+              Sign In
             </button>
             <button
               onClick={onOpenKyc}
@@ -208,12 +220,14 @@ export default function MobileDashboard({
             >
               KYC
             </button>
-            <button
-              onClick={onOpenAdmin}
-              className="px-2 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 rounded-lg text-[8px] font-bold uppercase tracking-wider cursor-pointer"
-            >
-              Admin
-            </button>
+            {onSignOut && (
+              <button
+                onClick={onSignOut}
+                className="px-2 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 rounded-lg text-[8px] font-bold uppercase tracking-wider cursor-pointer"
+              >
+                Logout
+              </button>
+            )}
           </div>
         </div>
 
@@ -507,14 +521,17 @@ export default function MobileDashboard({
 
         {/* Core Timeline list */}
         <div className="glass-panel p-3 bg-slate-900/40 border-white/5 text-left rounded-xl space-y-2">
-          <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block border-b border-white/5 pb-1">Chronological Events</span>
-          <div className="space-y-2.5 max-h-40 overflow-y-auto pr-1 select-text custom-scrollbar">
+          <div className="flex justify-between items-center border-b border-white/5 pb-1">
+            <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block">Active Session Timeline</span>
+            <span className="text-[8px] font-mono text-slate-500">{state.logs.length} Events</span>
+          </div>
+          <div className="space-y-2 max-h-56 overflow-y-auto pr-1 select-text custom-scrollbar">
             {state.logs.length === 0 ? (
               <div className="text-center py-6 text-[8px] uppercase text-slate-650 tracking-wider">No active events recorded. Start timers to generate logs.</div>
             ) : (
               state.logs.map((log) => (
                 <div key={log.id} className="flex gap-2 items-start pl-2 border-l border-slate-800">
-                  <span className="text-[8px] font-mono text-slate-500 shrink-0 font-bold">
+                  <span className="text-[8px] font-mono text-blue-400 shrink-0 font-bold">
                     {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
                   </span>
                   <div>
@@ -525,6 +542,16 @@ export default function MobileDashboard({
             )}
           </div>
         </div>
+
+        {/* Saved Cases Manager (Max 3 Cases) */}
+        <SavedCasesList
+          savedCases={savedCases}
+          onSaveCurrentCase={onSaveCurrentCase || (() => false)}
+          onDeleteCase={onDeleteCase || (() => {})}
+          hasCurrentLogs={state.logs.length > 0}
+          practitionerName={effectiveProfile.fullName}
+          councilRegistration={effectiveProfile.councilRegistration}
+        />
 
         {/* Canvas Signature pad */}
         <div className="glass-panel p-3 bg-slate-900/40 border-white/5 rounded-xl space-y-1.5">
@@ -777,9 +804,19 @@ export default function MobileDashboard({
           <p className="text-[9.5px] text-amber-300 font-medium leading-tight">
             This app has not been validated clinically as a tool. It is intended to use for academic purpose. Please use cautiously.
           </p>
-          <p className="text-[9.5px] text-slate-400 font-semibold uppercase tracking-wider">
-            Copyright © Dr. Sunil Timilsina, MBBS
-          </p>
+          <div className="flex items-center justify-center gap-1.5 pt-1">
+            <p className="text-[9.5px] text-slate-400 font-semibold uppercase tracking-wider">
+              Copyright © Dr. Sunil Timilsina, MBBS
+            </p>
+            <button
+              type="button"
+              onClick={onOpenAdminPasswordModal || onOpenAdmin}
+              className="text-slate-600 hover:text-slate-400 text-[9px] p-0.5 bg-transparent border-none cursor-pointer"
+              title="Admin Portal"
+            >
+              🛡️
+            </button>
+          </div>
         </div>
       </div>
 

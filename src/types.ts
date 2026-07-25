@@ -44,6 +44,19 @@ export interface DoctorKyc {
   rejectionReason?: string;
 }
 
+export interface SavedCase {
+  id: string;
+  patientCode: string;
+  savedAt: number;
+  totalDuration: number;
+  cprCycleCount: number;
+  shocksCount: number;
+  epiCount: number;
+  logs: LogEvent[];
+  certifiedBy: string;
+  councilRegistration: string;
+}
+
 export interface UserProfile {
   uid?: string;
   fullName: string;
@@ -57,4 +70,5 @@ export interface UserProfile {
   onboardedAt: any; // Firestore Timestamp
   isAdmin?: boolean;
   kyc?: DoctorKyc;
+  savedCases?: SavedCase[];
 }

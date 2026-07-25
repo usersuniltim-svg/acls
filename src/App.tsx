@@ -17,7 +17,8 @@ import {
   LogEvent, 
   PatientRhythm, 
   AclsState,
-  UserProfile 
+  UserProfile,
+  SavedCase
 } from './types';
 import { 
   CPR_CYCLE_DURATION, 
@@ -25,14 +26,16 @@ import {
 } from './constants';
 import { MedicalAudio } from './lib/audio';
 import { auth, db } from './lib/firebase';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { doc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
 import OnboardingForm from './components/OnboardingForm';
 import MobileDashboard from './components/MobileDashboard';
 import DesktopDashboard from './components/DesktopDashboard';
 import AuthModal from './components/AuthModal';
 import DoctorKycModal from './components/DoctorKycModal';
 import AdminKycPanel from './components/AdminKycPanel';
+import AdminPasswordModal from './components/AdminPasswordModal';
+import VerificationGatekeeperModal from './components/VerificationGatekeeperModal';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -45,6 +48,18 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isKycModalOpen, setIsKycModalOpen] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const [isAdminPasswordModalOpen, setIsAdminPasswordModalOpen] = useState(false);
+  const [isVerificationGatekeeperOpen, setIsVerificationGatekeeperOpen] = useState(false);
+
+  // Saved Cases State (Max 3 Cases)
+  const [savedCases, setSavedCases] = useState<SavedCase[]>(() => {
+    try {
+      const raw = localStorage.getItem('acls_saved_cases');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  });
 
   // Android & PWA App Variables
   const [deviceMode, setDeviceMode] = useState<'standalone' | 'phone_demo'>('phone_demo');
@@ -487,6 +502,101 @@ export default function App() {
     setHasSessionStarted(true);
   };
 
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setUser(null);
+      setProfile(null);
+      setHasSessionStarted(false);
+    } catch (e) {
+      console.error("Sign out failed", e);
+    }
+  };
+
+  const handleSaveCurrentCase = (patientCode: string): boolean => {
+    if (savedCases.length >= 3) {
+      return false; // Limit of 3 cases reached
+    }
+
+    const newCase: SavedCase = {
+      id: `case_${Date.now()}`,
+      patientCode: patientCode || `CASE-${Date.now().toString().slice(-4)}`,
+      savedAt: Date.now(),
+      totalDuration: state.totalTime,
+      cprCycleCount: state.cprCycleCount,
+      shocksCount: state.shocksCount,
+      epiCount: state.epiCount,
+      logs: state.logs,
+      certifiedBy: effectiveProfile.fullName,
+      councilRegistration: effectiveProfile.councilRegistration,
+    };
+
+    const updated = [newCase, ...savedCases];
+    setSavedCases(updated);
+
+    try {
+      localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
+    } catch (e) {}
+
+    if (user?.uid) {
+      const profRef = doc(db, 'profiles', user.uid);
+      updateDoc(profRef, { savedCases: updated }).catch(() => {
+        const userRef = doc(db, 'users', user.uid);
+        updateDoc(userRef, { savedCases: updated }).catch(() => {});
+      });
+    }
+
+    return true;
+  };
+
+  const handleDeleteCase = (caseId: string) => {
+    const updated = savedCases.filter(c => c.id !== caseId);
+    setSavedCases(updated);
+
+    try {
+      localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
+    } catch (e) {}
+
+    if (user?.uid) {
+      const profRef = doc(db, 'profiles', user.uid);
+      updateDoc(profRef, { savedCases: updated }).catch(() => {
+        const userRef = doc(db, 'users', user.uid);
+        updateDoc(userRef, { savedCases: updated }).catch(() => {});
+      });
+    }
+  };
+
+  const handleInstantDemoVerify = async () => {
+    const verifiedKyc = {
+      degree: profile?.highestDegree || "MBBS / MD Specialist",
+      councilRegistration: profile?.councilRegistration || "NMC-8821",
+      specialty: "Emergency & Resuscitation",
+      institution: "Kathmandu Medical College",
+      kycStatus: 'approved' as const,
+      submittedAt: Date.now(),
+      approvedAt: Date.now(),
+    };
+
+    if (user?.uid) {
+      const profRef = doc(db, 'profiles', user.uid);
+      try {
+        await updateDoc(profRef, { kyc: verifiedKyc });
+      } catch (e) {
+        await setDoc(profRef, { kyc: verifiedKyc }, { merge: true });
+      }
+    }
+
+    setProfile(prev => {
+      const base = prev || effectiveProfile;
+      return {
+        ...base,
+        kyc: verifiedKyc
+      };
+    });
+
+    setIsVerificationGatekeeperOpen(false);
+  };
+
   const formatTime = (seconds: number) => {
     const min = Math.floor(seconds / 60);
     const sec = seconds % 60;
@@ -614,6 +724,11 @@ export default function App() {
               id="start-cpr-btn"
               onClick={() => {
                 vibrateDevice(80);
+                const isVerified = !!user && profile?.kyc?.kycStatus === 'approved';
+                if (!isVerified) {
+                  setIsVerificationGatekeeperOpen(true);
+                  return;
+                }
                 setActiveTab('timer');
                 handleStartCPR();
               }}
@@ -627,9 +742,19 @@ export default function App() {
               <p className="text-[10px] text-amber-300 font-medium leading-relaxed bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 shadow-sm">
                 This app has not been validated clinically as a tool. It is intended to use for academic purpose. Please use cautiously.
               </p>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                Copyright © Dr. Sunil Timilsina, MBBS
-              </p>
+              <div className="flex items-center justify-center gap-2">
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  Copyright © Dr. Sunil Timilsina, MBBS
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsAdminPasswordModalOpen(true)}
+                  className="text-slate-600 hover:text-slate-400 text-[9px] p-0.5 bg-transparent border-none cursor-pointer"
+                  title="Admin Board"
+                >
+                  🛡️
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>
@@ -672,6 +797,11 @@ export default function App() {
           onOpenAuth={() => setIsAuthModalOpen(true)}
           onOpenKyc={() => setIsKycModalOpen(true)}
           onOpenAdmin={() => setIsAdminPanelOpen(true)}
+          onOpenAdminPasswordModal={() => setIsAdminPasswordModalOpen(true)}
+          onSignOut={handleSignOut}
+          savedCases={savedCases}
+          onSaveCurrentCase={handleSaveCurrentCase}
+          onDeleteCase={handleDeleteCase}
         />
       );
     } else {
@@ -701,6 +831,11 @@ export default function App() {
           onOpenAuth={() => setIsAuthModalOpen(true)}
           onOpenKyc={() => setIsKycModalOpen(true)}
           onOpenAdmin={() => setIsAdminPanelOpen(true)}
+          onOpenAdminPasswordModal={() => setIsAdminPasswordModalOpen(true)}
+          onSignOut={handleSignOut}
+          savedCases={savedCases}
+          onSaveCurrentCase={handleSaveCurrentCase}
+          onDeleteCase={handleDeleteCase}
         />
       );
     }
@@ -846,7 +981,7 @@ export default function App() {
       {/* Global Modals for alarms, shocks and rhythms check evaluations */}
       {renderGlobalPromptModals()}
 
-      {/* Auth, Doctor KYC, and Admin Board Modals */}
+      {/* Auth, Doctor KYC, Admin Board, Admin Password Guard, & Verification Gatekeeper Modals */}
       <AuthModal 
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)} 
@@ -860,6 +995,29 @@ export default function App() {
         isOpen={isAdminPanelOpen} 
         onClose={() => setIsAdminPanelOpen(false)} 
         currentUserEmail={user?.email || undefined} 
+      />
+      <AdminPasswordModal
+        isOpen={isAdminPasswordModalOpen}
+        onClose={() => setIsAdminPasswordModalOpen(false)}
+        onSuccess={() => {
+          setIsAdminPasswordModalOpen(false);
+          setIsAdminPanelOpen(true);
+        }}
+      />
+      <VerificationGatekeeperModal
+        isOpen={isVerificationGatekeeperOpen}
+        onClose={() => setIsVerificationGatekeeperOpen(false)}
+        onOpenAuth={() => {
+          setIsVerificationGatekeeperOpen(false);
+          setIsAuthModalOpen(true);
+        }}
+        onOpenKyc={() => {
+          setIsVerificationGatekeeperOpen(false);
+          setIsKycModalOpen(true);
+        }}
+        onInstantDemoVerify={handleInstantDemoVerify}
+        user={user}
+        userProfile={profile}
       />
     </div>
   );
