@@ -14,17 +14,23 @@ import {
   User,
   Vibrate,
   Smartphone,
-  Download
+  Download,
+  Printer,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { 
   AclsState,
   UserProfile,
   PatientRhythm,
-  SavedCase
+  SavedCase,
+  EventType
 } from '../types';
 import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
 import SavedCasesList from './SavedCasesList';
+import LockedGuestOverlay from './LockedGuestOverlay';
+import PrintableReport from './PrintableReport';
 import { auth } from '../lib/firebase';
 
 interface DesktopDashboardProps {
@@ -39,6 +45,7 @@ interface DesktopDashboardProps {
   handleEpi: () => void;
   handleRosc: () => void;
   handleRhythmSelect: (rhythm: PatientRhythm) => void;
+  addLog?: (type: EventType, description: string) => void;
   effectiveProfile: UserProfile;
   formatTime: (seconds: number) => string;
   cprProgress: number;
@@ -55,8 +62,11 @@ interface DesktopDashboardProps {
   onOpenAdminPasswordModal?: () => void;
   onSignOut?: () => void;
   savedCases?: SavedCase[];
-  onSaveCurrentCase?: (patientCode: string) => boolean;
+  onSaveCurrentCase?: (patientCode: string, signatureDataUrl?: string) => boolean;
   onDeleteCase?: (caseId: string) => void;
+  isGuestMode?: boolean;
+  theme?: 'medical-white' | 'clinical-dark';
+  setTheme?: (theme: 'medical-white' | 'clinical-dark') => void;
 }
 
 export default function DesktopDashboard({
@@ -71,6 +81,7 @@ export default function DesktopDashboard({
   handleEpi,
   handleRosc,
   handleRhythmSelect,
+  addLog,
   effectiveProfile,
   formatTime,
   cprProgress,
@@ -89,7 +100,18 @@ export default function DesktopDashboard({
   savedCases = [],
   onSaveCurrentCase,
   onDeleteCase,
+  isGuestMode = false,
+  theme = 'medical-white',
+  setTheme,
 }: DesktopDashboardProps) {
+
+  const isVerifiedDoctor = Boolean(
+    effectiveProfile?.kyc?.kycStatus === 'approved' ||
+    effectiveProfile?.kyc?.kycStatus === 'pending' ||
+    (effectiveProfile?.councilRegistration && effectiveProfile?.councilRegistration !== 'GUEST-KMC-003') ||
+    effectiveProfile?.email
+  );
+  const hasFullAccess = !isGuestMode && isVerifiedDoctor;
 
   const renderDesktopSettings = () => {
     return (
@@ -106,6 +128,52 @@ export default function DesktopDashboard({
           >
             ← Back to Workstation
           </button>
+        </div>
+
+        {/* Display Theme Switcher Panel */}
+        <div className="glass-panel p-5 bg-slate-900/50 border-white/5 rounded-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+            <div className="flex items-center gap-2 text-indigo-400">
+              <Sun className="w-5 h-5 text-amber-400" />
+              <Moon className="w-5 h-5 text-indigo-400" />
+              <h4 className="text-sm font-bold uppercase tracking-wider">Interface Display Theme</h4>
+            </div>
+            <span className="text-[9px] font-mono text-blue-400 font-bold bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20">
+              {theme === 'clinical-dark' ? 'CLINICAL DARK (LOW LIGHT)' : 'MEDICAL WHITE'}
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-300 leading-relaxed font-sans">
+            Switch between high-contrast <strong>Medical White</strong> for daytime clinical tasks and <strong>Clinical Dark</strong> for low-light hospital environments or resuscitation bays. Your preference is persisted in local storage.
+          </p>
+
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => setTheme && setTheme('medical-white')}
+              className={`p-3.5 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                theme === 'medical-white'
+                  ? 'bg-white text-black border-red-600 shadow-lg ring-2 ring-red-600'
+                  : 'bg-slate-800 text-slate-300 border-white/10 hover:bg-slate-700'
+              }`}
+            >
+              <Sun className="w-4 h-4 text-amber-500" />
+              <span>Medical White</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTheme && setTheme('clinical-dark')}
+              className={`p-3.5 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                theme === 'clinical-dark'
+                  ? 'bg-slate-950 text-white border-blue-500 shadow-lg ring-2 ring-blue-500'
+                  : 'bg-slate-800 text-slate-300 border-white/10 hover:bg-slate-700'
+              }`}
+            >
+              <Moon className="w-4 h-4 text-indigo-400" />
+              <span>Clinical Dark</span>
+            </button>
+          </div>
         </div>
 
         {/* Haptic Vibration Feedback Panel */}
@@ -382,6 +450,30 @@ export default function DesktopDashboard({
 
       {/* Main Algorithm Workstation Stage */}
       <main className="flex-1 flex flex-col p-6 overflow-hidden relative">
+        {/* Guest Mode Limited Access Banner */}
+        {isGuestMode && (
+          <div className="mb-4 bg-amber-500/15 border border-amber-500/30 rounded-2xl p-3.5 flex items-center justify-between gap-4 text-amber-200 text-xs shadow-lg text-left select-none shrink-0">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+              <div>
+                <p className="font-extrabold text-[11px] uppercase tracking-wider text-amber-300">
+                  Guest Mode Active (CPR Timer, Metronome Sound & Haptic Loop)
+                </p>
+                <p className="text-[10px] text-amber-100/90 leading-relaxed font-sans">
+                  You are operating in Guest Mode. Please <strong className="text-white underline cursor-pointer" onClick={onOpenAuth}>Sign In</strong> to unlock full Resuscitation Registry, case saving & certified retrieval.
+                  For assistance, contact <a href="mailto:user.suniltim@gmail.com" className="text-amber-300 underline font-bold">user.suniltim@gmail.com</a>.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onOpenAuth}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider shrink-0 cursor-pointer border-none shadow-md"
+            >
+              Sign In For Full Access
+            </button>
+          </div>
+        )}
+
         <header className="flex flex-wrap justify-between items-center mb-6 shrink-0 gap-3 selection:bg-transparent">
           <div className="flex items-center gap-4">
             <div className="w-11 h-11 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-400 border border-blue-500/25">
@@ -402,6 +494,24 @@ export default function DesktopDashboard({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setTheme && setTheme(theme === 'clinical-dark' ? 'medical-white' : 'clinical-dark')}
+              className="px-3 py-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+              title="Toggle Medical White / Clinical Dark Theme"
+            >
+              {theme === 'clinical-dark' ? (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Medical White</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Clinical Dark</span>
+                </>
+              )}
+            </button>
             <button
               type="button"
               onClick={onOpenAuth}
@@ -458,46 +568,105 @@ export default function DesktopDashboard({
 
         <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
           {activeTab === 'settings' ? (
-            renderDesktopSettings()
+            hasFullAccess ? (
+              renderDesktopSettings()
+            ) : (
+              <LockedGuestOverlay onOpenAuth={onOpenAuth} onOpenKyc={onOpenKyc} />
+            )
           ) : activeTab === 'logs' ? (
-            <div className="space-y-6">
-              {/* Active Session Event Logs Stream */}
-              <div className="glass-panel p-5 bg-slate-900/40 border-white/10 rounded-2xl space-y-3 text-left">
-                <div className="flex justify-between items-center border-b border-white/10 pb-2">
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <History className="w-4 h-4 text-blue-400" /> Active Session Resuscitation Timeline
-                  </h3>
-                  <span className="text-[9px] font-mono text-slate-400">Total Events: {state.logs.length}</span>
+            hasFullAccess ? (
+              <div className="space-y-6">
+                {/* Active Session Event Logs Stream */}
+                <div className="glass-panel p-5 bg-slate-900/40 border-white/10 rounded-2xl space-y-3 text-left">
+                  <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <History className="w-4 h-4 text-blue-400" /> Active Session Resuscitation Timeline
+                    </h3>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[9px] font-mono text-slate-400">Total Events: {state.logs.length}</span>
+                      {state.logs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => window.print()}
+                          className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer border-none shadow-sm transition-all"
+                        >
+                          <Printer className="w-3 h-3" /> Print Active Report
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar font-mono text-xs">
+                    {state.logs.length === 0 ? (
+                      <div className="text-center py-6 text-slate-500 uppercase text-[10px] tracking-wider">
+                        No events recorded in current active session. Start timers to build log stream.
+                      </div>
+                    ) : (
+                      state.logs.map((log) => (
+                        <div key={log.id} className="flex gap-3 items-start p-2 bg-slate-950/60 rounded-xl border border-white/5">
+                          <span className="text-[10px] font-mono text-blue-400 font-bold shrink-0">
+                            {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                          </span>
+                          <span className="text-slate-200 font-sans text-xs uppercase font-semibold">{log.description}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar font-mono text-xs">
-                  {state.logs.length === 0 ? (
-                    <div className="text-center py-6 text-slate-500 uppercase text-[10px] tracking-wider">
-                      No events recorded in current active session. Start timers to build log stream.
-                    </div>
-                  ) : (
-                    state.logs.map((log) => (
-                      <div key={log.id} className="flex gap-3 items-start p-2 bg-slate-950/60 rounded-xl border border-white/5">
-                        <span className="text-[10px] font-mono text-blue-400 font-bold shrink-0">
-                          {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
-                        </span>
-                        <span className="text-slate-200 font-sans text-xs uppercase font-semibold">{log.description}</span>
-                      </div>
-                    ))
-                  )}
+                {/* ACTIVE SESSION PRINT REPORT (hidden on screen, triggers on window.print()) */}
+                {state.logs.length > 0 && (
+                  <PrintableReport
+                    patientCode="ACTIVE-SESSION"
+                    savedAt={new Date().getTime()}
+                    totalDuration={state.totalTime}
+                    cprCycleCount={state.cprCycleCount}
+                    shocksCount={state.shocksCount}
+                    epiCount={state.epiCount}
+                    logs={state.logs}
+                    certifiedBy={effectiveProfile.fullName}
+                    councilRegistration={effectiveProfile.councilRegistration}
+                    currentRhythm={state.currentRhythm}
+                  />
+                )}
+
+                {/* Saved Cases Manager (Max 3 Cases) */}
+                <SavedCasesList
+                  savedCases={savedCases}
+                  onSaveCurrentCase={onSaveCurrentCase || (() => false)}
+                  onDeleteCase={onDeleteCase || (() => {})}
+                  hasCurrentLogs={state.logs.length > 0}
+                  practitionerName={effectiveProfile.fullName}
+                  councilRegistration={effectiveProfile.councilRegistration}
+                />
+              </div>
+            ) : (
+              <LockedGuestOverlay onOpenAuth={onOpenAuth} onOpenKyc={onOpenKyc} />
+            )
+          ) : activeTab === 'algorithm' ? (
+            hasFullAccess ? (
+              <div className="glass-panel p-6 bg-slate-900/40 border-white/10 rounded-2xl space-y-4 text-left">
+                <h3 className="text-lg font-display font-bold text-white uppercase tracking-tight">ACLS Cardiac Arrest Pathway</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl space-y-2">
+                    <span className="text-xs font-black text-red-400 uppercase">VF / Pulseless VT (Shockable)</span>
+                    <p className="text-xs text-slate-300">1. Deliver Shock ({state.selectedEnergy}J)</p>
+                    <p className="text-xs text-slate-300">2. CPR 2 Min + IV/IO Access</p>
+                    <p className="text-xs text-slate-300">3. Epinephrine 1mg Q3-5M</p>
+                    <p className="text-xs text-slate-300">4. Amiodarone 300mg / Lidocaine 1-1.5mg/kg</p>
+                  </div>
+                  <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl space-y-2">
+                    <span className="text-xs font-black text-blue-400 uppercase">Asystole / PEA (Non-Shockable)</span>
+                    <p className="text-xs text-slate-300">1. Epinephrine 1mg ASAP</p>
+                    <p className="text-xs text-slate-300">2. CPR 2 Min + Advanced Airway</p>
+                    <p className="text-xs text-slate-300">3. Re-evaluate Rhythm Q2M</p>
+                    <p className="text-xs text-slate-300">4. Identify and Treat Reversible Causes (H's & T's)</p>
+                  </div>
                 </div>
               </div>
-
-              {/* Saved Cases Manager (Max 3 Cases) */}
-              <SavedCasesList
-                savedCases={savedCases}
-                onSaveCurrentCase={onSaveCurrentCase || (() => false)}
-                onDeleteCase={onDeleteCase || (() => {})}
-                hasCurrentLogs={state.logs.length > 0}
-                practitionerName={effectiveProfile.fullName}
-                councilRegistration={effectiveProfile.councilRegistration}
-              />
-            </div>
+            ) : (
+              <LockedGuestOverlay onOpenAuth={onOpenAuth} onOpenKyc={onOpenKyc} />
+            )
           ) : (
             <>
               {/* Phase: Current Step */}
@@ -575,7 +744,15 @@ export default function DesktopDashboard({
               <div className="grid grid-cols-2 gap-1.5">
                 {HS_AND_TS.map((item, idx) => (
                   <label key={idx} className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-900/35 border border-white/5 cursor-pointer hover:border-white/10 transition-colors">
-                    <input type="checkbox" className="w-3 h-3 rounded bg-slate-950 checked:bg-emerald-500 cursor-pointer" />
+                    <input 
+                      type="checkbox" 
+                      className="w-3 h-3 rounded bg-slate-950 checked:bg-emerald-500 cursor-pointer"
+                      onChange={(e) => {
+                        const status = e.target.checked ? 'IDENTIFIED' : 'CLEARED';
+                        if (addLog) addLog('INFO', `Diagnostic check: ${item.term} ${status}`);
+                        if (vibrateDevice) vibrateDevice(30);
+                      }}
+                    />
                     <span className="text-[9.5px] font-bold text-slate-400 uppercase tracking-tight leading-none leading-tight">{item.term}</span>
                   </label>
                 ))}
@@ -593,8 +770,20 @@ export default function DesktopDashboard({
                   Confirm ROSC achieve
                 </button>
                 <div className="grid grid-cols-2 gap-2">
-                  <button className="h-9 rounded-lg bg-slate-800 text-[8.5px] font-bold uppercase tracking-widest text-slate-400 border border-white/5 hover:text-white transition-colors cursor-pointer">Advanced Airway</button>
-                  <button className="h-9 rounded-lg bg-slate-800 text-[8.5px] font-bold uppercase tracking-widest text-slate-400 border border-white/5 hover:text-white transition-colors cursor-pointer">IV / IO Access</button>
+                  <button 
+                    type="button"
+                    onClick={() => addLog && addLog('ADVANCED_AIRWAY', 'Advanced Airway Intubated established')}
+                    className="h-9 rounded-lg bg-slate-800 text-[8.5px] font-bold uppercase tracking-widest text-slate-400 border border-white/5 hover:text-white transition-colors cursor-pointer"
+                  >
+                    Advanced Airway
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => addLog && addLog('INFO', 'Intravenous and Intraosseous Access confirmed')}
+                    className="h-9 rounded-lg bg-slate-800 text-[8.5px] font-bold uppercase tracking-widest text-slate-400 border border-white/5 hover:text-white transition-colors cursor-pointer"
+                  >
+                    IV / IO Access
+                  </button>
                 </div>
               </div>
             </section>

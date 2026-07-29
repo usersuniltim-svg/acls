@@ -55,6 +55,7 @@ export interface SavedCase {
   logs: LogEvent[];
   certifiedBy: string;
   councilRegistration: string;
+  signatureDataUrl?: string;
 }
 
 export interface UserProfile {

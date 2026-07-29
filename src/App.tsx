@@ -9,7 +9,15 @@ import {
   AlertCircle,
   Heart,
   Smartphone,
-  Laptop
+  Laptop,
+  ShieldCheck,
+  FileText,
+  X,
+  CheckCircle2,
+  Printer,
+  Sparkles,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -28,7 +36,6 @@ import { MedicalAudio } from './lib/audio';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
-import OnboardingForm from './components/OnboardingForm';
 import MobileDashboard from './components/MobileDashboard';
 import DesktopDashboard from './components/DesktopDashboard';
 import AuthModal from './components/AuthModal';
@@ -36,10 +43,65 @@ import DoctorKycModal from './components/DoctorKycModal';
 import AdminKycPanel from './components/AdminKycPanel';
 import AdminPasswordModal from './components/AdminPasswordModal';
 import VerificationGatekeeperModal from './components/VerificationGatekeeperModal';
+import SavedCasesList from './components/SavedCasesList';
+
+function CprLogo({ className = "w-28 h-auto" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 500 400" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Red Heart Outline */}
+      <path
+        d="M 250, 365 C 130, 270 45, 185 45, 115 C 45, 60 88, 20 145, 20 C 185, 20 225, 45 250, 75 C 275, 45 315, 20 355, 20 C 412, 20 455, 60 455, 115 C 455, 185 370, 270 250, 365 Z"
+        stroke="#E60000"
+        strokeWidth="32"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      {/* Black ECG Line */}
+      <path
+        d="M 5, 210 H 75 L 95, 140 L 115, 265 L 135, 75 L 160, 250 L 180, 185 L 195, 210 H 215"
+        stroke="#000000"
+        strokeWidth="18"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Rescuer Head */}
+      <circle cx="300" cy="52" r="32" fill="#000000" />
+      {/* Rescuer Torso & Arms */}
+      <path
+        d="M 252, 110 H 348 C 352, 110 355, 115 352, 125 L 320, 240 H 280 L 248, 125 C 245, 115 248, 110 252, 110 Z"
+        fill="#000000"
+      />
+      {/* White V-Cut inside Rescuer Torso */}
+      <path
+        d="M 276, 110 L 300, 195 L 324, 110 Z"
+        fill="#FFFFFF"
+      />
+      {/* Patient Head */}
+      <circle cx="180" cy="270" r="32" fill="#000000" />
+      {/* Patient Torso & Body Lying Down */}
+      <rect
+        x="210"
+        y="238"
+        width="240"
+        height="64"
+        rx="32"
+        fill="#000000"
+      />
+    </svg>
+  );
+}
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    try {
+      const raw = localStorage.getItem('acls_user_profile');
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState(true);
   const profileUnsubscribeRef = useRef<(() => void) | null>(null);
   const [hasSessionStarted, setHasSessionStarted] = useState(false);
@@ -50,6 +112,7 @@ export default function App() {
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [isAdminPasswordModalOpen, setIsAdminPasswordModalOpen] = useState(false);
   const [isVerificationGatekeeperOpen, setIsVerificationGatekeeperOpen] = useState(false);
+  const [isLandingSavedCasesOpen, setIsLandingSavedCasesOpen] = useState(false);
 
   // Saved Cases State (Max 3 Cases)
   const [savedCases, setSavedCases] = useState<SavedCase[]>(() => {
@@ -60,6 +123,8 @@ export default function App() {
       return [];
     }
   });
+
+  const [isGuestMode, setIsGuestMode] = useState(false);
 
   // Android & PWA App Variables
   const [deviceMode, setDeviceMode] = useState<'standalone' | 'phone_demo'>('phone_demo');
@@ -87,6 +152,34 @@ export default function App() {
       return 3;
     }
   });
+
+  // Display Theme State ('medical-white' | 'clinical-dark')
+  const [theme, setTheme] = useState<'medical-white' | 'clinical-dark'>(() => {
+    try {
+      const saved = localStorage.getItem('acls_theme');
+      if (saved === 'clinical-dark' || saved === 'medical-white') {
+        return saved;
+      }
+    } catch (e) {
+      // Safe fallback
+    }
+    return 'medical-white';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('acls_theme', theme);
+    } catch (e) {
+      // Safe fallback
+    }
+    if (theme === 'clinical-dark') {
+      document.documentElement.classList.add('clinical-dark');
+      document.documentElement.classList.remove('medical-white');
+    } else {
+      document.documentElement.classList.add('medical-white');
+      document.documentElement.classList.remove('clinical-dark');
+    }
+  }, [theme]);
 
   // Mobile Responsive detection
   const [isMobileScreen, setIsMobileScreen] = useState(false);
@@ -236,15 +329,48 @@ export default function App() {
         const profileDocRef = doc(db, 'profiles', currentUser.uid);
         profileUnsubscribeRef.current = onSnapshot(profileDocRef, (docSnap) => {
           if (docSnap.exists()) {
-            setProfile(docSnap.data() as UserProfile);
+            const pData = docSnap.data() as any;
+            setProfile(pData as UserProfile);
+            try {
+              localStorage.setItem('acls_user_profile', JSON.stringify(pData));
+              if (Array.isArray(pData.savedCases) && pData.savedCases.length > 0) {
+                setSavedCases((prev) => {
+                  const map = new Map<string, SavedCase>();
+                  pData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));
+                  prev.forEach((c) => map.set(c.id, c));
+                  const merged = Array.from(map.values()).slice(0, 3);
+                  try {
+                    localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
+                  } catch (e) {}
+                  return merged;
+                });
+              }
+            } catch (e) {}
             setLoading(false);
           } else {
             // Check legacy 'users' path
             const userDocRef = doc(db, 'users', currentUser.uid);
             onSnapshot(userDocRef, (uSnap) => {
               if (uSnap.exists()) {
-                setProfile(uSnap.data() as UserProfile);
+                const uData = uSnap.data() as any;
+                setProfile(uData as UserProfile);
+                try {
+                  localStorage.setItem('acls_user_profile', JSON.stringify(uData));
+                  if (Array.isArray(uData.savedCases) && uData.savedCases.length > 0) {
+                    setSavedCases((prev) => {
+                      const map = new Map<string, SavedCase>();
+                      uData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));
+                      prev.forEach((c) => map.set(c.id, c));
+                      const merged = Array.from(map.values()).slice(0, 3);
+                      try {
+                        localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
+                      } catch (e) {}
+                      return merged;
+                    });
+                  }
+                } catch (e) {}
               } else {
+
                 setProfile(null);
               }
               setLoading(false);
@@ -513,7 +639,7 @@ export default function App() {
     }
   };
 
-  const handleSaveCurrentCase = (patientCode: string): boolean => {
+  const handleSaveCurrentCase = (patientCode: string, signatureDataUrl?: string): boolean => {
     if (savedCases.length >= 3) {
       return false; // Limit of 3 cases reached
     }
@@ -529,6 +655,7 @@ export default function App() {
       logs: state.logs,
       certifiedBy: effectiveProfile.fullName,
       councilRegistration: effectiveProfile.councilRegistration,
+      signatureDataUrl: signatureDataUrl || '',
     };
 
     const updated = [newCase, ...savedCases];
@@ -627,115 +754,127 @@ export default function App() {
     onboardedAt: Date.now()
   };
 
-  // Onboarding check if they logged in but never entered credentials
-  if (user && !profile) {
-    return (
-      <div className="min-h-screen bg-medical-dark flex items-center justify-center p-6">
-        <OnboardingForm onComplete={() => {}} />
-      </div>
-    );
-  }
-
   const renderInMobileLayout = isMobileScreen;
 
   const renderAppContent = () => {
     if (!hasSessionStarted) {
       return (
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none bg-medical-dark overflow-y-auto" id="landing-screen">
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none bg-white text-black overflow-y-auto" id="landing-screen">
           <motion.div 
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="max-w-md w-full glass-panel p-6 space-y-6 border-medical-blue/20 shadow-2xl my-auto"
+            className="max-w-md w-full bg-white p-6 space-y-6 border border-gray-300 rounded-3xl shadow-xl my-auto text-black"
           >
-            {/* Pulse cardiology heart */}
-            <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
-              <motion.div 
-                animate={{ scale: [1, 1.15, 1] }}
-                transition={{ repeat: Infinity, duration: 1.2 }}
-                className="absolute inset-0 bg-red-500/10 rounded-full blur-xl"
-              />
-              <div className="w-14 h-14 bg-red-500/15 border border-red-500/25 rounded-2xl flex items-center justify-center text-red-500 shadow-md">
-                <Heart className="w-7 h-7 fill-current animate-pulse animate-med-pulse" />
-              </div>
+            {/* CPR Logo Graphic */}
+            <div className="mx-auto flex items-center justify-center">
+              <CprLogo className="w-28 sm:w-32 h-auto max-h-24" />
             </div>
 
             <div>
-              <span className="text-[8px] text-slate-550 uppercase tracking-[0.25em] font-black block mb-1">Nepal Resuscitation Registry • Kathmandu</span>
-              <h1 className="text-2xl font-display font-bold text-white tracking-tight">ACLS Companion</h1>
-              <p className="text-[#3B82F6] text-[8.5px] uppercase tracking-widest font-mono font-bold mt-1">Practice & Live Monitor System • v3.0</p>
-            </div>
-
-            <div className="p-4 bg-slate-900/60 rounded-xl border border-white/5 space-y-2 text-center font-sans">
-              <div className="flex items-center justify-between">
-                <span className="text-[8px] uppercase tracking-widest text-[#64748B] font-heavy block">Identified Practitioner</span>
+              <div className="flex items-center justify-between mb-1">
+                <h1 className="text-2xl font-display font-bold tracking-tight">ACLS Companion</h1>
                 <button
                   type="button"
-                  onClick={() => setIsAuthModalOpen(true)}
-                  className="text-[9px] text-blue-400 font-bold uppercase hover:underline bg-transparent border-none cursor-pointer"
+                  onClick={() => setTheme(theme === 'clinical-dark' ? 'medical-white' : 'clinical-dark')}
+                  className="px-2.5 py-1 rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
+                  title="Switch theme"
                 >
-                  {user ? 'Sign Out / Switch' : 'Sign In / Register'}
+                  {theme === 'clinical-dark' ? (
+                    <>
+                      <Sun className="w-3.5 h-3.5 text-amber-400" />
+                      <span>White Theme</span>
+                    </>
+                  ) : (
+                    <>
+                      <Moon className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Dark Theme</span>
+                    </>
+                  )}
                 </button>
               </div>
-
-              <span className="text-xs font-black text-slate-200 block">{effectiveProfile.fullName}</span>
-              <p className="text-[8px] text-slate-450 font-mono">
-                {effectiveProfile.profession.toUpperCase()} • REG: {effectiveProfile.councilRegistration}
-              </p>
-
-              {/* KYC and Admin buttons */}
-              <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-center gap-2">
-                {effectiveProfile.kyc?.kycStatus === 'approved' ? (
-                  <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
-                    ✓ VERIFIED LICENSED DOCTOR
-                  </span>
-                ) : effectiveProfile.kyc?.kycStatus === 'pending' ? (
-                  <button 
-                    type="button"
-                    onClick={() => setIsKycModalOpen(true)}
-                    className="text-[9px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg cursor-pointer"
-                  >
-                    ⏳ KYC PENDING APPROVAL
-                  </button>
-                ) : (
-                  <button 
-                    type="button"
-                    onClick={() => setIsKycModalOpen(true)}
-                    className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
-                  >
-                    🩺 Doctor KYC Registration
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setIsAdminPanelOpen(true)}
-                  className="text-[9px] font-bold text-purple-300 bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
-                >
-                  🛡️ Admin Panel
-                </button>
-              </div>
+              <p className="text-red-600 text-[8.5px] uppercase tracking-widest font-mono font-bold">Practice & Live Monitor System • v3.0</p>
             </div>
 
-            <p className="text-slate-400 text-[10px] leading-relaxed max-w-sm mx-auto">
+            <p className="text-gray-700 text-[10px] leading-relaxed max-w-sm mx-auto font-medium">
               Please calibrate defibrillation joules. In case of active arrest code, click below immediately to activate resuscitation logs.
             </p>
 
-            <button 
-              id="start-cpr-btn"
-              onClick={() => {
-                vibrateDevice(80);
-                const isVerified = !!user && profile?.kyc?.kycStatus === 'approved';
-                if (!isVerified) {
-                  setIsVerificationGatekeeperOpen(true);
-                  return;
-                }
-                setActiveTab('timer');
-                handleStartCPR();
-              }}
-              className="w-full h-12 bg-red-650 hover:bg-red-500 text-white rounded-xl font-black flex items-center justify-center gap-2 transition-all active:scale-95 shadow-xl shadow-red-500/10 uppercase tracking-widest text-[10px] border-none cursor-pointer"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" /> Initialize Code Timer
-            </button>
+            {/* PRIMARY ACCESS BUTTONS (RED BUTTONS) */}
+            <div className="space-y-3 pt-2">
+              {/* BUTTON 1: SIGN IN / FULL ACCESS */}
+              <button 
+                id="start-full-access-btn"
+                onClick={() => {
+                  vibrateDevice(80);
+                  setIsGuestMode(false);
+                  if (user) {
+                    setActiveTab('timer');
+                    handleStartCPR();
+                  } else {
+                    setIsAuthModalOpen(true);
+                  }
+                }}
+                className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+              >
+                <div className="space-y-0.5">
+                  <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-white" />
+                    1. Sign In & Full Access
+                  </span>
+                  <p className="text-[8.5px] text-white/90 font-normal">
+                    Full Resuscitation Registry, Case Logging, Digital Signature & Retrieval
+                  </p>
+                </div>
+              </button>
+
+              {/* BUTTON 2: GUEST MODE */}
+              <button 
+                id="start-guest-mode-btn"
+                onClick={() => {
+                  vibrateDevice(60);
+                  setIsGuestMode(true);
+                  setActiveTab('timer');
+                  handleStartCPR();
+                }}
+                className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+              >
+                <div className="space-y-0.5">
+                  <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                    <Activity className="w-4 h-4 text-white" />
+                    2. Guest Mode (Limited Access Only)
+                  </span>
+                </div>
+              </button>
+            </div>
+
+            {/* MODAL: LANDING SAVED CASES & LOGS */}
+            {isLandingSavedCasesOpen && (
+              <div className="fixed inset-0 z-[300] bg-black/50 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="w-full max-w-xl bg-white border border-gray-300 rounded-2xl p-5 relative max-h-[90vh] overflow-y-auto space-y-4 text-left shadow-2xl text-black">
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-3">
+                    <h3 className="text-sm font-bold uppercase text-black flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-red-600" />
+                      Saved Resuscitation Registry Logs
+                    </h3>
+                    <button 
+                      onClick={() => setIsLandingSavedCasesOpen(false)}
+                      className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg cursor-pointer border-none"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <SavedCasesList
+                    savedCases={savedCases}
+                    onSaveCurrentCase={handleSaveCurrentCase}
+                    onDeleteCase={handleDeleteCase}
+                    hasCurrentLogs={state.logs.length > 0}
+                    practitionerName={effectiveProfile.fullName}
+                    councilRegistration={effectiveProfile.councilRegistration}
+                  />
+                </div>
+              </div>
+            )}
+
 
             {/* MANDATORY CLINICAL DISCLAIMER & COPYRIGHT FOOTER */}
             <div className="pt-4 border-t border-white/10 text-center space-y-2">
@@ -802,6 +941,9 @@ export default function App() {
           savedCases={savedCases}
           onSaveCurrentCase={handleSaveCurrentCase}
           onDeleteCase={handleDeleteCase}
+          isGuestMode={isGuestMode}
+          theme={theme}
+          setTheme={setTheme}
         />
       );
     } else {
@@ -818,6 +960,7 @@ export default function App() {
           handleEpi={handleEpi}
           handleRosc={handleRosc}
           handleRhythmSelect={handleRhythmSelect}
+          addLog={addLog}
           effectiveProfile={effectiveProfile}
           formatTime={formatTime}
           cprProgress={cprProgress}
@@ -836,6 +979,9 @@ export default function App() {
           savedCases={savedCases}
           onSaveCurrentCase={handleSaveCurrentCase}
           onDeleteCase={handleDeleteCase}
+          isGuestMode={isGuestMode}
+          theme={theme}
+          setTheme={setTheme}
         />
       );
     }
@@ -845,52 +991,53 @@ export default function App() {
   const renderGlobalPromptModals = () => {
     return (
       <AnimatePresence>
+        {/* Prompts Overlay Modal */}
         {state.activePrompt && state.activePrompt !== 'EPI_DUE' && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-6 select-none"
+            className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-md flex items-center justify-center p-6 select-none"
           >
             <motion.div 
               initial={{ scale: 0.92, y: 15 }}
               animate={{ scale: 1, y: 0 }}
-              className="glass-panel w-full max-w-sm p-6 text-center border-blue-500/25 bg-[#090e18] shadow-2xl rounded-2xl border max-h-[90vh] overflow-y-auto custom-scrollbar"
+              className="bg-white text-black w-full max-w-sm p-6 text-center border border-gray-300 shadow-2xl rounded-2xl max-h-[90vh] overflow-y-auto custom-scrollbar"
             >
               {state.activePrompt === 'RHYTHM_CHECK' && (
                 <div className="space-y-4">
-                  <div className="w-14 h-14 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto text-blue-400 animate-pulse border border-blue-500/30">
+                  <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto text-red-600 animate-pulse border border-red-300">
                     <Activity className="w-7 h-7" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-display font-black text-white uppercase tracking-tight">Rhythm Evaluation Pause</h3>
-                    <p className="text-[#94A3B8] text-[9px] uppercase tracking-widest font-bold mt-1">Interrupted Chest Compressions (Max 10s)</p>
+                    <h3 className="text-xl font-display font-black text-black uppercase tracking-tight">Rhythm Evaluation Pause</h3>
+                    <p className="text-gray-600 text-[9px] uppercase tracking-widest font-bold mt-1">Interrupted Chest Compressions (Max 10s)</p>
                   </div>
 
                   {/* Progress evaluation timer bar */}
                   <div className="space-y-1 pb-1">
-                    <div className="flex justify-between items-center text-[9px] font-mono font-bold text-slate-550">
+                    <div className="flex justify-between items-center text-[9px] font-mono font-bold text-gray-700">
                       <span>EVALUATION INTERRUPTED</span>
-                      <span className={state.rhythmCheckTimeLeft <= 3 ? 'text-red-400 font-bold animate-ping' : 'text-blue-400'}>{state.rhythmCheckTimeLeft}s</span>
+                      <span className={state.rhythmCheckTimeLeft <= 3 ? 'text-red-600 font-bold animate-ping' : 'text-red-600'}>{state.rhythmCheckTimeLeft}s</span>
                     </div>
-                    <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
-                      <motion.div className="h-full bg-blue-500" animate={{ width: `${(state.rhythmCheckTimeLeft / 10) * 100}%` }} />
+                    <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                      <motion.div className="h-full bg-red-600" animate={{ width: `${(state.rhythmCheckTimeLeft / 10) * 100}%` }} />
                     </div>
                     {state.rhythmCheckTimeLeft === 0 && (
-                      <p className="text-[8px] text-red-500 uppercase font-black tracking-wider animate-pulse pt-0.5">⚠️ BREACH ALERT: RESUME CPR IMMEDIATELY</p>
+                      <p className="text-[8px] text-red-600 uppercase font-black tracking-wider animate-pulse pt-0.5">⚠️ BREACH ALERT: RESUME CPR IMMEDIATELY</p>
                     )}
                   </div>
 
                   <div className="grid grid-cols-1 gap-2">
                     <button 
                       onClick={() => handleRhythmSelect('SHOCKABLE')}
-                      className="h-11 rounded-xl bg-red-650 hover:bg-red-500 text-white text-[10px] font-bold uppercase tracking-widest transition-transform cursor-pointer border-none shadow-lg shadow-red-600/15"
+                      className="h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold uppercase tracking-widest transition-transform cursor-pointer border-none shadow-md"
                     >
                       VF / pulseless VT (YES SHOCK)
                     </button>
                     <button 
                       onClick={() => handleRhythmSelect('NON_SHOCKABLE')}
-                      className="h-11 rounded-xl bg-slate-800 text-slate-350 hover:text-white hover:bg-slate-700 text-[10px] font-bold uppercase tracking-widest transition-transform cursor-pointer border-none"
+                      className="h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold uppercase tracking-widest transition-transform cursor-pointer border-none shadow-md"
                     >
                       Asystole / PEA (NO SHOCK)
                     </button>
@@ -900,17 +1047,17 @@ export default function App() {
 
               {state.activePrompt === 'SHOCK_ADVISED' && (
                 <div className="space-y-4">
-                  <div className="w-14 h-14 bg-red-500/10 rounded-full flex items-center justify-center mx-auto text-red-400 border border-red-500/20 shadow shadow-red-500/10">
-                    <Zap className="w-7 h-7 fill-current animate-bounce animate-pulse" />
+                  <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto text-red-600 border border-red-300 shadow">
+                    <Zap className="w-7 h-7 fill-current animate-bounce" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-display font-black text-red-500 uppercase tracking-tight">Shock Advised!</h3>
-                    <p className="text-[#E2E8F0] text-xs font-black uppercase tracking-wider">CLEAR ALL STANDERS</p>
+                    <h3 className="text-xl font-display font-black text-red-600 uppercase tracking-tight">Shock Advised!</h3>
+                    <p className="text-black text-xs font-black uppercase tracking-wider">CLEAR ALL STANDERS</p>
                   </div>
                   
                   <button 
                     onClick={handleShock}
-                    className="w-full h-12 rounded-xl bg-red-650 text-white font-bold uppercase text-[10px] tracking-widest border-none shadow-lg shadow-red-650/20"
+                    className="w-full h-12 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase text-[10px] tracking-widest border-none shadow-md cursor-pointer"
                   >
                     DELIVER RESCUE SHOCK ({state.selectedEnergy}J)
                   </button>
@@ -919,18 +1066,18 @@ export default function App() {
 
               {state.activePrompt === 'EPI_ADVISED' && (
                 <div className="space-y-4">
-                  <div className="w-14 h-14 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto text-blue-400 border border-blue-500/20">
+                  <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto text-red-600 border border-red-300">
                     <Syringe className="w-7 h-7" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-display font-black text-blue-400 uppercase tracking-tight">Non-Shockable protocol</h3>
-                    <p className="text-[#94A3B8] text-[9.5px] uppercase font-bold tracking-widest mt-1">Dispense drug & continue chest loops</p>
+                    <h3 className="text-xl font-display font-black text-black uppercase tracking-tight">Non-Shockable protocol</h3>
+                    <p className="text-gray-600 text-[9.5px] uppercase font-bold tracking-widest mt-1">Dispense drug & continue chest loops</p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-2 pt-2">
                     <button 
                       onClick={handleEpi}
-                      className="w-full h-11 rounded-xl bg-blue-500 text-white font-bold uppercase text-[9.5px] tracking-widest border-none flex items-center justify-center gap-1 shadow-md"
+                      className="w-full h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase text-[9.5px] tracking-widest border-none flex items-center justify-center gap-1 shadow-md cursor-pointer"
                     >
                       <Syringe className="w-3.5 h-3.5" /> Administer 1mg Epi
                     </button>
@@ -945,7 +1092,7 @@ export default function App() {
                           cprCycleCount: prev.cprCycleCount + 1
                         }));
                       }}
-                      className="w-full h-11 rounded-xl bg-white text-medical-dark font-bold uppercase text-[9.5px] tracking-widest"
+                      className="w-full h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase text-[9.5px] tracking-widest cursor-pointer border-none"
                     >
                       Bypass to CPR Cycle #{state.cprCycleCount + 1}
                     </button>
@@ -960,17 +1107,17 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen w-full bg-[#050B16] text-[#E2E8F0] font-sans antialiased flex flex-col overflow-hidden" id="acls-app-root">
+    <div className="h-screen w-full bg-white text-black font-sans antialiased flex flex-col overflow-hidden" id="acls-app-root">
       {/* Top minimal status bar for quick time / session info */}
-      <div className="h-7 w-full bg-slate-950 px-4 flex items-center justify-between z-50 select-none text-[9px] font-bold text-slate-400 font-mono shrink-0 border-b border-white/5">
+      <div className="h-7 w-full bg-gray-100 px-4 flex items-center justify-between z-50 select-none text-[9px] font-bold text-gray-800 font-mono shrink-0 border-b border-gray-300">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-emerald-400 font-bold uppercase tracking-wider">Nepal Resuscitation Command</span>
+          <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+          <span className="text-black font-bold uppercase tracking-wider">Resuscitation Command</span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-slate-500 font-sans hidden sm:inline">{effectiveProfile.fullName} ({effectiveProfile.profession.toUpperCase()})</span>
+          <span className="text-gray-700 font-sans hidden sm:inline">{effectiveProfile.fullName} ({effectiveProfile.profession.toUpperCase()})</span>
           <span>🔋 {batteryLevel}%</span>
-          <span className="text-white font-sans ml-1 font-bold">{phoneTime}</span>
+          <span className="text-black font-sans ml-1 font-bold">{phoneTime}</span>
         </div>
       </div>
 

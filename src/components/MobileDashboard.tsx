@@ -18,7 +18,10 @@ import {
   Lock,
   Download,
   Vibrate,
-  Sliders
+  Sliders,
+  Printer,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -31,6 +34,8 @@ import {
 } from '../types';
 import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
 import SavedCasesList from './SavedCasesList';
+import LockedGuestOverlay from './LockedGuestOverlay';
+import PrintableReport from './PrintableReport';
 
 interface MobileDashboardProps {
   state: AclsState;
@@ -69,8 +74,11 @@ interface MobileDashboardProps {
   onOpenAdminPasswordModal?: () => void;
   onSignOut?: () => void;
   savedCases?: SavedCase[];
-  onSaveCurrentCase?: (patientCode: string) => boolean;
+  onSaveCurrentCase?: (patientCode: string, signatureDataUrl?: string) => boolean;
   onDeleteCase?: (caseId: string) => void;
+  isGuestMode?: boolean;
+  theme?: 'medical-white' | 'clinical-dark';
+  setTheme?: (theme: 'medical-white' | 'clinical-dark') => void;
 }
 
 export default function MobileDashboard({
@@ -112,6 +120,9 @@ export default function MobileDashboard({
   savedCases = [],
   onSaveCurrentCase,
   onDeleteCase,
+  isGuestMode = false,
+  theme = 'medical-white',
+  setTheme,
 }: MobileDashboardProps) {
 
   // Signature Pad canvas logic
@@ -208,6 +219,19 @@ export default function MobileDashboard({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setTheme && setTheme(theme === 'clinical-dark' ? 'medical-white' : 'clinical-dark')}
+              className="px-2 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 rounded-lg text-[8px] font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1"
+              title="Toggle Theme"
+            >
+              {theme === 'clinical-dark' ? (
+                <Sun className="w-3 h-3 text-amber-400" />
+              ) : (
+                <Moon className="w-3 h-3 text-indigo-400" />
+              )}
+              <span>{theme === 'clinical-dark' ? 'White' : 'Dark'}</span>
+            </button>
             <button
               onClick={onOpenAuth}
               className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[8px] font-bold uppercase tracking-wider cursor-pointer border-none"
@@ -523,7 +547,18 @@ export default function MobileDashboard({
         <div className="glass-panel p-3 bg-slate-900/40 border-white/5 text-left rounded-xl space-y-2">
           <div className="flex justify-between items-center border-b border-white/5 pb-1">
             <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block">Active Session Timeline</span>
-            <span className="text-[8px] font-mono text-slate-500">{state.logs.length} Events</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[8px] font-mono text-slate-500">{state.logs.length} Events</span>
+              {state.logs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-[8px] font-bold uppercase tracking-wider flex items-center gap-1 border-none cursor-pointer"
+                >
+                  <Printer className="w-2.5 h-2.5" /> Print
+                </button>
+              )}
+            </div>
           </div>
           <div className="space-y-2 max-h-56 overflow-y-auto pr-1 select-text custom-scrollbar">
             {state.logs.length === 0 ? (
@@ -542,6 +577,22 @@ export default function MobileDashboard({
             )}
           </div>
         </div>
+
+        {/* ACTIVE SESSION PRINT REPORT FOR MOBILE */}
+        {state.logs.length > 0 && (
+          <PrintableReport
+            patientCode="ACTIVE-SESSION"
+            savedAt={new Date().getTime()}
+            totalDuration={state.totalTime}
+            cprCycleCount={state.cprCycleCount}
+            shocksCount={state.shocksCount}
+            epiCount={state.epiCount}
+            logs={state.logs}
+            certifiedBy={effectiveProfile.fullName}
+            councilRegistration={effectiveProfile.councilRegistration}
+            currentRhythm={state.currentRhythm}
+          />
+        )}
 
         {/* Saved Cases Manager (Max 3 Cases) */}
         <SavedCasesList
@@ -600,6 +651,52 @@ export default function MobileDashboard({
         <div>
           <h2 className="text-md font-display font-bold text-white uppercase tracking-tight">Configuration</h2>
           <p className="text-[8px] text-slate-500 uppercase font-black tracking-widest mt-0.5">Parameters & mobile device offline installations</p>
+        </div>
+
+        {/* Display Theme Switcher Card */}
+        <div className="glass-panel p-3.5 bg-slate-900/50 border-white/5 rounded-xl space-y-3">
+          <div className="flex items-center justify-between border-b border-white/5 pb-1.5">
+            <div className="flex items-center gap-1.5 text-indigo-400">
+              <Sun className="w-4 h-4 text-amber-400" />
+              <Moon className="w-4 h-4 text-indigo-400" />
+              <h4 className="text-xs font-bold uppercase tracking-wider">Display Theme</h4>
+            </div>
+            <span className="text-[8px] font-mono text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
+              {theme === 'clinical-dark' ? 'CLINICAL DARK' : 'MEDICAL WHITE'}
+            </span>
+          </div>
+
+          <p className="text-[9.5px] text-slate-300 leading-normal font-sans">
+            Toggle between <strong>Medical White</strong> for bright spaces and <strong>Clinical Dark</strong> for low-light clinical environments. Persisted in local storage.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2 pt-0.5">
+            <button
+              type="button"
+              onClick={() => setTheme && setTheme('medical-white')}
+              className={`py-2 rounded-lg border flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                theme === 'medical-white'
+                  ? 'bg-white text-black border-red-600 shadow ring-1 ring-red-600'
+                  : 'bg-slate-800 text-slate-300 border-white/10 hover:bg-slate-700'
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5 text-amber-500" />
+              <span>Medical White</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTheme && setTheme('clinical-dark')}
+              className={`py-2 rounded-lg border flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                theme === 'clinical-dark'
+                  ? 'bg-slate-950 text-white border-blue-500 shadow ring-1 ring-blue-500'
+                  : 'bg-slate-800 text-slate-300 border-white/10 hover:bg-slate-700'
+              }`}
+            >
+              <Moon className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Clinical Dark</span>
+            </button>
+          </div>
         </div>
 
         {/* Haptic Vibration Feedback Settings Panel */}
@@ -766,10 +863,41 @@ export default function MobileDashboard({
     );
   };
 
+  const isVerifiedDoctor = Boolean(
+    effectiveProfile?.kyc?.kycStatus === 'approved' ||
+    effectiveProfile?.kyc?.kycStatus === 'pending' ||
+    (effectiveProfile?.councilRegistration && effectiveProfile?.councilRegistration !== 'GUEST-KMC-003') ||
+    effectiveProfile?.email
+  );
+  const hasFullAccess = !isGuestMode && isVerifiedDoctor;
+
   return (
     <div className="flex-1 flex flex-col bg-medical-dark overflow-hidden relative" id="mobile-viewport">
       {/* Main viewport Container (scrollable + bottom offset) */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-20 custom-scrollbar scroll-smooth">
+        
+        {/* Guest Mode Limited Access Banner */}
+        {isGuestMode && (
+          <div className="bg-amber-500/15 border border-amber-500/30 rounded-xl p-3 flex flex-col gap-2 text-amber-200 text-xs shadow-lg text-left select-none">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-extrabold text-[10px] uppercase tracking-wider text-amber-300">
+                  Guest Mode Active (CPR Timer & Drug Trackers)
+                </p>
+                <p className="text-[9px] text-amber-100/90 leading-relaxed font-sans">
+                  You are using restricted Guest Mode. Access is given ONLY to Timers and Drugs. Please <strong className="text-white underline cursor-pointer" onClick={onOpenAuth}>Sign In & Get Verified</strong> for full access to Flowcharts, Logs & Settings.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onOpenAuth}
+              className="w-full py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-[9px] font-bold uppercase tracking-wider shrink-0 cursor-pointer border-none shadow-md text-center"
+            >
+              Sign In For Full Access
+            </button>
+          </div>
+        )}
         
         {/* Urgent Alerts bar */}
         {state.activePrompt === 'EPI_DUE' && (
@@ -795,9 +923,15 @@ export default function MobileDashboard({
         {/* Dynamic active tabs layout render */}
         {activeTab === 'timer' && renderMobileTimerTab()}
         {activeTab === 'interventions' && renderMobileInterventionsTab()}
-        {activeTab === 'algorithm' && renderMobileAlgorithmTab()}
-        {activeTab === 'logs' && renderMobileLogsTab()}
-        {activeTab === 'settings' && renderMobileSettingsTab()}
+        {activeTab === 'algorithm' && (
+          hasFullAccess ? renderMobileAlgorithmTab() : <LockedGuestOverlay title="Flowchart Restricted" onOpenAuth={onOpenAuth} onOpenKyc={onOpenKyc} />
+        )}
+        {activeTab === 'logs' && (
+          hasFullAccess ? renderMobileLogsTab() : <LockedGuestOverlay title="Journal Logs Restricted" onOpenAuth={onOpenAuth} onOpenKyc={onOpenKyc} />
+        )}
+        {activeTab === 'settings' && (
+          hasFullAccess ? renderMobileSettingsTab() : <LockedGuestOverlay title="Configuration Restricted" onOpenAuth={onOpenAuth} onOpenKyc={onOpenKyc} />
+        )}
 
         {/* Mandatory Disclaimer & Copyright Notice Footer */}
         <div className="mt-6 mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-center space-y-1">
@@ -824,22 +958,29 @@ export default function MobileDashboard({
       <nav className="absolute bottom-0 left-0 right-0 h-16 bg-[#0c111d]/95 backdrop-blur-md border-t border-white/5 flex items-center justify-around z-40 px-2 shadow-2xl">
         <NavButton active={activeTab === 'timer'} onClick={() => setActiveTab('timer')} icon={Activity} label="TIMERS" />
         <NavButton active={activeTab === 'interventions'} onClick={() => setActiveTab('interventions')} icon={Syringe} label="DRUGS" />
-        <NavButton active={activeTab === 'algorithm'} onClick={() => setActiveTab('algorithm')} icon={ClipboardList} label="FLOWCHART" />
-        <NavButton active={activeTab === 'logs'} onClick={() => setActiveTab('logs')} icon={History} label="JOURNAL" />
-        <NavButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={Settings} label="CONFIG" />
+        <NavButton active={activeTab === 'algorithm'} onClick={() => setActiveTab('algorithm')} icon={ClipboardList} label="FLOWCHART" isLocked={!hasFullAccess} />
+        <NavButton active={activeTab === 'logs'} onClick={() => setActiveTab('logs')} icon={History} label="JOURNAL" isLocked={!hasFullAccess} />
+        <NavButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={Settings} label="CONFIG" isLocked={!hasFullAccess} />
       </nav>
     </div>
   );
 }
 
 // Low level local utility component
-function NavButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: any; label: string }) {
+function NavButton({ active, onClick, icon: Icon, label, isLocked }: { active: boolean; onClick: () => void; icon: any; label: string; isLocked?: boolean }) {
   return (
     <button 
       onClick={onClick}
-      className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-lg border-none bg-transparent transition-all cursor-pointer ${active ? 'text-blue-400 bg-blue-500/5 shadow-inner' : 'text-slate-500 hover:text-slate-350'}`}
+      className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-lg border-none bg-transparent transition-all cursor-pointer relative ${active ? 'text-blue-400 bg-blue-500/5 shadow-inner' : 'text-slate-500 hover:text-slate-350'}`}
     >
-      <Icon className={`w-4 h-4 ${active ? 'text-blue-400' : ''}`} />
+      <div className="relative">
+        <Icon className={`w-4 h-4 ${active ? 'text-blue-400' : ''}`} />
+        {isLocked && (
+          <span className="absolute -top-1 -right-1.5 bg-red-600 text-white rounded-full p-0.5 text-[6px]">
+            <Lock className="w-2.5 h-2.5 stroke-[3]" />
+          </span>
+        )}
+      </div>
       <span className="text-[7.5px] font-black mt-1 uppercase tracking-tight leading-none">{label}</span>
     </button>
   );
