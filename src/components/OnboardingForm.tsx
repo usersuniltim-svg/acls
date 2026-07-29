@@ -33,15 +33,12 @@ export default function OnboardingForm({ onComplete }: OnboardingFormProps) {
 
     try {
       const profileDocRef = doc(db, 'profiles', auth.currentUser.uid);
-      console.log("Saving profile to:", profileDocRef.path);
       const dataToSave = {
         ...formData,
         email: auth.currentUser.email,
         onboardedAt: Date.now(),
       };
-      console.log("Payload:", dataToSave);
       await setDoc(profileDocRef, dataToSave);
-      console.log("Profile saved successfully");
       onComplete();
     } catch (err) {
       setError("Failed to save profile. Please try again.");
