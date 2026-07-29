@@ -1,15 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Play, 
-  RotateCcw, 
   Zap, 
   Syringe, 
   Activity, 
-  Settings, 
-  AlertCircle,
-  Heart,
-  Smartphone,
-  Laptop
+  Heart
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
