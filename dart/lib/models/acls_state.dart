@@ -117,6 +117,7 @@ class AclsState {
   final String defibType; // 'BIPHASIC' or 'MONOPHASIC'
   final int selectedEnergy;
   final int epiDueElapsed;
+  final bool hasAdvancedAirway;
 
   AclsState({
     required this.isTimerRunning,
@@ -134,6 +135,7 @@ class AclsState {
     required this.defibType,
     required this.selectedEnergy,
     required this.epiDueElapsed,
+    required this.hasAdvancedAirway,
   });
 
   AclsState copyWith({
@@ -152,6 +154,7 @@ class AclsState {
     String? defibType,
     int? selectedEnergy,
     int? epiDueElapsed,
+    bool? hasAdvancedAirway,
     bool removeActivePrompt = false,
   }) {
     return AclsState(
@@ -170,6 +173,7 @@ class AclsState {
       defibType: defibType ?? this.defibType,
       selectedEnergy: selectedEnergy ?? this.selectedEnergy,
       epiDueElapsed: epiDueElapsed ?? this.epiDueElapsed,
+      hasAdvancedAirway: hasAdvancedAirway ?? this.hasAdvancedAirway,
     );
   }
 }
