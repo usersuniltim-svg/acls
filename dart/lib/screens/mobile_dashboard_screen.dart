@@ -841,7 +841,7 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> with Tick
   Widget _buildFlowDecisionBranch({required String title, required String shockableStep, required String nonShockableStep}) {
     return Container(
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(backgroundColor: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(8)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -954,7 +954,7 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> with Tick
               _buildCertSummaryRow("Total Timeline Duration", _formatTime(state.totalTime)),
               _buildCertSummaryRow("Defibrillation Shocks Given", "${state.shocksCount}"),
               _buildCertSummaryRow("Epinephrine 1mg Pushes", "${state.epiCount}"),
-              _buildCertSummaryRow("Advanced Airway Status", state.logs.any((l) => l.type == EventType.advancedAirway) ? "Secured" : "None Given"),
+              _buildCertSummaryRow("Advanced Airway Status", state.hasAdvancedAirway ? "Secured" : "None Given"),
             ],
           ),
         ),
