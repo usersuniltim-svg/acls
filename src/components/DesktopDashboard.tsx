@@ -23,7 +23,7 @@ import {
   PatientRhythm,
   SavedCase
 } from '../types';
-import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
+import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS, SHOCK_ENERGY_LEVELS } from '../constants';
 import SavedCasesList from './SavedCasesList';
 import { auth } from '../lib/firebase';
 
@@ -206,7 +206,7 @@ export default function DesktopDashboard({
               <div className="space-y-2 pt-1">
                 <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">Shock Energy Level Selection</span>
                 <div className="grid grid-cols-3 gap-2">
-                  {[120, 150, 200].map((joules) => (
+                  {SHOCK_ENERGY_LEVELS.map((joules) => (
                     <button 
                       key={joules}
                       type="button"

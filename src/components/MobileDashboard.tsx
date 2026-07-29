@@ -29,7 +29,7 @@ import {
   UserProfile,
   SavedCase
 } from '../types';
-import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
+import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS, SHOCK_ENERGY_LEVELS } from '../constants';
 import SavedCasesList from './SavedCasesList';
 
 interface MobileDashboardProps {
@@ -697,7 +697,7 @@ export default function MobileDashboard({
             <div className="space-y-1">
               <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block border-b border-white/5 pb-0.5">Shock energy levels</span>
               <div className="grid grid-cols-3 gap-1.5">
-                {[120, 150, 200].map((joules) => (
+                {SHOCK_ENERGY_LEVELS.map((joules) => (
                   <button 
                     key={joules}
                     onClick={() => setState(prev => ({ ...prev, selectedEnergy: joules }))}
