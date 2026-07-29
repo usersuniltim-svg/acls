@@ -1,6 +1,8 @@
 export const CPR_CYCLE_DURATION = 120; // 2 minutes
 export const EPI_INTERVAL = 180; // 3 minutes minimum (AHA 3-5 min)
 
+export const SHOCK_ENERGY_LEVELS = [120, 150, 200] as const;
+
 export const HS_AND_TS = [
   { term: 'Hypovolemia', description: 'Low blood volume' },
   { term: 'Hypoxia', description: 'Low oxygen levels' },
