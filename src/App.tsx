@@ -66,7 +66,6 @@ export default function App() {
   const [phoneTime, setPhoneTime] = useState('08:00');
   const [batteryLevel, setBatteryLevel] = useState(87);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isInstallable, setIsInstallable] = useState(false);
   const [isVibrating, setIsVibrating] = useState(false);
   
   // Haptic Vibration Settings
@@ -163,7 +162,6 @@ export default function App() {
     const handleBeforePrompt = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      setIsInstallable(true);
     };
     window.addEventListener('beforeinstallprompt', handleBeforePrompt);
     return () => window.removeEventListener('beforeinstallprompt', handleBeforePrompt);
@@ -178,7 +176,6 @@ export default function App() {
     const { outcome } = await deferredPrompt.userChoice;
     console.log(`User choice outcome: ${outcome}`);
     setDeferredPrompt(null);
-    setIsInstallable(false);
   };
 
   const getScaledVibrationPattern = (basePattern: number | number[]): number | number[] => {
