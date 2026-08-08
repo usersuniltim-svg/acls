@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { SavedCase, LogEvent } from '../types';
-import { FileText, Trash2, Calendar, Clock, Zap, Syringe, Eye, AlertCircle, PlusCircle, CheckCircle2, X, PenTool, RotateCcw, Printer, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { FileText, Trash2, Calendar, Clock, Zap, Syringe, Eye, AlertCircle, PlusCircle, CheckCircle2, X, PenTool, RotateCcw, Printer, ShieldCheck, AlertTriangle, Download, FileDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PrintableReport from './PrintableReport';
 
@@ -261,13 +261,30 @@ export default function SavedCasesList({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setViewingCase(item)}
-                className="w-full py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer border-none shadow-sm"
-              >
-                <Eye className="w-3 h-3" /> View Full Case Log ({item.logs.length} Events)
-              </button>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setViewingCase(item)}
+                  className="py-1.5 bg-gray-100 hover:bg-gray-200 text-black rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer border-none shadow-sm"
+                >
+                  <Eye className="w-3 h-3 text-gray-700" /> View Log ({item.logs.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewingCase(item);
+                    setTimeout(() => {
+                      const origTitle = document.title;
+                      document.title = `ACLS_Case_Report_${item.patientCode.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                      window.print();
+                      setTimeout(() => { document.title = origTitle; }, 1000);
+                    }, 100);
+                  }}
+                  className="py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer border-none shadow-sm"
+                >
+                  <Download className="w-3 h-3" /> Export PDF
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -572,10 +589,15 @@ export default function SavedCasesList({
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => window.print()}
+                    onClick={() => {
+                      const origTitle = document.title;
+                      document.title = `ACLS_Case_Report_${viewingCase.patientCode.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                      window.print();
+                      setTimeout(() => { document.title = origTitle; }, 1000);
+                    }}
                     className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer border-none"
                   >
-                    <Printer className="w-3.5 h-3.5" /> Print / Create PDF
+                    <Download className="w-3.5 h-3.5" /> Export PDF / Print Report
                   </button>
                   <button
                     type="button"

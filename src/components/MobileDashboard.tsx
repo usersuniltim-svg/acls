@@ -552,10 +552,15 @@ export default function MobileDashboard({
               {state.logs.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    const origTitle = document.title;
+                    document.title = `ACLS_Active_Session_Report_${new Date().toISOString().slice(0, 10)}`;
+                    window.print();
+                    setTimeout(() => { document.title = origTitle; }, 1000);
+                  }}
                   className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-[8px] font-bold uppercase tracking-wider flex items-center gap-1 border-none cursor-pointer"
                 >
-                  <Printer className="w-2.5 h-2.5" /> Print
+                  <Download className="w-2.5 h-2.5" /> Export PDF
                 </button>
               )}
             </div>

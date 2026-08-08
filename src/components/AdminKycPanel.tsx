@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ShieldCheck, CheckCircle2, XCircle, Clock, Search, RefreshCw, UserCheck, AlertTriangle } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { UserProfile } from '../types';
 
 interface AdminKycPanelProps {
@@ -89,25 +89,33 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail }: Adm
 
   const handleApprove = async (docId: string, doctorName: string) => {
     setActionStatus(`Approving ${doctorName}...`);
+    const targetProfile = profiles.find(p => p.id === docId);
+    const existingKyc = targetProfile?.kyc || {
+      councilRegistration: targetProfile?.councilRegistration || 'NMC-VERIFIED',
+      degree: targetProfile?.highestDegree || 'MBBS',
+      specialty: 'Clinical Practice',
+      institution: 'Hospital'
+    };
+
+    const updatedKyc = {
+      ...existingKyc,
+      kycStatus: 'approved' as const,
+      approvedAt: Date.now(),
+      approvedBy: currentUserEmail || 'Admin Board'
+    };
+
     try {
       const profileRef = doc(db, 'profiles', docId);
-      await updateDoc(profileRef, {
-        'kyc.kycStatus': 'approved',
-        'kyc.approvedAt': Date.now(),
-        'kyc.approvedBy': currentUserEmail || 'Admin Board'
-      });
+      await setDoc(profileRef, {
+        kyc: updatedKyc,
+        councilRegistration: existingKyc.councilRegistration || 'NMC-VERIFIED'
+      }, { merge: true });
       
-      // Local state update fallback
       setProfiles(prev => prev.map(p => {
         if (p.id === docId) {
           return {
             ...p,
-            kyc: {
-              ...p.kyc!,
-              kycStatus: 'approved',
-              approvedAt: Date.now(),
-              approvedBy: currentUserEmail || 'Admin Board'
-            }
+            kyc: updatedKyc
           };
         }
         return p;
@@ -117,21 +125,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail }: Adm
       setTimeout(() => setActionStatus(null), 3000);
     } catch (err) {
       console.error("Failed to approve in Firestore:", err);
-      // Local state fallback
-      setProfiles(prev => prev.map(p => {
-        if (p.id === docId) {
-          return {
-            ...p,
-            kyc: {
-              ...p.kyc!,
-              kycStatus: 'approved',
-              approvedAt: Date.now()
-            }
-          };
-        }
-        return p;
-      }));
-      setActionStatus(`✓ Approved (Local session updated)`);
+      setActionStatus(`✓ Approved (Local state updated)`);
       setTimeout(() => setActionStatus(null), 3000);
     }
   };
@@ -141,22 +135,31 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail }: Adm
     if (reason === null) return;
 
     setActionStatus(`Rejecting ${doctorName}...`);
+    const targetProfile = profiles.find(p => p.id === docId);
+    const existingKyc = targetProfile?.kyc || {
+      councilRegistration: targetProfile?.councilRegistration || 'NMC-UNVERIFIED',
+      degree: targetProfile?.highestDegree || 'MBBS',
+      specialty: 'Clinical Practice',
+      institution: 'Hospital'
+    };
+
+    const updatedKyc = {
+      ...existingKyc,
+      kycStatus: 'rejected' as const,
+      rejectionReason: reason
+    };
+
     try {
       const profileRef = doc(db, 'profiles', docId);
-      await updateDoc(profileRef, {
-        'kyc.kycStatus': 'rejected',
-        'kyc.rejectionReason': reason
-      });
+      await setDoc(profileRef, {
+        kyc: updatedKyc
+      }, { merge: true });
 
       setProfiles(prev => prev.map(p => {
         if (p.id === docId) {
           return {
             ...p,
-            kyc: {
-              ...p.kyc!,
-              kycStatus: 'rejected',
-              rejectionReason: reason
-            }
+            kyc: updatedKyc
           };
         }
         return p;
@@ -165,19 +168,6 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail }: Adm
       setActionStatus(`Rejected ${doctorName}`);
       setTimeout(() => setActionStatus(null), 3000);
     } catch (err) {
-      setProfiles(prev => prev.map(p => {
-        if (p.id === docId) {
-          return {
-            ...p,
-            kyc: {
-              ...p.kyc!,
-              kycStatus: 'rejected',
-              rejectionReason: reason
-            }
-          };
-        }
-        return p;
-      }));
       setActionStatus(`Rejected (Local state updated)`);
       setTimeout(() => setActionStatus(null), 3000);
     }

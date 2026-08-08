@@ -38,12 +38,13 @@ import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth
 import { doc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
 import MobileDashboard from './components/MobileDashboard';
 import DesktopDashboard from './components/DesktopDashboard';
-import AuthModal from './components/AuthModal';
-import DoctorKycModal from './components/DoctorKycModal';
-import AdminKycPanel from './components/AdminKycPanel';
-import AdminPasswordModal from './components/AdminPasswordModal';
-import VerificationGatekeeperModal from './components/VerificationGatekeeperModal';
-import SavedCasesList from './components/SavedCasesList';
+
+const AuthModal = React.lazy(() => import('./components/AuthModal'));
+const DoctorKycModal = React.lazy(() => import('./components/DoctorKycModal'));
+const AdminKycPanel = React.lazy(() => import('./components/AdminKycPanel'));
+const AdminPasswordModal = React.lazy(() => import('./components/AdminPasswordModal'));
+const VerificationGatekeeperModal = React.lazy(() => import('./components/VerificationGatekeeperModal'));
+const SavedCasesList = React.lazy(() => import('./components/SavedCasesList'));
 
 function CprLogo({ className = "w-28 h-auto" }: { className?: string }) {
   return (
@@ -262,6 +263,22 @@ export default function App() {
     return () => window.removeEventListener('beforeinstallprompt', handleBeforePrompt);
   }, []);
 
+  // Audio and timer cleanup on page unload, app hide or close
+  useEffect(() => {
+    const handleStopAudio = () => {
+      MedicalAudio.stopAll();
+    };
+
+    window.addEventListener('beforeunload', handleStopAudio);
+    window.addEventListener('pagehide', handleStopAudio);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleStopAudio);
+      window.removeEventListener('pagehide', handleStopAudio);
+      MedicalAudio.stopAll();
+    };
+  }, []);
+
   const triggerPwaInstall = async () => {
     if (!deferredPrompt) {
       alert("Nepal ACLS app PWA is already cached or manual installation via Chrome menu is required on this device browser.");
@@ -348,36 +365,38 @@ export default function App() {
             } catch (e) {}
             setLoading(false);
           } else {
-            // Check legacy 'users' path
-            const userDocRef = doc(db, 'users', currentUser.uid);
-            onSnapshot(userDocRef, (uSnap) => {
-              if (uSnap.exists()) {
-                const uData = uSnap.data() as any;
-                setProfile(uData as UserProfile);
-                try {
-                  localStorage.setItem('acls_user_profile', JSON.stringify(uData));
-                  if (Array.isArray(uData.savedCases) && uData.savedCases.length > 0) {
-                    setSavedCases((prev) => {
-                      const map = new Map<string, SavedCase>();
-                      uData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));
-                      prev.forEach((c) => map.set(c.id, c));
-                      const merged = Array.from(map.values()).slice(0, 3);
-                      try {
-                        localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
-                      } catch (e) {}
-                      return merged;
-                    });
-                  }
-                } catch (e) {}
-              } else {
+            // Document doesn't exist in 'profiles' yet - check local cache or create default profile in Firestore
+            let cachedProf: UserProfile | null = null;
+            try {
+              const local = localStorage.getItem('acls_user_profile');
+              if (local) cachedProf = JSON.parse(local);
+            } catch (e) {}
 
-                setProfile(null);
+            const defaultProf: UserProfile = cachedProf || {
+              fullName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Practitioner',
+              email: currentUser.email || '',
+              profession: 'doctor',
+              highestDegree: 'MBBS',
+              councilRegistration: '',
+              dob: '1990-01-01',
+              sex: 'male',
+              phone: '',
+              onboardedAt: Date.now(),
+              kyc: {
+                kycStatus: 'unsubmitted',
+                councilRegistration: '',
+                degree: 'MBBS',
+                specialty: '',
+                institution: ''
               }
-              setLoading(false);
-            }, () => {
-              setProfile(null);
-              setLoading(false);
-            });
+            };
+
+            setDoc(profileDocRef, defaultProf, { merge: true }).catch((e) => console.warn("Auto-create profile failed:", e));
+            setProfile(defaultProf);
+            try {
+              localStorage.setItem('acls_user_profile', JSON.stringify(defaultProf));
+            } catch (e) {}
+            setLoading(false);
           }
         }, (err) => {
           console.error("Profile error:", err);
@@ -385,6 +404,13 @@ export default function App() {
           setLoading(false);
         });
       } else {
+        MedicalAudio.stopAll();
+        setState(prev => ({
+          ...prev,
+          isTimerRunning: false,
+          activePrompt: null,
+          rhythmCheckTimeLeft: 0,
+        }));
         setProfile(null);
         setLoading(false);
       }
@@ -630,10 +656,17 @@ export default function App() {
 
   const handleSignOut = async () => {
     try {
+      MedicalAudio.stopAll();
+      setState(prev => ({
+        ...prev,
+        isTimerRunning: false,
+        activePrompt: null,
+        rhythmCheckTimeLeft: 0,
+      }));
+      setHasSessionStarted(false);
       await signOut(auth);
       setUser(null);
       setProfile(null);
-      setHasSessionStarted(false);
     } catch (e) {
       console.error("Sign out failed", e);
     }
@@ -706,20 +739,19 @@ export default function App() {
 
     if (user?.uid) {
       const profRef = doc(db, 'profiles', user.uid);
-      try {
-        await updateDoc(profRef, { kyc: verifiedKyc });
-      } catch (e) {
-        await setDoc(profRef, { kyc: verifiedKyc }, { merge: true });
-      }
+      await setDoc(profRef, { kyc: verifiedKyc, councilRegistration: verifiedKyc.councilRegistration }, { merge: true }).catch(() => {});
     }
 
-    setProfile(prev => {
-      const base = prev || effectiveProfile;
-      return {
-        ...base,
-        kyc: verifiedKyc
-      };
-    });
+    const updatedProf = {
+      ...(profile || effectiveProfile),
+      councilRegistration: verifiedKyc.councilRegistration,
+      kyc: verifiedKyc
+    };
+
+    setProfile(updatedProf);
+    try {
+      localStorage.setItem('acls_user_profile', JSON.stringify(updatedProf));
+    } catch (e) {}
 
     setIsVerificationGatekeeperOpen(false);
   };
@@ -1129,43 +1161,45 @@ export default function App() {
       {renderGlobalPromptModals()}
 
       {/* Auth, Doctor KYC, Admin Board, Admin Password Guard, & Verification Gatekeeper Modals */}
-      <AuthModal 
-        isOpen={isAuthModalOpen} 
-        onClose={() => setIsAuthModalOpen(false)} 
-      />
-      <DoctorKycModal 
-        isOpen={isKycModalOpen} 
-        onClose={() => setIsKycModalOpen(false)} 
-        userProfile={profile} 
-      />
-      <AdminKycPanel 
-        isOpen={isAdminPanelOpen} 
-        onClose={() => setIsAdminPanelOpen(false)} 
-        currentUserEmail={user?.email || undefined} 
-      />
-      <AdminPasswordModal
-        isOpen={isAdminPasswordModalOpen}
-        onClose={() => setIsAdminPasswordModalOpen(false)}
-        onSuccess={() => {
-          setIsAdminPasswordModalOpen(false);
-          setIsAdminPanelOpen(true);
-        }}
-      />
-      <VerificationGatekeeperModal
-        isOpen={isVerificationGatekeeperOpen}
-        onClose={() => setIsVerificationGatekeeperOpen(false)}
-        onOpenAuth={() => {
-          setIsVerificationGatekeeperOpen(false);
-          setIsAuthModalOpen(true);
-        }}
-        onOpenKyc={() => {
-          setIsVerificationGatekeeperOpen(false);
-          setIsKycModalOpen(true);
-        }}
-        onInstantDemoVerify={handleInstantDemoVerify}
-        user={user}
-        userProfile={profile}
-      />
+      <React.Suspense fallback={null}>
+        <AuthModal 
+          isOpen={isAuthModalOpen} 
+          onClose={() => setIsAuthModalOpen(false)} 
+        />
+        <DoctorKycModal 
+          isOpen={isKycModalOpen} 
+          onClose={() => setIsKycModalOpen(false)} 
+          userProfile={profile} 
+        />
+        <AdminKycPanel 
+          isOpen={isAdminPanelOpen} 
+          onClose={() => setIsAdminPanelOpen(false)} 
+          currentUserEmail={user?.email || undefined} 
+        />
+        <AdminPasswordModal
+          isOpen={isAdminPasswordModalOpen}
+          onClose={() => setIsAdminPasswordModalOpen(false)}
+          onSuccess={() => {
+            setIsAdminPasswordModalOpen(false);
+            setIsAdminPanelOpen(true);
+          }}
+        />
+        <VerificationGatekeeperModal
+          isOpen={isVerificationGatekeeperOpen}
+          onClose={() => setIsVerificationGatekeeperOpen(false)}
+          onOpenAuth={() => {
+            setIsVerificationGatekeeperOpen(false);
+            setIsAuthModalOpen(true);
+          }}
+          onOpenKyc={() => {
+            setIsVerificationGatekeeperOpen(false);
+            setIsKycModalOpen(true);
+          }}
+          onInstantDemoVerify={handleInstantDemoVerify}
+          user={user}
+          userProfile={profile}
+        />
+      </React.Suspense>
     </div>
   );
 }

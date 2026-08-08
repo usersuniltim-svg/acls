@@ -45,38 +45,47 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
     setErrorMsg(null);
     setSuccessMsg(null);
 
+    // Maintain existing approved status if re-editing, otherwise set to pending for Admin review
+    const targetStatus = currentKyc.kycStatus === 'approved' ? 'approved' : 'pending';
+
     const updatedKyc: DoctorKyc = {
       councilRegistration: councilRegistration.toUpperCase().trim(),
       degree: degree.trim(),
       specialty: specialty.trim(),
       institution: institution.trim(),
       idCardNumber: idCardNumber.trim(),
-      kycStatus: 'approved',
+      kycStatus: targetStatus,
       submittedAt: Date.now(),
-      approvedAt: Date.now(),
+      ...(targetStatus === 'approved' ? { approvedAt: currentKyc.approvedAt || Date.now() } : {})
     };
 
     try {
       const profileRef = doc(db, 'profiles', auth.currentUser.uid);
-      await updateDoc(profileRef, {
-        fullName,
+      const profileData = {
+        fullName: fullName.trim(),
+        email: auth.currentUser.email || userProfile?.email || '',
+        profession: 'doctor',
         councilRegistration: councilRegistration.toUpperCase().trim(),
         highestDegree: degree.trim(),
-        kyc: updatedKyc
-      }).catch(async () => {
-        // Fallback setDoc
-        await setDoc(profileRef, {
-          fullName,
-          email: auth.currentUser?.email || '',
-          profession: 'doctor',
-          councilRegistration: councilRegistration.toUpperCase().trim(),
-          highestDegree: degree.trim(),
-          kyc: updatedKyc,
-          onboardedAt: Date.now()
-        }, { merge: true });
-      });
+        kyc: updatedKyc,
+        onboardedAt: userProfile?.onboardedAt || Date.now()
+      };
 
-      setSuccessMsg("Doctor KYC verified successfully! Council registration confirmed and full app access granted.");
+      await setDoc(profileRef, profileData, { merge: true });
+
+      try {
+        localStorage.setItem('acls_user_profile', JSON.stringify({
+          ...(userProfile || {}),
+          ...profileData
+        }));
+      } catch (e) {}
+
+      if (targetStatus === 'approved') {
+        setSuccessMsg("Doctor KYC details updated and verified.");
+      } else {
+        setSuccessMsg("Doctor KYC application submitted successfully! Pending Medical Council Admin verification.");
+      }
+
       if (onKycUpdated) onKycUpdated();
       setTimeout(() => {
         onClose();

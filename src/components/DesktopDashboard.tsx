@@ -105,12 +105,8 @@ export default function DesktopDashboard({
   setTheme,
 }: DesktopDashboardProps) {
 
-  const isVerifiedDoctor = Boolean(
-    effectiveProfile?.kyc?.kycStatus === 'approved' ||
-    effectiveProfile?.kyc?.kycStatus === 'pending' ||
-    (effectiveProfile?.councilRegistration && effectiveProfile?.councilRegistration !== 'GUEST-KMC-003') ||
-    effectiveProfile?.email
-  );
+  const isVerifiedDoctor = effectiveProfile?.kyc?.kycStatus === 'approved';
+  const isPendingDoctor = effectiveProfile?.kyc?.kycStatus === 'pending';
   const hasFullAccess = !isGuestMode && isVerifiedDoctor;
 
   const renderDesktopSettings = () => {
@@ -587,10 +583,15 @@ export default function DesktopDashboard({
                       {state.logs.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => window.print()}
+                          onClick={() => {
+                            const origTitle = document.title;
+                            document.title = `ACLS_Active_Session_Report_${new Date().toISOString().slice(0, 10)}`;
+                            window.print();
+                            setTimeout(() => { document.title = origTitle; }, 1000);
+                          }}
                           className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer border-none shadow-sm transition-all"
                         >
-                          <Printer className="w-3 h-3" /> Print Active Report
+                          <Download className="w-3 h-3" /> Export PDF / Print Active Report
                         </button>
                       )}
                     </div>

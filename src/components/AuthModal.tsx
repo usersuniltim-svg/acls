@@ -9,7 +9,7 @@ import {
   sendPasswordResetEmail,
   updateProfile
 } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 interface AuthModalProps {
@@ -38,27 +38,34 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
       const res = await signInWithPopup(auth, googleProvider);
       if (res.user) {
         const profRef = doc(db, 'profiles', res.user.uid);
-        const verifiedKyc = {
-          kycStatus: 'approved' as const,
-          councilRegistration: 'NMC-VERIFIED',
-          degree: 'MD / MBBS',
-          specialty: 'Emergency Medicine',
-          institution: 'Kathmandu Central Hospital',
-          submittedAt: Date.now(),
-          approvedAt: Date.now(),
-        };
-        await setDoc(profRef, {
-          fullName: res.user.displayName || 'Practitioner',
-          email: res.user.email || '',
-          profession: 'doctor',
-          highestDegree: 'MD / MBBS',
-          councilRegistration: 'NMC-VERIFIED',
-          sex: 'male',
-          dob: '1990-01-01',
-          phone: '',
-          onboardedAt: Date.now(),
-          kyc: verifiedKyc,
-        }, { merge: true });
+        const existingSnap = await getDoc(profRef);
+        if (!existingSnap.exists()) {
+          const initialKyc = {
+            kycStatus: 'unsubmitted' as const,
+            councilRegistration: '',
+            degree: 'MBBS',
+            specialty: '',
+            institution: '',
+          };
+          await setDoc(profRef, {
+            fullName: res.user.displayName || 'Practitioner',
+            email: res.user.email || '',
+            profession: 'doctor',
+            highestDegree: 'MBBS',
+            councilRegistration: '',
+            dob: '1990-01-01',
+            sex: 'male',
+            phone: '',
+            onboardedAt: Date.now(),
+            kyc: initialKyc,
+          });
+        } else {
+          // Just update basic details without overwriting KYC status
+          await setDoc(profRef, {
+            email: res.user.email || '',
+            fullName: res.user.displayName || existingSnap.data()?.fullName || 'Practitioner',
+          }, { merge: true });
+        }
       }
       if (onSuccess) onSuccess();
       onClose();
@@ -90,26 +97,24 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           await updateProfile(userCred.user, { displayName: fullName.trim() });
         }
         const profRef = doc(db, 'profiles', userCred.user.uid);
-        const verifiedKyc = {
-          kycStatus: 'approved' as const,
-          councilRegistration: 'NMC-VERIFIED',
-          degree: 'MD / MBBS',
-          specialty: 'Emergency Medicine',
-          institution: 'Kathmandu Central Hospital',
-          submittedAt: Date.now(),
-          approvedAt: Date.now(),
+        const initialKyc = {
+          kycStatus: 'unsubmitted' as const,
+          councilRegistration: '',
+          degree: 'MBBS',
+          specialty: '',
+          institution: '',
         };
         await setDoc(profRef, {
           fullName: fullName.trim() || 'Practitioner',
           email: userCred.user.email || email,
           profession: 'doctor',
-          highestDegree: 'MD / MBBS',
-          councilRegistration: 'NMC-VERIFIED',
-          sex: 'male',
+          highestDegree: 'MBBS',
+          councilRegistration: '',
           dob: '1990-01-01',
+          sex: 'male',
           phone: '',
           onboardedAt: Date.now(),
-          kyc: verifiedKyc,
+          kyc: initialKyc,
         }, { merge: true });
 
         setMessage("Account created successfully!");
@@ -117,19 +122,32 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
         const userCred = await signInWithEmailAndPassword(auth, email, password);
         if (userCred.user) {
           const profRef = doc(db, 'profiles', userCred.user.uid);
-          const verifiedKyc = {
-            kycStatus: 'approved' as const,
-            councilRegistration: 'NMC-VERIFIED',
-            degree: 'MD / MBBS',
-            specialty: 'Emergency Medicine',
-            institution: 'Kathmandu Central Hospital',
-            submittedAt: Date.now(),
-            approvedAt: Date.now(),
-          };
-          await setDoc(profRef, {
-            kyc: verifiedKyc,
-            councilRegistration: 'NMC-VERIFIED',
-          }, { merge: true });
+          const existingSnap = await getDoc(profRef);
+          if (!existingSnap.exists()) {
+            const initialKyc = {
+              kycStatus: 'unsubmitted' as const,
+              councilRegistration: '',
+              degree: 'MBBS',
+              specialty: '',
+              institution: '',
+            };
+            await setDoc(profRef, {
+              fullName: userCred.user.displayName || email.split('@')[0] || 'Practitioner',
+              email: userCred.user.email || email,
+              profession: 'doctor',
+              highestDegree: 'MBBS',
+              councilRegistration: '',
+              dob: '1990-01-01',
+              sex: 'male',
+              phone: '',
+              onboardedAt: Date.now(),
+              kyc: initialKyc,
+            });
+          } else {
+            await setDoc(profRef, {
+              email: userCred.user.email || email,
+            }, { merge: true });
+          }
         }
         setMessage("Signed in successfully!");
       }

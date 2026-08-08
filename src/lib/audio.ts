@@ -1,6 +1,7 @@
 
 export class MedicalAudio {
   private static context: AudioContext | null = null;
+  private static activeTimeouts: Set<NodeJS.Timeout> = new Set();
 
   private static init() {
     if (!this.context) {
@@ -11,24 +12,40 @@ export class MedicalAudio {
     }
   }
 
+  public static stopAll() {
+    this.activeTimeouts.forEach(t => clearTimeout(t));
+    this.activeTimeouts.clear();
+    if (this.context && this.context.state !== 'closed') {
+      try {
+        this.context.suspend();
+      } catch (e) {
+        // Safe catch
+      }
+    }
+  }
+
   private static playTone(frequency: number, duration: number, volume: number = 0.1, type: OscillatorType = 'sine') {
     this.init();
-    if (!this.context) return;
+    if (!this.context || this.context.state === 'suspended') return;
 
-    const oscillator = this.context.createOscillator();
-    const gainNode = this.context.createGain();
+    try {
+      const oscillator = this.context.createOscillator();
+      const gainNode = this.context.createGain();
 
-    oscillator.type = type;
-    oscillator.frequency.setValueAtTime(frequency, this.context.currentTime);
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, this.context.currentTime);
 
-    gainNode.gain.setValueAtTime(volume, this.context.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.0001, this.context.currentTime + duration);
+      gainNode.gain.setValueAtTime(volume, this.context.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, this.context.currentTime + duration);
 
-    oscillator.connect(gainNode);
-    gainNode.connect(this.context.destination);
+      oscillator.connect(gainNode);
+      gainNode.connect(this.context.destination);
 
-    oscillator.start();
-    oscillator.stop(this.context.currentTime + duration);
+      oscillator.start();
+      oscillator.stop(this.context.currentTime + duration);
+    } catch (e) {
+      // AudioContext could be closed or suspended
+    }
   }
 
   static playAlert() {
@@ -39,14 +56,27 @@ export class MedicalAudio {
   static playCycleEnd() {
     // Double beep
     this.playTone(880, 0.1);
-    setTimeout(() => this.playTone(880, 0.1), 150);
+    const t = setTimeout(() => {
+      this.playTone(880, 0.1);
+      this.activeTimeouts.delete(t);
+    }, 150);
+    this.activeTimeouts.add(t);
   }
 
   static playUrgent() {
     // Multi-tone urgent alert
     this.playTone(1046.50, 0.1); // C6
-    setTimeout(() => this.playTone(1318.51, 0.1), 100); // E6
-    setTimeout(() => this.playTone(1567.98, 0.2), 200); // G6
+    const t1 = setTimeout(() => {
+      this.playTone(1318.51, 0.1); // E6
+      this.activeTimeouts.delete(t1);
+    }, 100);
+    this.activeTimeouts.add(t1);
+
+    const t2 = setTimeout(() => {
+      this.playTone(1567.98, 0.2); // G6
+      this.activeTimeouts.delete(t2);
+    }, 200);
+    this.activeTimeouts.add(t2);
   }
 
   static playMetronomeBeat() {
