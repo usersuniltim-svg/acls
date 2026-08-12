@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ShieldCheck, CheckCircle2, XCircle, Clock, Search, RefreshCw, UserCheck, AlertTriangle } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -173,18 +173,39 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail }: Adm
     }
   };
 
-  const filteredProfiles = profiles.filter(p => {
-    const status = p.kyc?.kycStatus || 'unsubmitted';
-    if (filter !== 'all' && status !== filter) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+  const { pendingCount, approvedCount, rejectedCount } = useMemo(() => {
+    let pending = 0;
+    let approved = 0;
+    let rejected = 0;
+    for (let i = 0; i < profiles.length; i++) {
+      const status = profiles[i].kyc?.kycStatus;
+      if (status === 'pending') pending++;
+      else if (status === 'approved') approved++;
+      else if (status === 'rejected') rejected++;
+    }
+    return { pendingCount: pending, approvedCount: approved, rejectedCount: rejected };
+  }, [profiles]);
+
+  const filteredProfiles = useMemo(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      return profiles.filter(p => {
+        const status = p.kyc?.kycStatus || 'unsubmitted';
+        return filter === 'all' || status === filter;
+      });
+    }
+
+    const q = trimmed.toLowerCase();
+    return profiles.filter(p => {
+      const status = p.kyc?.kycStatus || 'unsubmitted';
+      if (filter !== 'all' && status !== filter) return false;
+
       const nameMatch = p.fullName?.toLowerCase().includes(q);
       const regMatch = p.councilRegistration?.toLowerCase().includes(q) || p.kyc?.councilRegistration?.toLowerCase().includes(q);
       const emailMatch = p.email?.toLowerCase().includes(q);
       return nameMatch || regMatch || emailMatch;
-    }
-    return true;
-  });
+    });
+  }, [profiles, filter, searchQuery]);
 
   return (
     <AnimatePresence>
@@ -234,19 +255,19 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail }: Adm
                 onClick={() => setFilter('pending')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all cursor-pointer border-none ${filter === 'pending' ? 'bg-red-600 text-white shadow' : 'text-gray-700 hover:text-black'}`}
               >
-                Pending Review ({profiles.filter(p => p.kyc?.kycStatus === 'pending').length})
+                Pending Review ({pendingCount})
               </button>
               <button
                 onClick={() => setFilter('approved')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all cursor-pointer border-none ${filter === 'approved' ? 'bg-red-600 text-white shadow' : 'text-gray-700 hover:text-black'}`}
               >
-                Verified Doctors ({profiles.filter(p => p.kyc?.kycStatus === 'approved').length})
+                Verified Doctors ({approvedCount})
               </button>
               <button
                 onClick={() => setFilter('rejected')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all cursor-pointer border-none ${filter === 'rejected' ? 'bg-red-600 text-white shadow' : 'text-gray-700 hover:text-black'}`}
               >
-                Rejected ({profiles.filter(p => p.kyc?.kycStatus === 'rejected').length})
+                Rejected ({rejectedCount})
               </button>
               <button
                 onClick={() => setFilter('all')}
