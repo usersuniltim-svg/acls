@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ShieldCheck, CheckCircle2, XCircle, Clock, Search, RefreshCw, UserCheck, AlertTriangle } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, onSnapshot, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { X, ShieldCheck, CheckCircle2, XCircle, Clock, Search, RefreshCw, UserCheck } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 import { UserProfile } from '../types';
 
 interface AdminKycPanelProps {
