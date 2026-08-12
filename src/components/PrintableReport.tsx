@@ -15,6 +15,11 @@ interface PrintableReportProps {
   currentRhythm?: string;
 }
 
+// Pre-compiled regular expressions cached at module level to avoid re-compilation on every render
+const DRUG_REGEX = /epinephrine|epi|amiodarone|lidocaine|atropine|magnesium|bicarb|calcium/i;
+const SHOCK_REGEX = /shock|joule|defibrillation/i;
+const AIRWAY_ROSC_REGEX = /airway|rosc|intubation|iv|io|line/i;
+
 export default function PrintableReport({
   patientCode,
   savedAt,
@@ -34,26 +39,44 @@ export default function PrintableReport({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Parse Drug Administration History from logs
-  const drugLogs = logs.filter((l) =>
-    l.type === 'DRUG_EPI' ||
-    l.type === 'DRUG_AMIO' ||
-    l.type === 'DRUG_LIDO' ||
-    /epinephrine|epi|amiodarone|lidocaine|atropine|magnesium|bicarb|calcium/i.test(l.description)
-  );
+  // Compute drugLogs, shockLogs, and airwayAndRoscLogs in a single-pass loop over the logs array
+  const drugLogs: LogEvent[] = [];
+  const shockLogs: LogEvent[] = [];
+  const airwayAndRoscLogs: LogEvent[] = [];
 
-  // Parse Shock History from logs
-  const shockLogs = logs.filter((l) =>
-    l.type === 'SHOCK' ||
-    /shock|joule|defibrillation/i.test(l.description)
-  );
+  const len = logs.length;
+  for (let i = 0; i < len; i++) {
+    const l = logs[i];
+    const type = l.type;
+    const desc = l.description;
 
-  // Parse Airway & ROSC events
-  const airwayAndRoscLogs = logs.filter((l) =>
-    l.type === 'ROSC' ||
-    l.type === 'ADVANCED_AIRWAY' ||
-    /airway|rosc|intubation|iv|io|line/i.test(l.description)
-  );
+    // Parse Drug Administration History from logs
+    if (
+      type === 'DRUG_EPI' ||
+      type === 'DRUG_AMIO' ||
+      type === 'DRUG_LIDO' ||
+      DRUG_REGEX.test(desc)
+    ) {
+      drugLogs.push(l);
+    }
+
+    // Parse Shock History from logs
+    if (
+      type === 'SHOCK' ||
+      SHOCK_REGEX.test(desc)
+    ) {
+      shockLogs.push(l);
+    }
+
+    // Parse Airway & ROSC events
+    if (
+      type === 'ROSC' ||
+      type === 'ADVANCED_AIRWAY' ||
+      AIRWAY_ROSC_REGEX.test(desc)
+    ) {
+      airwayAndRoscLogs.push(l);
+    }
+  }
 
   const reportDate = savedAt
     ? new Date(savedAt).toLocaleString()
