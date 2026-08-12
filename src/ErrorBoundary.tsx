@@ -10,8 +10,7 @@ interface State {
   error: Error | null;
 }
 
-// @ts-ignore
-export class ErrorBoundary extends (React.Component as any) {
+export class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
     this.state = {
@@ -29,7 +28,7 @@ export class ErrorBoundary extends (React.Component as any) {
   }
 
   render() {
-    if ((this.state as State).hasError) {
+    if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-[#050B16] text-[#E2E8F0] flex items-center justify-center p-6 text-center">
           <div className="max-w-md w-full glass-panel p-8 space-y-6 border-red-500/20 bg-slate-900/90 shadow-2xl rounded-2xl">
@@ -39,7 +38,7 @@ export class ErrorBoundary extends (React.Component as any) {
             <div>
               <h2 className="text-xl font-display font-bold text-white uppercase tracking-tight">Application Initialization Notice</h2>
               <p className="text-slate-400 text-xs mt-2 leading-relaxed">
-                {(this.state as State).error?.message || "An unexpected rendering event occurred."}
+                {this.state.error?.message || "An unexpected rendering event occurred."}
               </p>
             </div>
             <button
@@ -56,6 +55,6 @@ export class ErrorBoundary extends (React.Component as any) {
       );
     }
 
-    return (this.props as Props).children;
+    return this.props.children;
   }
 }

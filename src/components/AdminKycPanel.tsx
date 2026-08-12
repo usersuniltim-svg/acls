@@ -87,9 +87,13 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail }: Adm
 
   if (!isOpen) return null;
 
+  const profilesMap = React.useMemo(() => {
+    return new Map(profiles.map(p => [p.id, p]));
+  }, [profiles]);
+
   const handleApprove = async (docId: string, doctorName: string) => {
     setActionStatus(`Approving ${doctorName}...`);
-    const targetProfile = profiles.find(p => p.id === docId);
+    const targetProfile = profilesMap.get(docId);
     const existingKyc = targetProfile?.kyc || {
       councilRegistration: targetProfile?.councilRegistration || 'NMC-VERIFIED',
       degree: targetProfile?.highestDegree || 'MBBS',
@@ -135,7 +139,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail }: Adm
     if (reason === null) return;
 
     setActionStatus(`Rejecting ${doctorName}...`);
-    const targetProfile = profiles.find(p => p.id === docId);
+    const targetProfile = profilesMap.get(docId);
     const existingKyc = targetProfile?.kyc || {
       councilRegistration: targetProfile?.councilRegistration || 'NMC-UNVERIFIED',
       degree: targetProfile?.highestDegree || 'MBBS',
