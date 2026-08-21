@@ -38,6 +38,7 @@ import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth
 import { doc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
 import MobileDashboard from './components/MobileDashboard';
 import DesktopDashboard from './components/DesktopDashboard';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 const AuthModal = React.lazy(() => import('./components/AuthModal'));
 const DoctorKycModal = React.lazy(() => import('./components/DoctorKycModal'));
@@ -1200,6 +1201,7 @@ export default function App() {
           userProfile={profile}
         />
       </React.Suspense>
+      <SpeedInsights />
     </div>
   );
 }
