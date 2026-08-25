@@ -889,71 +889,21 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setTheme(isDark ? 'medical-white' : 'clinical-dark')}
-                  className={`px-2.5 py-1 rounded-xl border text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  className={`p-2 rounded-xl border text-[9px] font-bold uppercase tracking-wider flex items-center justify-center cursor-pointer transition-colors ${
                     isDark 
-                      ? 'border-indigo-500/30 bg-indigo-500/20 text-indigo-300' 
-                      : 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                      ? 'border-indigo-500/30 bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30' 
+                      : 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
                   }`}
                   title="Switch theme"
                 >
                   {isDark ? (
-                    <>
-                      <Sun className="w-3.5 h-3.5 text-amber-400" />
-                      <span>White Theme</span>
-                    </>
+                    <Sun className="w-4 h-4 text-amber-400" />
                   ) : (
-                    <>
-                      <Moon className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>Dark Theme</span>
-                    </>
+                    <Moon className="w-4 h-4 text-indigo-600" />
                   )}
                 </button>
               </div>
               <p className="text-red-600 text-[8.5px] uppercase tracking-widest font-mono font-bold">Practice & Live Monitor System • 2025 Nepal Standards</p>
-            </div>
-
-            {/* View Mode Chooser */}
-            <div className={`p-2.5 rounded-2xl border flex items-center justify-between gap-1.5 ${
-              isDark ? 'bg-slate-950/60 border-white/5' : 'bg-gray-50 border-gray-200'
-            }`}>
-              <span className={`text-[8.5px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
-                Device Interface:
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('android')}
-                  className={`px-2.5 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
-                    viewMode === 'android'
-                      ? 'bg-red-600 text-white shadow-sm font-extrabold'
-                      : isDark ? 'text-slate-300 hover:text-white' : 'text-gray-700 hover:text-black'
-                  }`}
-                >
-                  <Smartphone className="w-3 h-3" /> Android
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('desktop')}
-                  className={`px-2.5 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
-                    viewMode === 'desktop'
-                      ? 'bg-red-600 text-white shadow-sm font-extrabold'
-                      : isDark ? 'text-slate-300 hover:text-white' : 'text-gray-700 hover:text-black'
-                  }`}
-                >
-                  <Laptop className="w-3 h-3" /> Desktop
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('auto')}
-                  className={`px-2 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
-                    viewMode === 'auto'
-                      ? 'bg-red-600 text-white shadow-sm font-extrabold'
-                      : isDark ? 'text-slate-300 hover:text-white' : 'text-gray-700 hover:text-black'
-                  }`}
-                >
-                  Auto
-                </button>
-              </div>
             </div>
 
             <p className={`text-[9.5px] leading-relaxed text-center font-medium ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>

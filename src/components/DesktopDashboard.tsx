@@ -590,19 +590,13 @@ export default function DesktopDashboard({
             <button
               type="button"
               onClick={() => setTheme && setTheme(theme === 'clinical-dark' ? 'medical-white' : 'clinical-dark')}
-              className="px-3 py-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+              className="p-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 transition-all cursor-pointer flex items-center justify-center shadow-sm"
               title="Toggle Medical White / Clinical Dark Theme"
             >
               {theme === 'clinical-dark' ? (
-                <>
-                  <Sun className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Medical White</span>
-                </>
+                <Sun className="w-4 h-4 text-amber-400" />
               ) : (
-                <>
-                  <Moon className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Clinical Dark</span>
-                </>
+                <Moon className="w-4 h-4 text-indigo-400" />
               )}
             </button>
             <button
