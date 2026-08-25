@@ -1,25 +1,31 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { initializeFirestore, doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
+import { 
+  initializeFirestore, 
+  doc, 
+  setDoc, 
+  getDoc,
+  updateDoc, 
+  onSnapshot, 
+  collection,
+  getDocFromServer,
+  Unsubscribe
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { SavedCase, UserProfile } from '../types';
 
 const app = initializeApp(firebaseConfig);
 
 // Using initializeFirestore with settings to help with potential connectivity issues in iframes
 export const db = initializeFirestore(app, {
-  // Using long polling and forcing it can help in environments where WebSockets are blocked
   experimentalForceLongPolling: true,
-  // This can help with some proxy issues
   experimentalAutoDetectLongPolling: false,
 }, (firebaseConfig as any).firestoreDatabaseId && (firebaseConfig as any).firestoreDatabaseId !== '(default)' 
   ? (firebaseConfig as any).firestoreDatabaseId 
   : undefined);
 
-console.log("Firestore initialized with experimentalForceLongPolling: true and experimentalAutoDetectLongPolling: false");
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
-
-// Removed premature connection test to avoid misleading console errors before login.
 
 export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
 
@@ -69,3 +75,93 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
+
+/**
+ * Validates connection to Firestore server
+ */
+export async function testFirestoreConnection(): Promise<boolean> {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn("Firestore client is operating offline, local cache enabled.");
+    }
+    return false;
+  }
+}
+
+/**
+ * Synchronizes user profile to Firestore with guaranteed merging
+ */
+export async function syncUserProfileToFirestore(userId: string, data: Partial<UserProfile>): Promise<boolean> {
+  if (!userId) return false;
+  const path = `profiles/${userId}`;
+  try {
+    const profileRef = doc(db, 'profiles', userId);
+    await setDoc(profileRef, {
+      ...data,
+      updatedAt: Date.now()
+    }, { merge: true });
+
+    // Also update secondary user collection for parity
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      ...data,
+      updatedAt: Date.now()
+    }, { merge: true }).catch(() => {});
+
+    return true;
+  } catch (error) {
+    console.error("Failed to sync user profile to Firestore:", error);
+    try {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    } catch (e) {}
+    return false;
+  }
+}
+
+/**
+ * Synchronizes all saved resuscitation cases to Firestore
+ */
+export async function syncSavedCasesToFirestore(userId: string, cases: SavedCase[]): Promise<boolean> {
+  if (!userId) return false;
+  const path = `profiles/${userId}`;
+  try {
+    const profileRef = doc(db, 'profiles', userId);
+    await setDoc(profileRef, {
+      savedCases: cases,
+      lastCasesSyncAt: Date.now()
+    }, { merge: true });
+    return true;
+  } catch (error) {
+    console.error("Failed to sync saved cases to Firestore:", error);
+    try {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    } catch (e) {}
+    return false;
+  }
+}
+
+/**
+ * Real-time listener for practitioner profile and cases
+ */
+export function subscribeToUserProfile(
+  userId: string,
+  onData: (profile: UserProfile) => void,
+  onError?: (error: any) => void
+): Unsubscribe {
+  const profileRef = doc(db, 'profiles', userId);
+  return onSnapshot(profileRef, (snapshot) => {
+    if (snapshot.exists()) {
+      onData(snapshot.data() as UserProfile);
+    }
+  }, (err) => {
+    console.error("Error subscribing to profile in Firestore:", err);
+    if (onError) onError(err);
+    try {
+      handleFirestoreError(err, OperationType.GET, `profiles/${userId}`);
+    } catch (e) {}
+  });
+}
+

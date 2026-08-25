@@ -58,6 +58,28 @@ export interface SavedCase {
   signatureDataUrl?: string;
 }
 
+export interface GroundingChunk {
+  uri: string;
+  title: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  groundingChunks?: GroundingChunk[];
+  webSearchQueries?: string[];
+  modelUsed?: string;
+  isSearching?: boolean;
+}
+
+export type CopilotRole = 
+  | 'acls_expert'
+  | 'toxicology_hs_ts'
+  | 'pals_pediatric'
+  | 'post_rosc_care';
+
 export interface UserProfile {
   uid?: string;
   fullName: string;
@@ -73,3 +95,5 @@ export interface UserProfile {
   kyc?: DoctorKyc;
   savedCases?: SavedCase[];
 }
+
+

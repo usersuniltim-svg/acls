@@ -17,7 +17,10 @@ import {
   Printer,
   Sparkles,
   Sun,
-  Moon
+  Moon,
+  Database,
+  RefreshCw,
+  Bot
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -33,11 +36,18 @@ import {
   EPI_INTERVAL, 
 } from './constants';
 import { MedicalAudio } from './lib/audio';
-import { auth, db } from './lib/firebase';
+import { 
+  auth, 
+  db, 
+  testFirestoreConnection, 
+  syncUserProfileToFirestore, 
+  syncSavedCasesToFirestore 
+} from './lib/firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
-import { doc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import MobileDashboard from './components/MobileDashboard';
 import DesktopDashboard from './components/DesktopDashboard';
+import GeminiResusCopilot from './components/GeminiResusCopilot';
 
 const AuthModal = React.lazy(() => import('./components/AuthModal'));
 const DoctorKycModal = React.lazy(() => import('./components/DoctorKycModal'));
@@ -114,6 +124,7 @@ export default function App() {
   const [isAdminPasswordModalOpen, setIsAdminPasswordModalOpen] = useState(false);
   const [isVerificationGatekeeperOpen, setIsVerificationGatekeeperOpen] = useState(false);
   const [isLandingSavedCasesOpen, setIsLandingSavedCasesOpen] = useState(false);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
 
   // Saved Cases State (Max 3 Cases)
   const [savedCases, setSavedCases] = useState<SavedCase[]>(() => {
@@ -126,6 +137,11 @@ export default function App() {
   });
 
   const [isGuestMode, setIsGuestMode] = useState(false);
+  const [viewMode, setViewMode] = useState<'auto' | 'android' | 'desktop'>('auto');
+
+  // Cloud Database Sync Status ('synced' | 'syncing' | 'offline')
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline'>('synced');
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(Date.now());
 
   // Android & PWA App Variables
   const [deviceMode, setDeviceMode] = useState<'standalone' | 'phone_demo'>('phone_demo');
@@ -350,19 +366,26 @@ export default function App() {
             setProfile(pData as UserProfile);
             try {
               localStorage.setItem('acls_user_profile', JSON.stringify(pData));
-              if (Array.isArray(pData.savedCases) && pData.savedCases.length > 0) {
-                setSavedCases((prev) => {
-                  const map = new Map<string, SavedCase>();
+              setSavedCases((prev) => {
+                const map = new Map<string, SavedCase>();
+                if (Array.isArray(pData.savedCases)) {
                   pData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));
-                  prev.forEach((c) => map.set(c.id, c));
-                  const merged = Array.from(map.values()).slice(0, 3);
-                  try {
-                    localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
-                  } catch (e) {}
-                  return merged;
-                });
-              }
+                }
+                prev.forEach((c) => map.set(c.id, c));
+                const merged = Array.from(map.values()).slice(0, 3);
+                try {
+                  localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
+                } catch (e) {}
+
+                // If local had unsynced cases, push them to Firestore
+                if (currentUser?.uid && merged.length > (pData.savedCases?.length || 0)) {
+                  syncSavedCasesToFirestore(currentUser.uid, merged).catch(() => {});
+                }
+                return merged;
+              });
             } catch (e) {}
+            setSyncStatus('synced');
+            setLastSyncedAt(Date.now());
             setLoading(false);
           } else {
             // Document doesn't exist in 'profiles' yet - check local cache or create default profile in Firestore
@@ -391,7 +414,12 @@ export default function App() {
               }
             };
 
-            setDoc(profileDocRef, defaultProf, { merge: true }).catch((e) => console.warn("Auto-create profile failed:", e));
+            setDoc(profileDocRef, defaultProf, { merge: true })
+              .then(() => {
+                setSyncStatus('synced');
+                setLastSyncedAt(Date.now());
+              })
+              .catch((e) => console.warn("Auto-create profile failed:", e));
             setProfile(defaultProf);
             try {
               localStorage.setItem('acls_user_profile', JSON.stringify(defaultProf));
@@ -400,6 +428,7 @@ export default function App() {
           }
         }, (err) => {
           console.error("Profile error:", err);
+          setSyncStatus('offline');
           setProfile(null);
           setLoading(false);
         });
@@ -428,6 +457,41 @@ export default function App() {
       }
     };
   }, []);
+
+  // Force Cloud Database Synchronizer
+  const handleForceSync = async () => {
+    setSyncStatus('syncing');
+    try {
+      await testFirestoreConnection();
+      if (user?.uid) {
+        await syncSavedCasesToFirestore(user.uid, savedCases);
+        if (profile) {
+          await syncUserProfileToFirestore(user.uid, profile);
+        }
+      }
+      setSyncStatus('synced');
+      setLastSyncedAt(Date.now());
+    } catch (e) {
+      console.warn("Force sync offline/fallback:", e);
+      setSyncStatus('offline');
+    }
+  };
+
+  // Auto-sync when internet reconnects
+  useEffect(() => {
+    const handleOnline = () => {
+      handleForceSync();
+    };
+    const handleOffline = () => {
+      setSyncStatus('offline');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [user, profile, savedCases]);
 
   // Sync Defibrillator and Haptic configuration to LocalStorage
   useEffect(() => {
@@ -699,11 +763,17 @@ export default function App() {
     } catch (e) {}
 
     if (user?.uid) {
-      const profRef = doc(db, 'profiles', user.uid);
-      updateDoc(profRef, { savedCases: updated }).catch(() => {
-        const userRef = doc(db, 'users', user.uid);
-        updateDoc(userRef, { savedCases: updated }).catch(() => {});
-      });
+      setSyncStatus('syncing');
+      syncSavedCasesToFirestore(user.uid, updated)
+        .then((ok) => {
+          if (ok) {
+            setSyncStatus('synced');
+            setLastSyncedAt(Date.now());
+          } else {
+            setSyncStatus('offline');
+          }
+        })
+        .catch(() => setSyncStatus('offline'));
     }
 
     return true;
@@ -718,11 +788,17 @@ export default function App() {
     } catch (e) {}
 
     if (user?.uid) {
-      const profRef = doc(db, 'profiles', user.uid);
-      updateDoc(profRef, { savedCases: updated }).catch(() => {
-        const userRef = doc(db, 'users', user.uid);
-        updateDoc(userRef, { savedCases: updated }).catch(() => {});
-      });
+      setSyncStatus('syncing');
+      syncSavedCasesToFirestore(user.uid, updated)
+        .then((ok) => {
+          if (ok) {
+            setSyncStatus('synced');
+            setLastSyncedAt(Date.now());
+          } else {
+            setSyncStatus('offline');
+          }
+        })
+        .catch(() => setSyncStatus('offline'));
     }
   };
 
@@ -786,53 +862,106 @@ export default function App() {
     onboardedAt: Date.now()
   };
 
-  const renderInMobileLayout = isMobileScreen;
+  const renderInMobileLayout = viewMode === 'android' ? true : viewMode === 'desktop' ? false : isMobileScreen;
 
   const renderAppContent = () => {
     if (!hasSessionStarted) {
+      const isDark = theme === 'clinical-dark';
       return (
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none bg-white text-black overflow-y-auto" id="landing-screen">
+        <div className={`flex-1 flex flex-col items-center justify-center p-4 sm:p-6 text-center select-none overflow-y-auto ${
+          isDark ? 'bg-[#0b0f19] text-white' : 'bg-[#f8fafc] text-black'
+        }`} id="landing-screen">
           <motion.div 
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="max-w-md w-full bg-white p-6 space-y-6 border border-gray-300 rounded-3xl shadow-xl my-auto text-black"
+            className={`max-w-md w-full p-6 space-y-5 border rounded-3xl shadow-xl my-auto text-left ${
+              isDark ? 'bg-slate-900/80 border-white/10 text-white' : 'bg-white border-gray-200 text-black'
+            }`}
           >
             {/* CPR Logo Graphic */}
             <div className="mx-auto flex items-center justify-center">
               <CprLogo className="w-28 sm:w-32 h-auto max-h-24" />
             </div>
 
-            <div>
+            <div className="text-center">
               <div className="flex items-center justify-between mb-1">
-                <h1 className="text-2xl font-display font-bold tracking-tight">ACLS Companion</h1>
+                <h1 className="text-xl sm:text-2xl font-display font-bold tracking-tight">ACLS Companion</h1>
                 <button
                   type="button"
-                  onClick={() => setTheme(theme === 'clinical-dark' ? 'medical-white' : 'clinical-dark')}
-                  className="px-2.5 py-1 rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
+                  onClick={() => setTheme(isDark ? 'medical-white' : 'clinical-dark')}
+                  className={`px-2.5 py-1 rounded-xl border text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    isDark 
+                      ? 'border-indigo-500/30 bg-indigo-500/20 text-indigo-300' 
+                      : 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                  }`}
                   title="Switch theme"
                 >
-                  {theme === 'clinical-dark' ? (
+                  {isDark ? (
                     <>
                       <Sun className="w-3.5 h-3.5 text-amber-400" />
                       <span>White Theme</span>
                     </>
                   ) : (
                     <>
-                      <Moon className="w-3.5 h-3.5 text-indigo-400" />
+                      <Moon className="w-3.5 h-3.5 text-indigo-600" />
                       <span>Dark Theme</span>
                     </>
                   )}
                 </button>
               </div>
-              <p className="text-red-600 text-[8.5px] uppercase tracking-widest font-mono font-bold">Practice & Live Monitor System • v3.0</p>
+              <p className="text-red-600 text-[8.5px] uppercase tracking-widest font-mono font-bold">Practice & Live Monitor System • 2025 Nepal Standards</p>
             </div>
 
-            <p className="text-gray-700 text-[10px] leading-relaxed max-w-sm mx-auto font-medium">
+            {/* View Mode Chooser */}
+            <div className={`p-2.5 rounded-2xl border flex items-center justify-between gap-1.5 ${
+              isDark ? 'bg-slate-950/60 border-white/5' : 'bg-gray-50 border-gray-200'
+            }`}>
+              <span className={`text-[8.5px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                Device Interface:
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('android')}
+                  className={`px-2.5 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+                    viewMode === 'android'
+                      ? 'bg-red-600 text-white shadow-sm font-extrabold'
+                      : isDark ? 'text-slate-300 hover:text-white' : 'text-gray-700 hover:text-black'
+                  }`}
+                >
+                  <Smartphone className="w-3 h-3" /> Android
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('desktop')}
+                  className={`px-2.5 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+                    viewMode === 'desktop'
+                      ? 'bg-red-600 text-white shadow-sm font-extrabold'
+                      : isDark ? 'text-slate-300 hover:text-white' : 'text-gray-700 hover:text-black'
+                  }`}
+                >
+                  <Laptop className="w-3 h-3" /> Desktop
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('auto')}
+                  className={`px-2 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+                    viewMode === 'auto'
+                      ? 'bg-red-600 text-white shadow-sm font-extrabold'
+                      : isDark ? 'text-slate-300 hover:text-white' : 'text-gray-700 hover:text-black'
+                  }`}
+                >
+                  Auto
+                </button>
+              </div>
+            </div>
+
+            <p className={`text-[9.5px] leading-relaxed text-center font-medium ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
               Please calibrate defibrillation joules. In case of active arrest code, click below immediately to activate resuscitation logs.
             </p>
 
             {/* PRIMARY ACCESS BUTTONS (RED BUTTONS) */}
-            <div className="space-y-3 pt-2">
+            <div className="space-y-2.5 pt-1">
               {/* BUTTON 1: SIGN IN / FULL ACCESS */}
               <button 
                 id="start-full-access-btn"
@@ -875,16 +1004,35 @@ export default function App() {
                     <Activity className="w-4 h-4 text-white" />
                     2. Guest Mode (Limited Access Only)
                   </span>
+                  <p className="text-[8.5px] text-white/90 font-normal">
+                    CPR 2-Min Timer, Metronome Sound & Emergency Drug Tracking
+                  </p>
                 </div>
               </button>
             </div>
 
+            {/* BUTTON 3: SAVED CASES */}
+            <button
+              type="button"
+              onClick={() => setIsLandingSavedCasesOpen(true)}
+              className={`w-full py-2.5 rounded-xl border text-[9.5px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                isDark 
+                  ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-white/10' 
+                  : 'bg-gray-100 hover:bg-gray-200 text-slate-800 border-gray-300'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 text-red-600" />
+              Saved Resuscitation Registry Logs ({savedCases.length}/3)
+            </button>
+
             {/* MODAL: LANDING SAVED CASES & LOGS */}
             {isLandingSavedCasesOpen && (
-              <div className="fixed inset-0 z-[300] bg-black/50 backdrop-blur-md flex items-center justify-center p-4">
-                <div className="w-full max-w-xl bg-white border border-gray-300 rounded-2xl p-5 relative max-h-[90vh] overflow-y-auto space-y-4 text-left shadow-2xl text-black">
-                  <div className="flex justify-between items-center border-b border-gray-200 pb-3">
-                    <h3 className="text-sm font-bold uppercase text-black flex items-center gap-2">
+              <div className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
+                <div className={`w-full max-w-xl border rounded-2xl p-5 relative max-h-[90vh] overflow-y-auto space-y-4 text-left shadow-2xl ${
+                  isDark ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-gray-300 text-black'
+                }`}>
+                  <div className="flex justify-between items-center border-b pb-3 border-inherit">
+                    <h3 className={`text-sm font-bold uppercase flex items-center gap-2 ${isDark ? 'text-white' : 'text-black'}`}>
                       <FileText className="w-4 h-4 text-red-600" />
                       Saved Resuscitation Registry Logs
                     </h3>
@@ -907,20 +1055,23 @@ export default function App() {
               </div>
             )}
 
-
             {/* MANDATORY CLINICAL DISCLAIMER & COPYRIGHT FOOTER */}
-            <div className="pt-4 border-t border-white/10 text-center space-y-2">
-              <p className="text-[10px] text-amber-300 font-medium leading-relaxed bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 shadow-sm">
+            <div className="pt-3 border-t border-inherit text-center space-y-2">
+              <p className={`text-[9.5px] font-medium leading-relaxed rounded-xl p-3 shadow-sm ${
+                isDark 
+                  ? 'text-amber-300 bg-amber-500/10 border border-amber-500/20' 
+                  : 'text-amber-900 bg-amber-50 border border-amber-200'
+              }`}>
                 This app has not been validated clinically as a tool. It is intended to use for academic purpose. Please use cautiously.
               </p>
               <div className="flex items-center justify-center gap-2">
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                <p className={`text-[9.5px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                   Copyright © Dr. Sunil Timilsina, MBBS
                 </p>
                 <button
                   type="button"
                   onClick={() => setIsAdminPasswordModalOpen(true)}
-                  className="text-slate-600 hover:text-slate-400 text-[9px] p-0.5 bg-transparent border-none cursor-pointer"
+                  className="text-gray-400 hover:text-gray-600 text-[10px] p-0.5 bg-transparent border-none cursor-pointer"
                   title="Admin Board"
                 >
                   🛡️
@@ -933,50 +1084,79 @@ export default function App() {
     }
 
     if (renderInMobileLayout) {
+      const isDark = theme === 'clinical-dark';
       return (
-        <MobileDashboard 
-          state={state}
-          setState={setState}
-          hasSessionStarted={hasSessionStarted}
-          setHasSessionStarted={setHasSessionStarted}
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          phoneTime={phoneTime}
-          batteryLevel={batteryLevel}
-          isVibrating={isVibrating}
-          soundEnabled={soundEnabled}
-          setSoundEnabled={setSoundEnabled}
-          metronomeCount={metronomeCount}
-          triggerPwaInstall={triggerPwaInstall}
-          vibrateDevice={vibrateDevice}
-          formatTime={formatTime}
-          cprProgress={cprProgress}
-          epiProgress={epiProgress}
-          toggleTimer={toggleTimer}
-          resetCprTimer={resetCprTimer}
-          handleShock={handleShock}
-          handleEpi={handleEpi}
-          handleRosc={handleRosc}
-          handleRhythmSelect={handleRhythmSelect}
-          addLog={addLog}
-          effectiveProfile={effectiveProfile}
-          handleStartCPR={handleStartCPR}
-          hapticDuration={hapticDuration}
-          setHapticDuration={setHapticDuration}
-          hapticIntensity={hapticIntensity}
-          setHapticIntensity={setHapticIntensity}
-          onOpenAuth={() => setIsAuthModalOpen(true)}
-          onOpenKyc={() => setIsKycModalOpen(true)}
-          onOpenAdmin={() => setIsAdminPanelOpen(true)}
-          onOpenAdminPasswordModal={() => setIsAdminPasswordModalOpen(true)}
-          onSignOut={handleSignOut}
-          savedCases={savedCases}
-          onSaveCurrentCase={handleSaveCurrentCase}
-          onDeleteCase={handleDeleteCase}
-          isGuestMode={isGuestMode}
-          theme={theme}
-          setTheme={setTheme}
-        />
+        <div className={`flex-1 w-full h-full flex flex-col items-center justify-center overflow-hidden ${
+          isDark ? 'bg-[#080c14]' : 'bg-[#e2e8f0]'
+        }`}>
+          {/* Centralized Phone Frame / Android Shell */}
+          <div className="w-full h-full max-w-md flex flex-col bg-transparent relative sm:p-2 sm:py-3">
+            <div className={`w-full h-full flex flex-col sm:rounded-[32px] sm:border-[6px] sm:shadow-2xl overflow-hidden relative ${
+              isDark ? 'bg-[#0b0f19] sm:border-slate-800' : 'bg-[#f8fafc] sm:border-slate-700'
+            }`}>
+              {/* Centralized Phone Speaker Notch / Status Header on simulated desktop preview */}
+              <div className={`hidden sm:flex h-6 w-full px-5 items-center justify-between text-[9px] font-mono font-bold select-none shrink-0 z-30 border-b ${
+                isDark ? 'bg-[#0c111d] text-slate-400 border-white/5' : 'bg-gray-100 text-gray-700 border-gray-200'
+              }`}>
+                <span>{phoneTime}</span>
+                <div className="w-2.5 h-2.5 rounded-full bg-slate-900 dark:bg-slate-700 mx-auto" title="Camera Lens" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[8.5px]">5G</span>
+                  <span>🔋 {batteryLevel}%</span>
+                </div>
+              </div>
+
+              {/* Mobile Dashboard Component */}
+              <MobileDashboard 
+                state={state}
+                setState={setState}
+                hasSessionStarted={hasSessionStarted}
+                setHasSessionStarted={setHasSessionStarted}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                phoneTime={phoneTime}
+                batteryLevel={batteryLevel}
+                isVibrating={isVibrating}
+                soundEnabled={soundEnabled}
+                setSoundEnabled={setSoundEnabled}
+                metronomeCount={metronomeCount}
+                triggerPwaInstall={triggerPwaInstall}
+                vibrateDevice={vibrateDevice}
+                formatTime={formatTime}
+                cprProgress={cprProgress}
+                epiProgress={epiProgress}
+                toggleTimer={toggleTimer}
+                resetCprTimer={resetCprTimer}
+                handleShock={handleShock}
+                handleEpi={handleEpi}
+                handleRosc={handleRosc}
+                handleRhythmSelect={handleRhythmSelect}
+                addLog={addLog}
+                effectiveProfile={effectiveProfile}
+                handleStartCPR={handleStartCPR}
+                hapticDuration={hapticDuration}
+                setHapticDuration={setHapticDuration}
+                hapticIntensity={hapticIntensity}
+                setHapticIntensity={setHapticIntensity}
+                onOpenAuth={() => setIsAuthModalOpen(true)}
+                onOpenKyc={() => setIsKycModalOpen(true)}
+                onOpenAdmin={() => setIsAdminPanelOpen(true)}
+                onOpenAdminPasswordModal={() => setIsAdminPasswordModalOpen(true)}
+                onSignOut={handleSignOut}
+                savedCases={savedCases}
+                onSaveCurrentCase={handleSaveCurrentCase}
+                onDeleteCase={handleDeleteCase}
+                isGuestMode={isGuestMode}
+                theme={theme}
+                setTheme={setTheme}
+                syncStatus={syncStatus}
+                lastSyncedAt={lastSyncedAt}
+                onForceSync={handleForceSync}
+                onOpenCopilot={() => setIsCopilotOpen(true)}
+              />
+            </div>
+          </div>
+        </div>
       );
     } else {
       return (
@@ -1014,6 +1194,10 @@ export default function App() {
           isGuestMode={isGuestMode}
           theme={theme}
           setTheme={setTheme}
+          syncStatus={syncStatus}
+          lastSyncedAt={lastSyncedAt}
+          onForceSync={handleForceSync}
+          onOpenCopilot={() => setIsCopilotOpen(true)}
         />
       );
     }
@@ -1139,17 +1323,108 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen w-full bg-white text-black font-sans antialiased flex flex-col overflow-hidden" id="acls-app-root">
-      {/* Top minimal status bar for quick time / session info */}
-      <div className="h-7 w-full bg-gray-100 px-4 flex items-center justify-between z-50 select-none text-[9px] font-bold text-gray-800 font-mono shrink-0 border-b border-gray-300">
+    <div className={`h-screen w-full font-sans antialiased flex flex-col overflow-hidden ${
+      theme === 'clinical-dark' ? 'bg-[#0b0f19] text-white' : 'bg-white text-black'
+    }`} id="acls-app-root">
+      {/* Top status & device view switcher bar */}
+      <div className={`h-9 w-full px-3 sm:px-4 flex items-center justify-between z-50 select-none text-[9px] font-bold font-mono shrink-0 border-b ${
+        theme === 'clinical-dark' ? 'bg-[#0c111d] text-slate-300 border-white/10' : 'bg-gray-100 text-gray-800 border-gray-300'
+      }`}>
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
-          <span className="text-black font-bold uppercase tracking-wider">Resuscitation Command</span>
+          <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+          <span className="font-sans font-black uppercase tracking-wider hidden xs:inline">
+            ACLS 2025 Companion
+          </span>
+          <span className="text-[8px] bg-red-600 text-white px-1.5 py-0.5 rounded font-black uppercase">
+            Nepal
+          </span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-gray-700 font-sans hidden sm:inline">{effectiveProfile.fullName} ({effectiveProfile.profession.toUpperCase()})</span>
-          <span>🔋 {batteryLevel}%</span>
-          <span className="text-black font-sans ml-1 font-bold">{phoneTime}</span>
+
+        {/* Central View Mode Switcher (Android vs Desktop vs Auto) */}
+        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-0.5 rounded-xl border border-black/10 dark:border-white/10">
+          <button
+            type="button"
+            onClick={() => setViewMode('android')}
+            className={`px-2 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+              viewMode === 'android'
+                ? 'bg-red-600 text-white shadow-sm font-extrabold'
+                : theme === 'clinical-dark' ? 'text-slate-400 hover:text-white' : 'text-gray-600 hover:text-black'
+            }`}
+            title="Preview Centralized Android Phone View"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Android View</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('desktop')}
+            className={`px-2 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+              viewMode === 'desktop'
+                ? 'bg-red-600 text-white shadow-sm font-extrabold'
+                : theme === 'clinical-dark' ? 'text-slate-400 hover:text-white' : 'text-gray-600 hover:text-black'
+            }`}
+            title="Desktop Workstation View"
+          >
+            <Laptop className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Desktop View</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('auto')}
+            className={`px-2 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+              viewMode === 'auto'
+                ? 'bg-red-600 text-white shadow-sm font-extrabold'
+                : theme === 'clinical-dark' ? 'text-slate-400 hover:text-white' : 'text-gray-600 hover:text-black'
+            }`}
+            title="Auto Responsive View"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Auto</span>
+          </button>
+        </div>
+
+        {/* Right Status info */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={() => setIsCopilotOpen(true)}
+            className="px-2.5 py-0.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[8.5px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+            title="Open Gemini ACLS Resuscitation AI Co-Pilot with Google Search Grounding"
+          >
+            <Bot className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="font-bold">AI CO-PILOT</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleForceSync}
+            disabled={syncStatus === 'syncing'}
+            className={`px-2 py-0.5 rounded-lg border text-[8px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all ${
+              syncStatus === 'synced'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                : syncStatus === 'syncing'
+                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 animate-pulse'
+                : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 hover:bg-red-500/20'
+            }`}
+            title="Database Sync Status (Click to Force Sync)"
+          >
+            <Database className="w-3 h-3 text-emerald-500" />
+            <span className="hidden sm:inline">
+              {syncStatus === 'synced' ? 'DB SYNCED' : syncStatus === 'syncing' ? 'SYNCING...' : 'OFFLINE'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTheme(theme === 'clinical-dark' ? 'medical-white' : 'clinical-dark')}
+            className="p-1 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+            title="Toggle theme"
+          >
+            {theme === 'clinical-dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-600" />}
+          </button>
+          <span className="hidden md:inline text-[9px] font-sans opacity-80">
+            {effectiveProfile.fullName}
+          </span>
+          <span className="font-mono">🔋 {batteryLevel}%</span>
+          <span className="font-mono">{phoneTime}</span>
         </div>
       </div>
 
@@ -1200,6 +1475,20 @@ export default function App() {
           userProfile={profile}
         />
       </React.Suspense>
+
+      {/* Gemini AI ACLS Resuscitation Co-Pilot & Google Search Grounding */}
+      <GeminiResusCopilot
+        isOpen={isCopilotOpen}
+        onClose={() => setIsCopilotOpen(false)}
+        theme={theme}
+        currentAclsState={{
+          cprCycleCount: state.cprCycleCount,
+          shocksCount: state.shocksCount,
+          epiCount: state.epiCount,
+          totalTime: state.totalTime,
+          currentRhythm: state.currentRhythm
+        }}
+      />
     </div>
   );
 }

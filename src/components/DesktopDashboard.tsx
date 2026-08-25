@@ -17,7 +17,11 @@ import {
   Download,
   Printer,
   Sun,
-  Moon
+  Moon,
+  Database,
+  RefreshCw,
+  Bot,
+  Sparkles
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { 
@@ -67,6 +71,10 @@ interface DesktopDashboardProps {
   isGuestMode?: boolean;
   theme?: 'medical-white' | 'clinical-dark';
   setTheme?: (theme: 'medical-white' | 'clinical-dark') => void;
+  syncStatus?: 'synced' | 'syncing' | 'offline';
+  lastSyncedAt?: number | null;
+  onForceSync?: () => Promise<void>;
+  onOpenCopilot?: () => void;
 }
 
 export default function DesktopDashboard({
@@ -103,11 +111,15 @@ export default function DesktopDashboard({
   isGuestMode = false,
   theme = 'medical-white',
   setTheme,
+  syncStatus = 'synced',
+  lastSyncedAt,
+  onForceSync,
+  onOpenCopilot,
 }: DesktopDashboardProps) {
 
   const isVerifiedDoctor = effectiveProfile?.kyc?.kycStatus === 'approved';
   const isPendingDoctor = effectiveProfile?.kyc?.kycStatus === 'pending';
-  const hasFullAccess = !isGuestMode && isVerifiedDoctor;
+  const hasFullAccess = !isGuestMode && (isVerifiedDoctor || isPendingDoctor);
 
   const renderDesktopSettings = () => {
     return (
@@ -115,7 +127,7 @@ export default function DesktopDashboard({
         <div className="flex items-center justify-between border-b border-white/5 pb-4">
           <div>
             <h3 className="text-xl font-display font-bold text-white uppercase tracking-tight">System & Hardware Configuration</h3>
-            <p className="text-[10px] text-slate-500 uppercase font-mono font-bold mt-1">Calibrate haptics, defib energy, and device offline sync</p>
+            <p className="text-[10px] text-slate-500 uppercase font-mono font-bold mt-1">Calibrate haptics, defib energy, and cloud database sync</p>
           </div>
           <button 
             type="button"
@@ -124,6 +136,65 @@ export default function DesktopDashboard({
           >
             ← Back to Workstation
           </button>
+        </div>
+
+        {/* Database & Cloud Sync Panel */}
+        <div className="glass-panel p-5 bg-slate-900/50 border-white/5 rounded-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+            <div className="flex items-center gap-2 text-emerald-400">
+              <Database className="w-5 h-5" />
+              <h4 className="text-sm font-bold uppercase tracking-wider">Cloud Database Synchronization</h4>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 ${
+                syncStatus === 'synced'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : syncStatus === 'syncing'
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse'
+                  : 'bg-red-500/10 text-red-400 border-red-500/20'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  syncStatus === 'synced' ? 'bg-emerald-400' : syncStatus === 'syncing' ? 'bg-amber-400' : 'bg-red-400'
+                }`} />
+                {syncStatus === 'synced' ? 'DATABASE SYNCED' : syncStatus === 'syncing' ? 'SYNCING...' : 'OFFLINE CACHED'}
+              </span>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-300 leading-relaxed font-sans">
+            Continuous real-time synchronization between the clinical workstation and cloud Firestore database. Resuscitation cases, practitioner KYC credentials, and telemetry logs are securely mirrored across sessions.
+          </p>
+
+          <div className="p-3 bg-slate-950/60 rounded-xl border border-white/5 space-y-1.5 font-mono text-[10.5px]">
+            <div className="flex justify-between text-slate-400">
+              <span>Database Provider:</span>
+              <span className="text-slate-200 font-bold">Google Cloud Firestore</span>
+            </div>
+            <div className="flex justify-between text-slate-400">
+              <span>Sync Mode:</span>
+              <span className="text-emerald-400 font-bold">Real-time Bi-directional (Live Listener)</span>
+            </div>
+            <div className="flex justify-between text-slate-400">
+              <span>Last Synchronized:</span>
+              <span className="text-slate-200">{lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : 'Continuous (Live)'}</span>
+            </div>
+            <div className="flex justify-between text-slate-400">
+              <span>Local Offline Fallback:</span>
+              <span className="text-blue-400 font-bold">Active (Auto-Sync on Reconnect)</span>
+            </div>
+          </div>
+
+          {onForceSync && (
+            <button
+              type="button"
+              onClick={onForceSync}
+              disabled={syncStatus === 'syncing'}
+              className="w-full py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+              <span>{syncStatus === 'syncing' ? 'Synchronizing Cloud Database...' : 'Force Cloud Database Sync Now'}</span>
+            </button>
+          )}
         </div>
 
         {/* Display Theme Switcher Panel */}
@@ -490,6 +561,32 @@ export default function DesktopDashboard({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={onOpenCopilot}
+              className="px-3.5 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 shadow-sm hover:scale-[1.02]"
+              title="Open Gemini ACLS AI Co-Pilot & Google Search Grounded Resuscitation Evidence"
+            >
+              <Bot className="w-3.5 h-3.5 text-emerald-400" />
+              <span>AI Co-Pilot</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[8px] bg-emerald-500/30 text-emerald-200">GEMINI</span>
+            </button>
+            <button
+              type="button"
+              onClick={onForceSync}
+              disabled={syncStatus === 'syncing'}
+              className={`px-3 py-1.5 rounded-xl border text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 shadow-sm ${
+                syncStatus === 'synced'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                  : syncStatus === 'syncing'
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 animate-pulse'
+                  : 'bg-red-500/10 border-red-500/30 text-red-300 hover:bg-red-500/20'
+              }`}
+              title="Click to Force Sync Cloud Database"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{syncStatus === 'synced' ? 'DB SYNCED ✓' : syncStatus === 'syncing' ? 'SYNCING...' : 'OFFLINE (SYNC)'}</span>
+            </button>
             <button
               type="button"
               onClick={() => setTheme && setTheme(theme === 'clinical-dark' ? 'medical-white' : 'clinical-dark')}

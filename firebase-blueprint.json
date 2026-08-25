@@ -1,27 +1,51 @@
 {
   "entities": {
-    "User": {
+    "UserProfile": {
       "title": "User Profile",
-      "description": "Professional profile of the medical personnel using the app.",
+      "description": "Professional profile, KYC verification state, and saved resuscitation cases for medical practitioners.",
       "type": "object",
       "properties": {
-        "fullName": { "type": "string", "description": "Full name of the user" },
-        "profession": { "type": "string", "enum": ["doctor", "nurse", "paramedics"] },
+        "fullName": { "type": "string", "description": "Full name of the medical practitioner" },
+        "profession": { "type": "string", "enum": ["doctor", "nurse", "paramedics", "student"] },
         "highestDegree": { "type": "string" },
-        "dob": { "type": "string", "format": "date" },
+        "dob": { "type": "string" },
         "sex": { "type": "string", "enum": ["male", "female", "other"] },
         "councilRegistration": { "type": "string" },
         "email": { "type": "string", "format": "email" },
         "phone": { "type": "string" },
-        "onboardedAt": { "type": "string", "format": "date-time" }
+        "onboardedAt": { "type": "number" },
+        "isAdmin": { "type": "boolean" },
+        "kyc": {
+          "type": "object",
+          "properties": {
+            "councilRegistration": { "type": "string" },
+            "degree": { "type": "string" },
+            "specialty": { "type": "string" },
+            "institution": { "type": "string" },
+            "idCardNumber": { "type": "string" },
+            "kycStatus": { "type": "string", "enum": ["unsubmitted", "pending", "approved", "rejected"] },
+            "submittedAt": { "type": "number" },
+            "approvedAt": { "type": "number" },
+            "approvedBy": { "type": "string" },
+            "rejectionReason": { "type": "string" }
+          }
+        },
+        "savedCases": {
+          "type": "array",
+          "description": "Registry of completed resuscitation cases and event logs"
+        }
       },
-      "required": ["fullName", "profession", "highestDegree", "dob", "sex", "councilRegistration", "email", "phone", "onboardedAt"]
+      "required": ["fullName", "email", "profession"]
     }
   },
   "firestore": {
+    "/profiles/{userId}": {
+      "schema": "UserProfile",
+      "description": "Practitioner profiles and KYC state indexed by Firebase Auth UID."
+    },
     "/users/{userId}": {
-      "schema": "User",
-      "description": "User profiles indexed by their Firebase Auth UID."
+      "schema": "UserProfile",
+      "description": "User authentication profile copy indexed by Firebase Auth UID."
     }
   }
 }
