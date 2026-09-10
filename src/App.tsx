@@ -22,7 +22,8 @@ import {
   RefreshCw,
   Bot,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -877,6 +878,24 @@ export default function App() {
     onboardedAt: Date.now()
   };
 
+  const isVerifiedDoctor = Boolean(user && profile?.kyc?.kycStatus === 'approved');
+
+  const handleOpenCopilot = () => {
+    if (!user) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+    if (profile?.kyc?.kycStatus !== 'approved') {
+      if (!profile?.kyc || profile.kyc.kycStatus === 'unsubmitted') {
+        setIsKycModalOpen(true);
+      } else {
+        setIsVerificationGatekeeperOpen(true);
+      }
+      return;
+    }
+    setIsCopilotOpen(true);
+  };
+
   const renderInMobileLayout = viewMode === 'android' ? true : viewMode === 'desktop' ? false : isMobileScreen;
 
   const renderAppContent = () => {
@@ -1217,7 +1236,7 @@ export default function App() {
                 syncStatus={syncStatus}
                 lastSyncedAt={lastSyncedAt}
                 onForceSync={handleForceSync}
-                onOpenCopilot={() => setIsCopilotOpen(true)}
+                onOpenCopilot={handleOpenCopilot}
               />
             </div>
           </div>
@@ -1262,7 +1281,7 @@ export default function App() {
           syncStatus={syncStatus}
           lastSyncedAt={lastSyncedAt}
           onForceSync={handleForceSync}
-          onOpenCopilot={() => setIsCopilotOpen(true)}
+          onOpenCopilot={handleOpenCopilot}
         />
       );
     }
@@ -1452,12 +1471,31 @@ export default function App() {
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             type="button"
-            onClick={() => setIsCopilotOpen(true)}
-            className="px-2.5 py-0.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[8.5px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
-            title="Open Gemini ACLS Resuscitation AI Co-Pilot with Google Search Grounding"
+            onClick={handleOpenCopilot}
+            className={`px-2.5 py-0.5 rounded-lg border text-[8.5px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all shadow-sm ${
+              isVerifiedDoctor
+                ? 'border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                : 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300'
+            }`}
+            title={
+              isVerifiedDoctor
+                ? "Open Gemini ACLS Resuscitation AI Co-Pilot (Verified Doctor)"
+                : !user
+                ? "AI Co-Pilot restricted to signed in, KYC-verified doctors. Click to Sign In."
+                : "AI Co-Pilot restricted to KYC-verified doctors. Click to check verification."
+            }
           >
-            <Bot className="w-3.5 h-3.5 text-emerald-500" />
+            {isVerifiedDoctor ? (
+              <Bot className="w-3.5 h-3.5 text-emerald-500" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            )}
             <span className="font-bold">AI CO-PILOT</span>
+            {!isVerifiedDoctor && (
+              <span className="text-[7.5px] bg-amber-500/20 text-amber-800 dark:text-amber-200 px-1 py-0.2 rounded font-extrabold">
+                KYC ONLY
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -1560,6 +1598,22 @@ export default function App() {
         isOpen={isCopilotOpen}
         onClose={() => setIsCopilotOpen(false)}
         theme={theme}
+        isVerifiedDoctor={isVerifiedDoctor}
+        isUserSignedIn={Boolean(user)}
+        userEmail={user?.email || undefined}
+        kycStatus={profile?.kyc?.kycStatus}
+        onOpenAuth={() => {
+          setIsCopilotOpen(false);
+          setIsAuthModalOpen(true);
+        }}
+        onOpenKyc={() => {
+          setIsCopilotOpen(false);
+          setIsKycModalOpen(true);
+        }}
+        onOpenVerificationGatekeeper={() => {
+          setIsCopilotOpen(false);
+          setIsVerificationGatekeeperOpen(true);
+        }}
         currentAclsState={{
           cprCycleCount: state.cprCycleCount,
           shocksCount: state.shocksCount,

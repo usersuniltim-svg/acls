@@ -21,7 +21,8 @@ import {
   Database,
   RefreshCw,
   Bot,
-  Sparkles
+  Sparkles,
+  Lock
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { 
@@ -564,12 +565,28 @@ export default function DesktopDashboard({
             <button
               type="button"
               onClick={onOpenCopilot}
-              className="px-3.5 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 shadow-sm hover:scale-[1.02]"
-              title="Open Gemini ACLS AI Co-Pilot & Google Search Grounded Resuscitation Evidence"
+              className={`px-3.5 py-1.5 rounded-xl border text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 shadow-sm hover:scale-[1.02] ${
+                effectiveProfile.kyc?.kycStatus === 'approved' && !isGuestMode
+                  ? 'border-emerald-500/40 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300'
+                  : 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300'
+              }`}
+              title={
+                effectiveProfile.kyc?.kycStatus === 'approved' && !isGuestMode
+                  ? "Open Gemini ACLS AI Co-Pilot & Google Search Grounded Resuscitation Evidence"
+                  : "ACLS AI Co-Pilot strictly restricted to signed-in, KYC-verified doctors"
+              }
             >
-              <Bot className="w-3.5 h-3.5 text-emerald-400" />
+              {effectiveProfile.kyc?.kycStatus === 'approved' && !isGuestMode ? (
+                <Bot className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Lock className="w-3.5 h-3.5 text-amber-400" />
+              )}
               <span>AI Co-Pilot</span>
-              <span className="px-1.5 py-0.5 rounded-full text-[8px] bg-emerald-500/30 text-emerald-200">GEMINI</span>
+              {effectiveProfile.kyc?.kycStatus === 'approved' && !isGuestMode ? (
+                <span className="px-1.5 py-0.5 rounded-full text-[8px] bg-emerald-500/30 text-emerald-200">VERIFIED</span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded-full text-[8px] bg-amber-500/30 text-amber-200 font-extrabold">KYC ONLY</span>
+              )}
             </button>
             <button
               type="button"

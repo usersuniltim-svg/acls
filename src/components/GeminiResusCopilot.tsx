@@ -22,7 +22,9 @@ import {
   Maximize2,
   Minimize2,
   HelpCircle,
-  Clock
+  Clock,
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatMessage, GroundingChunk, CopilotRole } from '../types';
@@ -39,6 +41,13 @@ interface GeminiResusCopilotProps {
     totalTime?: number;
     currentRhythm?: string;
   };
+  isVerifiedDoctor?: boolean;
+  isUserSignedIn?: boolean;
+  userEmail?: string;
+  kycStatus?: 'unsubmitted' | 'pending' | 'approved' | 'rejected';
+  onOpenAuth?: () => void;
+  onOpenKyc?: () => void;
+  onOpenVerificationGatekeeper?: () => void;
 }
 
 const ROLE_PRESETS: Record<CopilotRole, { title: string; subtitle: string; icon: any; instruction: string; color: string }> = {
@@ -107,6 +116,13 @@ export default function GeminiResusCopilot({
   onClose,
   theme = 'medical-white',
   currentAclsState,
+  isVerifiedDoctor = false,
+  isUserSignedIn = false,
+  userEmail,
+  kycStatus,
+  onOpenAuth,
+  onOpenKyc,
+  onOpenVerificationGatekeeper,
 }: GeminiResusCopilotProps) {
   const isDark = theme === 'clinical-dark';
 
@@ -169,6 +185,7 @@ export default function GeminiResusCopilot({
 
   // Send Chat Message
   const handleSendMessage = async (customText?: string) => {
+    if (!isVerifiedDoctor) return;
     const textToSend = customText || inputPrompt;
     if (!textToSend.trim() || isLoading) return;
 
@@ -202,6 +219,8 @@ export default function GeminiResusCopilot({
           model: selectedModel,
           useSearchGrounding: useSearchGrounding,
           role: selectedRole,
+          isVerifiedDoctor: true,
+          userEmail: userEmail || undefined
         }),
       });
 
@@ -249,6 +268,7 @@ export default function GeminiResusCopilot({
 
   // Perform Dedicated Google Search Grounding Clinical Inquiry
   const handlePerformEvidenceSearch = async (queryText?: string) => {
+    if (!isVerifiedDoctor) return;
     const query = queryText || searchQuery;
     if (!query.trim() || isSearchingEvidence) return;
 
@@ -260,6 +280,8 @@ export default function GeminiResusCopilot({
         body: JSON.stringify({
           query: query.trim(),
           category: searchCategory,
+          isVerifiedDoctor: true,
+          userEmail: userEmail || undefined
         }),
       });
 
@@ -324,8 +346,12 @@ export default function GeminiResusCopilot({
           isDark ? 'bg-slate-950/80 border-white/10' : 'bg-slate-50 border-slate-200'
         }`}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <Bot className="w-5 h-5" />
+            <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center ${
+              isVerifiedDoctor 
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+            }`}>
+              {isVerifiedDoctor ? <Bot className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -333,6 +359,15 @@ export default function GeminiResusCopilot({
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center gap-1">
                   <Sparkles className="w-2.5 h-2.5" /> GEMINI POWERED
                 </span>
+                {isVerifiedDoctor ? (
+                  <span className="hidden sm:flex px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 items-center gap-1">
+                    <ShieldCheck className="w-2.5 h-2.5" /> VERIFIED DOCTOR ACCESS
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1">
+                    <Lock className="w-2.5 h-2.5" /> KYC REQUIRED
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-500 font-mono">
                 Real-time Clinical Advisor & Google Search Grounded Resuscitation Evidence
@@ -342,34 +377,36 @@ export default function GeminiResusCopilot({
 
           {/* Tab Switcher & Close */}
           <div className="flex items-center gap-2">
-            <div className={`p-1 rounded-xl border flex items-center gap-1 ${
-              isDark ? 'bg-slate-900 border-white/10' : 'bg-slate-200/60 border-slate-300'
-            }`}>
-              <button
-                type="button"
-                onClick={() => setActiveTab('chat')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === 'chat'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Bot className="w-3.5 h-3.5" />
-                <span>AI Chat</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('evidence_search')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === 'evidence_search'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Globe className="w-3.5 h-3.5" />
-                <span>Search Evidence</span>
-              </button>
-            </div>
+            {isVerifiedDoctor && (
+              <div className={`p-1 rounded-xl border flex items-center gap-1 ${
+                isDark ? 'bg-slate-900 border-white/10' : 'bg-slate-200/60 border-slate-300'
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('chat')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeTab === 'chat'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Bot className="w-3.5 h-3.5" />
+                  <span>AI Chat</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('evidence_search')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeTab === 'evidence_search'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Search Evidence</span>
+                </button>
+              </div>
+            )}
 
             <button
               type="button"
@@ -386,8 +423,99 @@ export default function GeminiResusCopilot({
           </div>
         </div>
 
-        {/* Tab 1: AI Chat Interface */}
-        {activeTab === 'chat' && (
+        {/* Gated Access Notice if NOT verified doctor */}
+        {!isVerifiedDoctor ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-10 text-center max-w-lg mx-auto space-y-5 overflow-y-auto">
+            <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 shadow-inner">
+              <Lock className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-[10px] font-mono font-black uppercase tracking-widest text-amber-500 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+                Clinical Safety Security Gate
+              </span>
+              <h3 className="text-xl sm:text-2xl font-display font-black tracking-tight">
+                AI Co-Pilot Restricted
+              </h3>
+              <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                Under AHA/ILCOR clinical decision safety protocols, the <strong>ACLS 2025 AI Co-Pilot</strong> and real-time resuscitation search are exclusively available to <strong>signed in, KYC-verified medical doctors</strong>.
+              </p>
+            </div>
+
+            {/* Dynamic Status Box */}
+            <div className={`w-full p-4 rounded-2xl border text-left space-y-3 ${
+              isDark ? 'bg-slate-950/60 border-white/10' : 'bg-slate-50 border-slate-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Practitioner Status
+                </span>
+                <span className={`text-[9.5px] font-bold px-2 py-0.5 rounded uppercase font-mono ${
+                  !isUserSignedIn ? 'bg-red-500/10 text-red-500 border border-red-500/20'
+                  : kycStatus === 'pending' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                  : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                }`}>
+                  {!isUserSignedIn ? 'Guest (Not Signed In)' : kycStatus === 'pending' ? 'KYC Under Review' : 'KYC Form Required'}
+                </span>
+              </div>
+
+              <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                {!isUserSignedIn ? (
+                  'You are currently operating in Guest Mode. Please sign in with your doctor credentials and complete KYC verification to unlock the AI Co-Pilot.'
+                ) : kycStatus === 'pending' ? (
+                  'Your medical council credentials have been submitted and are under review by the Medical Board Admin. Once approved, the AI Co-Pilot will be unlocked automatically.'
+                ) : (
+                  `Signed in as ${userEmail || 'Practitioner'}. Please submit your Medical Council Registration & degree to obtain verified doctor status.`
+                )}
+              </p>
+
+              <div className="pt-1">
+                {!isUserSignedIn ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      if (onOpenAuth) onOpenAuth();
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase tracking-wider transition-colors shadow cursor-pointer border-none"
+                  >
+                    Sign In To Doctor Account
+                  </button>
+                ) : kycStatus === 'pending' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      if (onOpenVerificationGatekeeper) onOpenVerificationGatekeeper();
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold uppercase tracking-wider transition-colors shadow cursor-pointer border-none"
+                  >
+                    Check Admin Review Status
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      if (onOpenKyc) onOpenKyc();
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase tracking-wider transition-colors shadow cursor-pointer border-none"
+                  >
+                    Complete Doctor KYC Form Now
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-[10px] text-slate-400">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Medical Council (NMC) verification required for clinical decision safety</span>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Tab 1: AI Chat Interface */}
+            {activeTab === 'chat' && (
           <div className="flex-1 flex flex-col min-h-0">
             {/* Role & Model Control Ribbon */}
             <div className={`px-4 py-2.5 border-b flex items-center justify-between flex-wrap gap-2 text-xs ${
@@ -786,6 +914,8 @@ export default function GeminiResusCopilot({
               </div>
             )}
           </div>
+        )}
+          </>
         )}
       </div>
     </div>

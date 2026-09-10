@@ -249,12 +249,25 @@ export default function MobileDashboard({
               type="button"
               onClick={onOpenCopilot}
               className={`px-2 py-1 rounded-xl text-[8.5px] font-bold uppercase tracking-wider cursor-pointer border flex items-center gap-1 ${
-                isDark ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30' : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                isVerifiedDoctor && !isGuestMode
+                  ? isDark ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30' : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                  : isDark ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30' : 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
               }`}
-              title="Open Gemini ACLS AI Co-Pilot"
+              title={
+                isVerifiedDoctor && !isGuestMode
+                  ? "Open Gemini ACLS AI Co-Pilot (Verified Doctor)"
+                  : "ACLS AI Co-Pilot restricted to signed-in, KYC-verified doctors"
+              }
             >
-              <Bot className="w-3.5 h-3.5 text-emerald-400" />
+              {isVerifiedDoctor && !isGuestMode ? (
+                <Bot className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Lock className="w-3.5 h-3.5 text-amber-500" />
+              )}
               <span>AI</span>
+              {!(isVerifiedDoctor && !isGuestMode) && (
+                <span className="text-[7px] font-mono px-1 rounded bg-amber-500/20 text-amber-600 dark:text-amber-300 font-extrabold">KYC</span>
+              )}
             </button>
             <button
               type="button"
