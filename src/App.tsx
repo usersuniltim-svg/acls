@@ -20,7 +20,9 @@ import {
   Moon,
   Database,
   RefreshCw,
-  Bot
+  Bot,
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -125,6 +127,7 @@ export default function App() {
   const [isVerificationGatekeeperOpen, setIsVerificationGatekeeperOpen] = useState(false);
   const [isLandingSavedCasesOpen, setIsLandingSavedCasesOpen] = useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const hasAutoPromptedKycRef = useRef<boolean>(false);
 
   // Saved Cases State (Max 3 Cases)
   const [savedCases, setSavedCases] = useState<SavedCase[]>(() => {
@@ -358,12 +361,24 @@ export default function App() {
         profileUnsubscribeRef.current = null;
       }
       setUser(currentUser);
+      if (!currentUser) {
+        hasAutoPromptedKycRef.current = false;
+      }
       if (currentUser) {
         const profileDocRef = doc(db, 'profiles', currentUser.uid);
         profileUnsubscribeRef.current = onSnapshot(profileDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const pData = docSnap.data() as any;
             setProfile(pData as UserProfile);
+
+            // First-time user auto-prompt for Doctor KYC
+            const kycStatus = pData?.kyc?.kycStatus;
+            if (!hasAutoPromptedKycRef.current && (!kycStatus || kycStatus === 'unsubmitted')) {
+              hasAutoPromptedKycRef.current = true;
+              setTimeout(() => {
+                setIsKycModalOpen(true);
+              }, 400);
+            }
             try {
               localStorage.setItem('acls_user_profile', JSON.stringify(pData));
               setSavedCases((prev) => {
@@ -910,33 +925,177 @@ export default function App() {
               Please calibrate defibrillation joules. In case of active arrest code, click below immediately to activate resuscitation logs.
             </p>
 
+            {/* PRACTITIONER KYC & AUTH STATUS BANNER */}
+            {user ? (
+              <div className="space-y-2">
+                {profile?.kyc?.kycStatus === 'approved' ? (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1.5 bg-emerald-500/20 text-emerald-500 rounded-xl">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div className="text-left">
+                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 block">
+                          Verified Doctor: {profile?.fullName || user.displayName || 'Practitioner'}
+                        </span>
+                        <span className="text-[9px] text-gray-500 dark:text-gray-400 font-mono">
+                          NMC: {profile?.kyc?.councilRegistration || profile?.councilRegistration || 'VERIFIED'} • Full App Access
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className="text-[9px] text-red-500 hover:text-red-600 font-bold uppercase tracking-wider px-2 py-1 rounded-lg border border-red-500/20 hover:bg-red-500/10 cursor-pointer"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                ) : profile?.kyc?.kycStatus === 'pending' ? (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-2 text-left">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
+                        <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                          KYC Application Under Admin Review
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        className="text-[9px] text-red-500 hover:text-red-600 font-bold uppercase tracking-wider px-2 py-1 rounded-lg border border-red-500/20 hover:bg-red-500/10 cursor-pointer"
+                      >
+                        Sign Out
+                      </button>
+                    </div>
+                    <p className="text-[9.5px] text-slate-600 dark:text-slate-300 leading-tight">
+                      Registration <strong>{profile?.kyc?.councilRegistration || 'Submitted'}</strong> is awaiting Medical Board Admin verification. Once verified, you can use the rest of the app.
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setIsVerificationGatekeeperOpen(true)}
+                        className="text-[9.5px] font-bold text-amber-600 dark:text-amber-300 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        Check Status / Admin Review →
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-2xl space-y-2 text-left">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                        <span className="text-[11px] font-bold text-red-600 dark:text-red-400">
+                          First-Time Doctor: KYC Form Required
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        className="text-[9px] text-red-500 hover:text-red-600 font-bold uppercase tracking-wider px-2 py-1 rounded-lg border border-red-500/20 hover:bg-red-500/10 cursor-pointer"
+                      >
+                        Sign Out
+                      </button>
+                    </div>
+                    <p className="text-[9.5px] text-slate-600 dark:text-slate-300 leading-tight">
+                      Signed in as <strong>{user.email}</strong>. To access resuscitation tools, please fill out the Doctor KYC form. Once the admin verifies, you can use the rest of the app.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsKycModalOpen(true)}
+                      className="text-[9.5px] font-bold text-red-600 dark:text-red-400 hover:underline flex items-center gap-1 cursor-pointer pt-0.5"
+                    >
+                      Fill Doctor KYC Form Now →
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             {/* PRIMARY ACCESS BUTTONS (RED BUTTONS) */}
             <div className="space-y-2.5 pt-1">
-              {/* BUTTON 1: SIGN IN / FULL ACCESS */}
-              <button 
-                id="start-full-access-btn"
-                onClick={() => {
-                  vibrateDevice(80);
-                  setIsGuestMode(false);
-                  if (user) {
+              {/* BUTTON 1: DYNAMIC BASED ON KYC/AUTH STATUS */}
+              {!user ? (
+                <button 
+                  id="start-full-access-btn"
+                  onClick={() => {
+                    vibrateDevice(80);
+                    setIsGuestMode(false);
+                    setIsAuthModalOpen(true);
+                  }}
+                  className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                >
+                  <div className="space-y-0.5">
+                    <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-white" />
+                      1. Doctor Sign In & Verification
+                    </span>
+                    <p className="text-[8.5px] text-white/90 font-normal">
+                      Sign in with email/password. First-time doctors complete KYC for admin verification.
+                    </p>
+                  </div>
+                </button>
+              ) : profile?.kyc?.kycStatus === 'approved' ? (
+                <button 
+                  id="start-full-access-btn"
+                  onClick={() => {
+                    vibrateDevice(80);
+                    setIsGuestMode(false);
                     setActiveTab('timer');
                     handleStartCPR();
-                  } else {
-                    setIsAuthModalOpen(true);
-                  }
-                }}
-                className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
-              >
-                <div className="space-y-0.5">
-                  <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-white" />
-                    1. Sign In & Full Access
-                  </span>
-                  <p className="text-[8.5px] text-white/90 font-normal">
-                    Full Resuscitation Registry, Case Logging, Digital Signature & Retrieval
-                  </p>
-                </div>
-              </button>
+                  }}
+                  className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                >
+                  <div className="space-y-0.5">
+                    <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-white" />
+                      1. Start Resuscitation Session (Verified Doctor)
+                    </span>
+                    <p className="text-[8.5px] text-white/90 font-normal">
+                      Full Resuscitation Registry, Defib Joules, Case Logging, Drugs & Digital Signature
+                    </p>
+                  </div>
+                </button>
+              ) : profile?.kyc?.kycStatus === 'pending' ? (
+                <button 
+                  id="start-full-access-btn"
+                  onClick={() => {
+                    vibrateDevice(80);
+                    setIsVerificationGatekeeperOpen(true);
+                  }}
+                  className="w-full p-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                >
+                  <div className="space-y-0.5">
+                    <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-white" />
+                      1. KYC Pending Admin Verification (Check Status)
+                    </span>
+                    <p className="text-[8.5px] text-white/90 font-normal">
+                      License under review. Tap to check verification status or request admin approval.
+                    </p>
+                  </div>
+                </button>
+              ) : (
+                <button 
+                  id="start-full-access-btn"
+                  onClick={() => {
+                    vibrateDevice(80);
+                    setIsKycModalOpen(true);
+                  }}
+                  className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                >
+                  <div className="space-y-0.5">
+                    <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-white" />
+                      1. Fill Doctor KYC Form (Required)
+                    </span>
+                    <p className="text-[8.5px] text-white/90 font-normal">
+                      First-time user: Submit Medical Council registration & degree for admin verification.
+                    </p>
+                  </div>
+                </button>
+              )}
 
               {/* BUTTON 2: GUEST MODE */}
               <button 
@@ -960,50 +1119,6 @@ export default function App() {
                 </div>
               </button>
             </div>
-
-            {/* BUTTON 3: SAVED CASES */}
-            <button
-              type="button"
-              onClick={() => setIsLandingSavedCasesOpen(true)}
-              className={`w-full py-2.5 rounded-xl border text-[9.5px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors ${
-                isDark 
-                  ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-white/10' 
-                  : 'bg-gray-100 hover:bg-gray-200 text-slate-800 border-gray-300'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5 text-red-600" />
-              Saved Resuscitation Registry Logs ({savedCases.length}/3)
-            </button>
-
-            {/* MODAL: LANDING SAVED CASES & LOGS */}
-            {isLandingSavedCasesOpen && (
-              <div className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
-                <div className={`w-full max-w-xl border rounded-2xl p-5 relative max-h-[90vh] overflow-y-auto space-y-4 text-left shadow-2xl ${
-                  isDark ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-gray-300 text-black'
-                }`}>
-                  <div className="flex justify-between items-center border-b pb-3 border-inherit">
-                    <h3 className={`text-sm font-bold uppercase flex items-center gap-2 ${isDark ? 'text-white' : 'text-black'}`}>
-                      <FileText className="w-4 h-4 text-red-600" />
-                      Saved Resuscitation Registry Logs
-                    </h3>
-                    <button 
-                      onClick={() => setIsLandingSavedCasesOpen(false)}
-                      className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg cursor-pointer border-none"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <SavedCasesList
-                    savedCases={savedCases}
-                    onSaveCurrentCase={handleSaveCurrentCase}
-                    onDeleteCase={handleDeleteCase}
-                    hasCurrentLogs={state.logs.length > 0}
-                    practitionerName={effectiveProfile.fullName}
-                    councilRegistration={effectiveProfile.councilRegistration}
-                  />
-                </div>
-              </div>
-            )}
 
             {/* MANDATORY CLINICAL DISCLAIMER & COPYRIGHT FOOTER */}
             <div className="pt-3 border-t border-inherit text-center space-y-2">
@@ -1390,11 +1505,25 @@ export default function App() {
         <AuthModal 
           isOpen={isAuthModalOpen} 
           onClose={() => setIsAuthModalOpen(false)} 
+          onSuccess={() => {
+            setIsAuthModalOpen(false);
+            setTimeout(() => {
+              if (!profile?.kyc || profile.kyc.kycStatus === 'unsubmitted') {
+                setIsKycModalOpen(true);
+              } else if (profile.kyc.kycStatus === 'pending') {
+                setIsVerificationGatekeeperOpen(true);
+              }
+            }, 300);
+          }}
         />
         <DoctorKycModal 
           isOpen={isKycModalOpen} 
           onClose={() => setIsKycModalOpen(false)} 
           userProfile={profile} 
+          onKycUpdated={() => {
+            setIsKycModalOpen(false);
+            setIsVerificationGatekeeperOpen(true);
+          }}
         />
         <AdminKycPanel 
           isOpen={isAdminPanelOpen} 

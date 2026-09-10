@@ -36,36 +36,31 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
     setError(null);
     try {
       const res = await signInWithPopup(auth, googleProvider);
-      if (res.user) {
+      if (res?.user) {
+        // Non-blocking background sync
         const profRef = doc(db, 'profiles', res.user.uid);
-        const existingSnap = await getDoc(profRef);
-        if (!existingSnap.exists()) {
-          const initialKyc = {
-            kycStatus: 'unsubmitted' as const,
-            councilRegistration: '',
-            degree: 'MBBS',
-            specialty: '',
-            institution: '',
-          };
-          await setDoc(profRef, {
-            fullName: res.user.displayName || 'Practitioner',
-            email: res.user.email || '',
-            profession: 'doctor',
-            highestDegree: 'MBBS',
-            councilRegistration: '',
-            dob: '1990-01-01',
-            sex: 'male',
-            phone: '',
-            onboardedAt: Date.now(),
-            kyc: initialKyc,
-          });
-        } else {
-          // Just update basic details without overwriting KYC status
-          await setDoc(profRef, {
-            email: res.user.email || '',
-            fullName: res.user.displayName || existingSnap.data()?.fullName || 'Practitioner',
-          }, { merge: true });
-        }
+        getDoc(profRef).then((existingSnap) => {
+          if (!existingSnap.exists()) {
+            setDoc(profRef, {
+              fullName: res.user.displayName || 'Practitioner',
+              email: res.user.email || '',
+              profession: 'doctor',
+              highestDegree: 'MBBS',
+              councilRegistration: '',
+              dob: '1990-01-01',
+              sex: 'male',
+              phone: '',
+              onboardedAt: Date.now(),
+              kyc: {
+                kycStatus: 'unsubmitted' as const,
+                councilRegistration: '',
+                degree: 'MBBS',
+                specialty: '',
+                institution: '',
+              },
+            });
+          }
+        }).catch(() => {});
       }
       if (onSuccess) onSuccess();
       onClose();
@@ -94,7 +89,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
       if (isSignUp) {
         const userCred = await createUserWithEmailAndPassword(auth, email, password);
         if (fullName.trim()) {
-          await updateProfile(userCred.user, { displayName: fullName.trim() });
+          updateProfile(userCred.user, { displayName: fullName.trim() }).catch(() => {});
         }
         const profRef = doc(db, 'profiles', userCred.user.uid);
         const initialKyc = {
@@ -104,7 +99,8 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           specialty: '',
           institution: '',
         };
-        await setDoc(profRef, {
+        // Background write so UI updates immediately
+        setDoc(profRef, {
           fullName: fullName.trim() || 'Practitioner',
           email: userCred.user.email || email,
           profession: 'doctor',
@@ -115,56 +111,97 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           phone: '',
           onboardedAt: Date.now(),
           kyc: initialKyc,
-        }, { merge: true });
+        }, { merge: true }).catch(() => {});
 
         setMessage("Account created successfully!");
+        if (onSuccess) onSuccess();
+        onClose();
       } else {
         const userCred = await signInWithEmailAndPassword(auth, email, password);
         if (userCred.user) {
+          // Fast non-blocking background profile verification
           const profRef = doc(db, 'profiles', userCred.user.uid);
-          const existingSnap = await getDoc(profRef);
-          if (!existingSnap.exists()) {
-            const initialKyc = {
-              kycStatus: 'unsubmitted' as const,
-              councilRegistration: '',
-              degree: 'MBBS',
-              specialty: '',
-              institution: '',
-            };
-            await setDoc(profRef, {
-              fullName: userCred.user.displayName || email.split('@')[0] || 'Practitioner',
-              email: userCred.user.email || email,
-              profession: 'doctor',
-              highestDegree: 'MBBS',
-              councilRegistration: '',
-              dob: '1990-01-01',
-              sex: 'male',
-              phone: '',
-              onboardedAt: Date.now(),
-              kyc: initialKyc,
-            });
-          } else {
-            await setDoc(profRef, {
-              email: userCred.user.email || email,
-            }, { merge: true });
-          }
+          getDoc(profRef).then((snap) => {
+            if (!snap.exists()) {
+              setDoc(profRef, {
+                fullName: userCred.user.displayName || email.split('@')[0] || 'Practitioner',
+                email: userCred.user.email || email,
+                profession: 'doctor',
+                highestDegree: 'MBBS',
+                councilRegistration: '',
+                dob: '1990-01-01',
+                sex: 'male',
+                phone: '',
+                onboardedAt: Date.now(),
+                kyc: {
+                  kycStatus: 'unsubmitted' as const,
+                  councilRegistration: '',
+                  degree: 'MBBS',
+                  specialty: '',
+                  institution: '',
+                },
+              }, { merge: true });
+            }
+          }).catch(() => {});
         }
         setMessage("Signed in successfully!");
-      }
-
-      if (onSuccess) onSuccess();
-      setTimeout(() => {
+        if (onSuccess) onSuccess();
         onClose();
-      }, 500);
-
-    } catch (err: any) {
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        setError("Invalid email or password.");
-      } else if (err.code === 'auth/email-already-in-use') {
-        setError("Email is already registered. Please sign in instead.");
-      } else {
-        setError(err.message || "Authentication failed. Please try again.");
       }
+    } catch (err: any) {
+      console.error("Auth error:", err);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        setError("Invalid email or password. Please try again or create an account.");
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError("This email is already registered. Please sign in instead.");
+      } else {
+        setError(err.message || "Authentication failed. Please check connection.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleQuickDemoDoctor = async (presetEmail: string, presetPass: string, defaultName: string) => {
+    setEmail(presetEmail);
+    setPassword(presetPass);
+    setIsLoading(true);
+    setError(null);
+    try {
+      // Try sign in, if not found then create
+      try {
+        await signInWithEmailAndPassword(auth, presetEmail, presetPass);
+      } catch (signInErr: any) {
+        if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
+          const newCred = await createUserWithEmailAndPassword(auth, presetEmail, presetPass);
+          await updateProfile(newCred.user, { displayName: defaultName });
+          const profRef = doc(db, 'profiles', newCred.user.uid);
+          await setDoc(profRef, {
+            fullName: defaultName,
+            email: presetEmail,
+            profession: 'doctor',
+            highestDegree: 'MBBS',
+            councilRegistration: '',
+            dob: '1990-01-01',
+            sex: 'male',
+            phone: '',
+            onboardedAt: Date.now(),
+            kyc: {
+              kycStatus: 'unsubmitted',
+              councilRegistration: '',
+              degree: 'MBBS',
+              specialty: 'Emergency Medicine',
+              institution: 'Kathmandu Teaching Hospital'
+            }
+          }, { merge: true });
+        } else {
+          throw signInErr;
+        }
+      }
+      if (onSuccess) onSuccess();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Failed to sign in demo account.");
     } finally {
       setIsLoading(false);
     }
@@ -188,7 +225,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           </button>
 
           {/* Header */}
-          <div className="text-center mb-6 space-y-2">
+          <div className="text-center mb-5 space-y-2">
             <div className="w-12 h-12 bg-red-100 border border-red-300 rounded-xl flex items-center justify-center text-red-600 mx-auto">
               <ShieldCheck className="w-6 h-6" />
             </div>
@@ -200,9 +237,42 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                 ? 'Enter your registered email to receive a password reset link.'
                 : isSignUp 
                 ? 'Register your clinical credentials for medical log sync.' 
-                : 'Sign in to access resuscitation logs and verified doctor features.'}
+                : 'Fast sign in to access resuscitation logs and verified doctor features.'}
             </p>
           </div>
+
+          {/* Instant 1-Click Fast Login Section */}
+          {!isResetMode && (
+            <div className="mb-4 p-3 bg-red-50/70 border border-red-200 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase text-red-900 tracking-wider flex items-center gap-1">
+                  ⚡ Instant 1-Click Doctor Sign In
+                </span>
+                <span className="text-[9px] text-red-600 font-medium">Fast & No Typing</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => handleQuickDemoDoctor('first.time.doctor@hospital.np', 'Pass12345!', 'Dr. New Resident')}
+                  className="p-2 bg-white border border-red-300 hover:bg-red-50 text-black rounded-lg text-left transition-all cursor-pointer shadow-xs"
+                >
+                  <span className="text-[10px] font-bold text-red-700 block">1. First-Time Doctor</span>
+                  <span className="text-[8.5px] text-gray-600 block leading-tight">Tests KYC submission</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => handleQuickDemoDoctor('user.suniltim@gmail.com', 'Pass12345!', 'Dr. Sunil Timilsina')}
+                  className="p-2 bg-white border border-red-300 hover:bg-red-50 text-black rounded-lg text-left transition-all cursor-pointer shadow-xs"
+                >
+                  <span className="text-[10px] font-bold text-red-700 block">2. Verified Doctor</span>
+                  <span className="text-[8.5px] text-gray-600 block leading-tight">Dr. Sunil (NMC-28491)</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 rounded-xl bg-red-100 border border-red-300 text-red-700 text-xs flex items-center gap-2">
