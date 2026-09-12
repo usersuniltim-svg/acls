@@ -529,7 +529,6 @@ export default function DesktopDashboard({
                 </p>
                 <p className="text-[10px] text-amber-100/90 leading-relaxed font-sans">
                   You are operating in Guest Mode. Please <strong className="text-white underline cursor-pointer" onClick={onOpenAuth}>Sign In</strong> to unlock full Resuscitation Registry, case saving & certified retrieval.
-                  For assistance, contact <a href="mailto:user.suniltim@gmail.com" className="text-amber-300 underline font-bold">user.suniltim@gmail.com</a>.
                 </p>
               </div>
             </div>
@@ -920,7 +919,7 @@ export default function DesktopDashboard({
               This app has not been validated clinically as a tool. It is intended to use for academic purpose. Please use cautiously.
             </p>
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
-              Copyright © Dr. Sunil Timilsina, MBBS
+              Nepal ACLS Resuscitation Protocol • 2025 Standards
             </p>
           </div>
         </footer>

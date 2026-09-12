@@ -162,51 +162,6 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
     }
   };
 
-  const handleQuickDemoDoctor = async (presetEmail: string, presetPass: string, defaultName: string) => {
-    setEmail(presetEmail);
-    setPassword(presetPass);
-    setIsLoading(true);
-    setError(null);
-    try {
-      // Try sign in, if not found then create
-      try {
-        await signInWithEmailAndPassword(auth, presetEmail, presetPass);
-      } catch (signInErr: any) {
-        if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
-          const newCred = await createUserWithEmailAndPassword(auth, presetEmail, presetPass);
-          await updateProfile(newCred.user, { displayName: defaultName });
-          const profRef = doc(db, 'profiles', newCred.user.uid);
-          await setDoc(profRef, {
-            fullName: defaultName,
-            email: presetEmail,
-            profession: 'doctor',
-            highestDegree: 'MBBS',
-            councilRegistration: '',
-            dob: '1990-01-01',
-            sex: 'male',
-            phone: '',
-            onboardedAt: Date.now(),
-            kyc: {
-              kycStatus: 'unsubmitted',
-              councilRegistration: '',
-              degree: 'MBBS',
-              specialty: 'Emergency Medicine',
-              institution: 'Kathmandu Teaching Hospital'
-            }
-          }, { merge: true });
-        } else {
-          throw signInErr;
-        }
-      }
-      if (onSuccess) onSuccess();
-      onClose();
-    } catch (err: any) {
-      setError(err.message || "Failed to sign in demo account.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[250] bg-black/50 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
@@ -237,42 +192,9 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                 ? 'Enter your registered email to receive a password reset link.'
                 : isSignUp 
                 ? 'Register your clinical credentials for medical log sync.' 
-                : 'Fast sign in to access resuscitation logs and verified doctor features.'}
+                : 'Sign in to access resuscitation logs and verified doctor features.'}
             </p>
           </div>
-
-          {/* Instant 1-Click Fast Login Section */}
-          {!isResetMode && (
-            <div className="mb-4 p-3 bg-red-50/70 border border-red-200 rounded-xl space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase text-red-900 tracking-wider flex items-center gap-1">
-                  ⚡ Instant 1-Click Doctor Sign In
-                </span>
-                <span className="text-[9px] text-red-600 font-medium">Fast & No Typing</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => handleQuickDemoDoctor('first.time.doctor@hospital.np', 'Pass12345!', 'Dr. New Resident')}
-                  className="p-2 bg-white border border-red-300 hover:bg-red-50 text-black rounded-lg text-left transition-all cursor-pointer shadow-xs"
-                >
-                  <span className="text-[10px] font-bold text-red-700 block">1. First-Time Doctor</span>
-                  <span className="text-[8.5px] text-gray-600 block leading-tight">Tests KYC submission</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => handleQuickDemoDoctor('user.suniltim@gmail.com', 'Pass12345!', 'Dr. Sunil Timilsina')}
-                  className="p-2 bg-white border border-red-300 hover:bg-red-50 text-black rounded-lg text-left transition-all cursor-pointer shadow-xs"
-                >
-                  <span className="text-[10px] font-bold text-red-700 block">2. Verified Doctor</span>
-                  <span className="text-[8.5px] text-gray-600 block leading-tight">Dr. Sunil (NMC-28491)</span>
-                </button>
-              </div>
-            </div>
-          )}
 
           {error && (
             <div className="mb-4 p-3 rounded-xl bg-red-100 border border-red-300 text-red-700 text-xs flex items-center gap-2">
@@ -298,7 +220,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                     <input
                       required
                       type="text"
-                      placeholder="Dr. Sunil Timilsina"
+                      placeholder="e.g. Dr. Full Name"
                       className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 text-xs text-black focus:outline-none focus:ring-2 focus:ring-red-600"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}

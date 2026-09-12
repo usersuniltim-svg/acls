@@ -33,52 +33,8 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail }: Adm
       setProfiles(list);
       setLoading(false);
     }, (err) => {
-      console.warn("Firestore snapshot error in admin panel, using sample data if needed:", err);
-      // Fallback sample data if no profiles stored yet
-      setProfiles([
-        {
-          id: 'demo-doc-1',
-          fullName: 'Dr. Sunil Timilsina',
-          email: 'user.suniltim@gmail.com',
-          profession: 'doctor',
-          highestDegree: 'MBBS, MD',
-          councilRegistration: 'NMC-28491',
-          dob: '1990-01-01',
-          sex: 'male',
-          phone: '+977-9841000000',
-          onboardedAt: Date.now(),
-          kyc: {
-            councilRegistration: 'NMC-28491',
-            degree: 'MBBS, MD (Internal Medicine)',
-            specialty: 'Cardiology & Intensive Care',
-            institution: 'Kathmandu Central Hospital / TUIOM',
-            idCardNumber: '27-01-78-01928',
-            kycStatus: 'pending',
-            submittedAt: Date.now() - 3600000
-          }
-        },
-        {
-          id: 'demo-doc-2',
-          fullName: 'Dr. Aarav Sharma',
-          email: 'aarav.sharma@hospital.np',
-          profession: 'doctor',
-          highestDegree: 'MBBS',
-          councilRegistration: 'NMC-31045',
-          dob: '1992-05-12',
-          sex: 'male',
-          phone: '+977-9851012345',
-          onboardedAt: Date.now() - 86400000,
-          kyc: {
-            councilRegistration: 'NMC-31045',
-            degree: 'MBBS',
-            specialty: 'Emergency Medicine',
-            institution: 'Bir Hospital',
-            idCardNumber: '12-05-82-45210',
-            kycStatus: 'pending',
-            submittedAt: Date.now() - 7200000
-          }
-        }
-      ]);
+      console.warn("Firestore snapshot error in admin panel:", err);
+      setProfiles([]);
       setLoading(false);
     });
 

@@ -457,6 +457,12 @@ export default function App() {
           rhythmCheckTimeLeft: 0,
         }));
         setProfile(null);
+        setSavedCases([]);
+        try {
+          localStorage.removeItem('acls_user_profile');
+          localStorage.removeItem('acls_saved_cases');
+          localStorage.removeItem('acls_copilot_messages');
+        } catch (e) {}
         setLoading(false);
       }
     }, (error) => {
@@ -744,9 +750,15 @@ export default function App() {
         rhythmCheckTimeLeft: 0,
       }));
       setHasSessionStarted(false);
+      try {
+        localStorage.removeItem('acls_user_profile');
+        localStorage.removeItem('acls_saved_cases');
+        localStorage.removeItem('acls_copilot_messages');
+      } catch (e) {}
       await signOut(auth);
       setUser(null);
       setProfile(null);
+      setSavedCases([]);
     } catch (e) {
       console.error("Sign out failed", e);
     }
@@ -1150,7 +1162,7 @@ export default function App() {
               </p>
               <div className="flex items-center justify-center gap-2">
                 <p className={`text-[9.5px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                  Copyright © Dr. Sunil Timilsina, MBBS
+                  Nepal ACLS Resuscitation Protocol • 2025 Standards
                 </p>
                 <button
                   type="button"

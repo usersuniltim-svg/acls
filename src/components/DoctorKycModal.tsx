@@ -17,15 +17,15 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
     kycStatus: 'unsubmitted',
     councilRegistration: userProfile?.councilRegistration || '',
     degree: userProfile?.highestDegree || 'MBBS',
-    specialty: 'Internal Medicine',
-    institution: 'Kathmandu Central Hospital',
+    specialty: '',
+    institution: '',
   };
 
   const [fullName, setFullName] = useState(userProfile?.fullName || '');
   const [councilRegistration, setCouncilRegistration] = useState(currentKyc.councilRegistration || userProfile?.councilRegistration || '');
   const [degree, setDegree] = useState(currentKyc.degree || 'MBBS');
-  const [specialty, setSpecialty] = useState(currentKyc.specialty || 'Emergency Medicine');
-  const [institution, setInstitution] = useState(currentKyc.institution || 'TUIOM Teaching Hospital');
+  const [specialty, setSpecialty] = useState(currentKyc.specialty || '');
+  const [institution, setInstitution] = useState(currentKyc.institution || '');
   const [idCardNumber, setIdCardNumber] = useState(currentKyc.idCardNumber || '');
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -200,7 +200,7 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
               <input
                 required
                 type="text"
-                placeholder="Dr. Sunil Timilsina"
+                placeholder="e.g. Dr. Full Name, MD"
                 className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs text-black focus:outline-none focus:ring-2 focus:ring-red-600"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
@@ -214,7 +214,7 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
                   <input
                     required
                     type="text"
-                    placeholder="e.g. NMC-28491"
+                    placeholder="e.g. NMC-12345"
                     className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs text-red-600 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-red-600"
                     value={councilRegistration}
                     onChange={(e) => setCouncilRegistration(e.target.value)}

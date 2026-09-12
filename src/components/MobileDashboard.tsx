@@ -1161,7 +1161,7 @@ export default function MobileDashboard({
             </p>
             <div className="flex items-center justify-center gap-1.5 pt-1">
               <p className={`text-[9.5px] font-bold uppercase tracking-wider ${textMuted}`}>
-                Copyright © Dr. Sunil Timilsina, MBBS
+                Nepal ACLS Resuscitation Protocol • 2025 Standards
               </p>
               <button
                 type="button"

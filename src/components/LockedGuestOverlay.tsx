@@ -48,22 +48,15 @@ export default function LockedGuestOverlay({
               onClick={onOpenAuth}
               className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 border-none cursor-pointer"
             >
-              <UserCheck className="w-4 h-4" /> Sign In & Get Verified
+              <UserCheck className="w-4 h-4" /> Sign In & Submit Doctor KYC
             </button>
           )}
-          
-          <a
-            href="mailto:user.suniltim@gmail.com?subject=Nepal%20ACLS%20Companion%20Verification%20Request"
-            className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold rounded-xl text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 border border-white/10 transition-all active:scale-95 no-underline cursor-pointer"
-          >
-            <Mail className="w-4 h-4 text-blue-400" /> Contact App Owner
-          </a>
         </div>
 
-        {/* Owner Info */}
+        {/* Verification Info */}
         <div className="pt-2 border-t border-white/10">
           <span className="text-[9.5px] text-slate-400 font-mono block">
-            Owner Contact: <strong className="text-slate-200">user.suniltim@gmail.com</strong>
+            Verification Protocol: <strong className="text-slate-200">Medical Council Registration & KYC Review</strong>
           </span>
         </div>
       </div>
