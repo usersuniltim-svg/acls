@@ -1161,79 +1161,54 @@ export default function App() {
       );
     }
 
-    const isDark = theme === 'clinical-dark';
     return (
-      <div className={`flex-1 w-full h-full flex flex-col items-center justify-center overflow-hidden ${
-        isDark ? 'bg-[#080c14]' : 'bg-[#e2e8f0]'
-      }`}>
-        {/* Centralized Phone Frame / Android Shell */}
-        <div className="w-full h-full max-w-md flex flex-col bg-transparent relative sm:p-2 sm:py-3">
-          <div className={`w-full h-full flex flex-col sm:rounded-[32px] sm:border-[6px] sm:shadow-2xl overflow-hidden relative ${
-            isDark ? 'bg-[#0b0f19] sm:border-slate-800' : 'bg-[#f8fafc] sm:border-slate-700'
-          }`}>
-            {/* Centralized Phone Speaker Notch / Status Header on simulated desktop preview */}
-            <div className={`hidden sm:flex h-6 w-full px-5 items-center justify-between text-[9px] font-mono font-bold select-none shrink-0 z-30 border-b ${
-              isDark ? 'bg-[#0c111d] text-slate-400 border-white/5' : 'bg-gray-100 text-gray-700 border-gray-200'
-            }`}>
-              <span>{phoneTime}</span>
-              <div className="w-2.5 h-2.5 rounded-full bg-slate-900 dark:bg-slate-700 mx-auto" title="Camera Lens" />
-              <div className="flex items-center gap-1.5">
-                <span className="text-[8.5px]">5G</span>
-                <span>🔋 {batteryLevel}%</span>
-              </div>
-            </div>
-
-            {/* Mobile Dashboard Component */}
-            <MobileDashboard 
-              state={state}
-              setState={setState}
-              hasSessionStarted={hasSessionStarted}
-              setHasSessionStarted={setHasSessionStarted}
-              activeTab={activeTab}
-              setActiveTab={setActiveTab}
-              phoneTime={phoneTime}
-              batteryLevel={batteryLevel}
-              isVibrating={isVibrating}
-              soundEnabled={soundEnabled}
-              setSoundEnabled={setSoundEnabled}
-              metronomeCount={metronomeCount}
-              triggerPwaInstall={triggerPwaInstall}
-              vibrateDevice={vibrateDevice}
-              formatTime={formatTime}
-              cprProgress={cprProgress}
-              epiProgress={epiProgress}
-              toggleTimer={toggleTimer}
-              resetCprTimer={resetCprTimer}
-              handleShock={handleShock}
-              handleEpi={handleEpi}
-              handleRosc={handleRosc}
-              handleRhythmSelect={handleRhythmSelect}
-              addLog={addLog}
-              effectiveProfile={effectiveProfile}
-              handleStartCPR={handleStartCPR}
-              hapticDuration={hapticDuration}
-              setHapticDuration={setHapticDuration}
-              hapticIntensity={hapticIntensity}
-              setHapticIntensity={setHapticIntensity}
-              onOpenAuth={() => setIsAuthModalOpen(true)}
-              onOpenKyc={() => setIsKycModalOpen(true)}
-              onOpenAdmin={() => setIsAdminPanelOpen(true)}
-              onOpenAdminPasswordModal={() => setIsAdminPasswordModalOpen(true)}
-              onSignOut={handleSignOut}
-              savedCases={savedCases}
-              onSaveCurrentCase={handleSaveCurrentCase}
-              onDeleteCase={handleDeleteCase}
-              isGuestMode={isGuestMode}
-              theme={theme}
-              setTheme={setTheme}
-              syncStatus={syncStatus}
-              lastSyncedAt={lastSyncedAt}
-              onForceSync={handleForceSync}
-              onOpenCopilot={handleOpenCopilot}
-            />
-          </div>
-        </div>
-      </div>
+      <MobileDashboard 
+        state={state}
+        setState={setState}
+        hasSessionStarted={hasSessionStarted}
+        setHasSessionStarted={setHasSessionStarted}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        phoneTime={phoneTime}
+        batteryLevel={batteryLevel}
+        isVibrating={isVibrating}
+        soundEnabled={soundEnabled}
+        setSoundEnabled={setSoundEnabled}
+        metronomeCount={metronomeCount}
+        triggerPwaInstall={triggerPwaInstall}
+        vibrateDevice={vibrateDevice}
+        formatTime={formatTime}
+        cprProgress={cprProgress}
+        epiProgress={epiProgress}
+        toggleTimer={toggleTimer}
+        resetCprTimer={resetCprTimer}
+        handleShock={handleShock}
+        handleEpi={handleEpi}
+        handleRosc={handleRosc}
+        handleRhythmSelect={handleRhythmSelect}
+        addLog={addLog}
+        effectiveProfile={effectiveProfile}
+        handleStartCPR={handleStartCPR}
+        hapticDuration={hapticDuration}
+        setHapticDuration={setHapticDuration}
+        hapticIntensity={hapticIntensity}
+        setHapticIntensity={setHapticIntensity}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenKyc={() => setIsKycModalOpen(true)}
+        onOpenAdmin={() => setIsAdminPanelOpen(true)}
+        onOpenAdminPasswordModal={() => setIsAdminPasswordModalOpen(true)}
+        onSignOut={handleSignOut}
+        savedCases={savedCases}
+        onSaveCurrentCase={handleSaveCurrentCase}
+        onDeleteCase={handleDeleteCase}
+        isGuestMode={isGuestMode}
+        theme={theme}
+        setTheme={setTheme}
+        syncStatus={syncStatus}
+        lastSyncedAt={lastSyncedAt}
+        onForceSync={handleForceSync}
+        onOpenCopilot={handleOpenCopilot}
+      />
     );
   };
 
@@ -1357,29 +1332,50 @@ export default function App() {
   };
 
   return (
-    <div className={`h-screen w-full font-sans antialiased flex flex-col overflow-hidden ${
-      theme === 'clinical-dark' ? 'bg-[#0b0f19] text-white' : 'bg-white text-black'
+    <div className={`h-[100dvh] w-full font-sans antialiased flex flex-col overflow-hidden select-none ${
+      theme === 'clinical-dark' ? 'bg-[#0b0f19] text-white' : 'bg-[#f8fafc] text-black'
     }`} id="acls-app-root">
-      {/* Top status bar */}
-      <div className={`h-9 w-full px-3 sm:px-4 flex items-center justify-between z-50 select-none text-[9px] font-bold font-mono shrink-0 border-b ${
-        theme === 'clinical-dark' ? 'bg-[#0c111d] text-slate-300 border-white/10' : 'bg-gray-100 text-gray-800 border-gray-300'
+      {/* Native Mobile App Bar */}
+      <header className={`h-12 w-full px-3 sm:px-4 flex items-center justify-between z-50 select-none text-[9px] font-bold font-mono shrink-0 border-b pt-[env(safe-area-inset-top,0px)] transition-colors ${
+        theme === 'clinical-dark' ? 'bg-[#0c111d] text-slate-300 border-white/10' : 'bg-white text-gray-800 border-gray-200 shadow-xs'
       }`}>
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
-          <span className="font-sans font-black uppercase tracking-wider hidden xs:inline">
-            ACLS 2025 Companion
-          </span>
-          <span className="text-[8px] bg-red-600 text-white px-1.5 py-0.5 rounded font-black uppercase">
+          {hasSessionStarted ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm("Return to home screen? Active resuscitation timer will keep tracking in background.")) {
+                  setHasSessionStarted(false);
+                }
+              }}
+              className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider py-1 px-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer border-none bg-transparent"
+              title="Tap to return to Home"
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+              <span className="font-sans font-black tracking-tight text-[11px]">ACLS</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+              <span className="font-sans font-black tracking-tight text-[11px]">ACLS 2025</span>
+            </div>
+          )}
+          <span className="text-[7.5px] bg-red-600 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider">
             Nepal
           </span>
+          {isVerifiedDoctor && (
+            <span className="hidden sm:inline-flex items-center gap-1 text-[7.5px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">
+              <CheckCircle2 className="w-2.5 h-2.5" /> Verified
+            </span>
+          )}
         </div>
 
         {/* Right Status info */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={handleOpenCopilot}
-            className={`px-2.5 py-0.5 rounded-lg border text-[8.5px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all shadow-sm ${
+            className={`px-2 py-1 rounded-lg border text-[8px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all shadow-xs ${
               isVerifiedDoctor
                 ? 'border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
                 : 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300'
@@ -1397,10 +1393,10 @@ export default function App() {
             ) : (
               <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             )}
-            <span className="font-bold">AI CO-PILOT</span>
+            <span className="font-bold">AI</span>
             {!isVerifiedDoctor && (
-              <span className="text-[7.5px] bg-amber-500/20 text-amber-800 dark:text-amber-200 px-1 py-0.2 rounded font-extrabold">
-                KYC ONLY
+              <span className="text-[7px] bg-amber-500/20 text-amber-800 dark:text-amber-200 px-1 py-0.2 rounded font-extrabold">
+                KYC
               </span>
             )}
           </button>
@@ -1408,35 +1404,34 @@ export default function App() {
             type="button"
             onClick={handleForceSync}
             disabled={syncStatus === 'syncing'}
-            className={`px-2 py-0.5 rounded-lg border text-[8px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all ${
+            className={`px-1.5 py-1 rounded-lg border text-[7.5px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all ${
               syncStatus === 'synced'
                 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
                 : syncStatus === 'syncing'
                 ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 animate-pulse'
                 : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 hover:bg-red-500/20'
             }`}
-            title="Database Sync Status (Click to Force Sync)"
+            title="Cloud DB Sync"
           >
             <Database className="w-3 h-3 text-emerald-500" />
-            <span className="hidden sm:inline">
-              {syncStatus === 'synced' ? 'DB SYNCED' : syncStatus === 'syncing' ? 'SYNCING...' : 'OFFLINE'}
+            <span className="hidden md:inline">
+              {syncStatus === 'synced' ? 'SYNCED' : syncStatus === 'syncing' ? 'SYNC...' : 'OFFLINE'}
             </span>
           </button>
           <button
             type="button"
             onClick={() => setTheme(theme === 'clinical-dark' ? 'medical-white' : 'clinical-dark')}
-            className="p-1 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+            className="p-1.5 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer text-inherit"
             title="Toggle theme"
           >
             {theme === 'clinical-dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-600" />}
           </button>
-          <span className="hidden md:inline text-[9px] font-sans opacity-80">
-            {effectiveProfile.fullName}
-          </span>
-          <span className="font-mono">🔋 {batteryLevel}%</span>
-          <span className="font-mono">{phoneTime}</span>
+          <div className="flex items-center gap-1 font-mono text-[8.5px] opacity-75 pl-0.5">
+            <span>🔋{batteryLevel}%</span>
+            <span>{phoneTime}</span>
+          </div>
         </div>
-      </div>
+      </header>
 
       <div className="flex-1 w-full h-full flex flex-col overflow-hidden relative">
         {renderAppContent()}

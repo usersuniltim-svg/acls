@@ -1085,134 +1085,133 @@ export default function MobileDashboard({
   };
 
   return (
-    <div className={`flex-1 flex flex-col overflow-hidden relative w-full ${isDark ? 'bg-[#0b0f19]' : 'bg-[#f8fafc]'}`} id="mobile-viewport">
-      {/* Centralized Phone Viewport Container */}
-      <div className="w-full max-w-md mx-auto flex-1 flex flex-col overflow-hidden relative shadow-2xl">
-        {/* Main Viewport Content (scrollable + bottom offset for centered bottom nav) */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3.5 pb-20 custom-scrollbar scroll-smooth">
-          
-          {/* Guest Mode Limited Access Banner */}
-          {isGuestMode && (
-            <div className="bg-amber-500/15 border border-amber-500/30 rounded-2xl p-3.5 flex flex-col gap-2 text-amber-800 dark:text-amber-200 text-xs shadow-md text-left select-none">
-              <div className="flex items-start gap-2.5">
-                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                <div className="space-y-0.5">
-                  <p className="font-extrabold text-[10.5px] uppercase tracking-wider text-amber-700 dark:text-amber-300">
-                    Guest Mode Active (CPR Timers & Drug Tracker)
-                  </p>
-                  <p className="text-[9px] leading-relaxed font-sans opacity-90">
-                    You are in restricted Guest Mode. Access is limited to Timers and Drugs. Please <strong className="underline cursor-pointer font-bold" onClick={onOpenAuth}>Sign In & Verify</strong> for full Flowcharts, Journal Logs & Settings.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onOpenAuth}
-                className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[9.5px] font-bold uppercase tracking-wider shrink-0 cursor-pointer border-none shadow-md text-center"
-              >
-                Sign In For Full Access
-              </button>
-            </div>
-          )}
-          
-          {/* Urgent Epinephrine Reminder Banner */}
-          {state.activePrompt === 'EPI_DUE' && (
-            <motion.div 
-              key={`epi-notification-interval-${Math.floor((state.epiDueElapsed || 0) / 7)}`}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="p-3.5 rounded-2xl bg-blue-600 text-white flex items-center justify-between gap-2 shadow-lg animate-pulse select-none text-left"
-            >
+    <div className={`flex-1 flex flex-col overflow-hidden relative w-full h-full ${isDark ? 'bg-[#0b0f19]' : 'bg-[#f8fafc]'}`} id="mobile-viewport">
+      {/* Main App Content Viewport (fluid native scroll with safe padding) */}
+      <div className="flex-1 overflow-y-auto w-full px-3.5 sm:px-6 py-3 space-y-3.5 pb-24 native-scroll custom-scrollbar scroll-smooth max-w-2xl mx-auto">
+        
+        {/* Guest Mode Limited Access Banner */}
+        {isGuestMode && (
+          <div className="bg-amber-500/15 border border-amber-500/30 rounded-2xl p-3.5 flex flex-col gap-2 text-amber-800 dark:text-amber-200 text-xs shadow-md text-left select-none">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
               <div className="space-y-0.5">
-                <span className="text-[8.5px] font-black uppercase tracking-widest block opacity-90">Epinephrine Due</span>
-                <p className="text-[10px] font-black uppercase">ADMINISTER 1MG EPINEPHRINE NOW</p>
+                <p className="font-extrabold text-[10.5px] uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                  Guest Mode Active (CPR Timers & Drug Tracker)
+                </p>
+                <p className="text-[9px] leading-relaxed font-sans opacity-90">
+                  You are in restricted Guest Mode. Access is limited to Timers and Drugs. Please <strong className="underline cursor-pointer font-bold" onClick={onOpenAuth}>Sign In & Verify</strong> for full Flowcharts, Journal Logs & Settings.
+                </p>
               </div>
-              <button 
-                type="button"
-                onClick={handleEpi}
-                className="px-3.5 py-1.5 bg-white hover:bg-gray-100 text-blue-700 text-[9px] font-black uppercase tracking-wider rounded-xl border-none active:scale-95 transition-transform cursor-pointer shadow"
-              >
-                Push 1mg
-              </button>
-            </motion.div>
-          )}
-
-          {/* Active Tabs Layout Render */}
-          {activeTab === 'timer' && renderMobileTimerTab()}
-          {activeTab === 'interventions' && renderMobileInterventionsTab()}
-          {activeTab === 'algorithm' && (
-            hasFullAccess ? renderMobileAlgorithmTab() : (
-              <LockedGuestOverlay 
-                title="Flowchart Restricted" 
-                isAuth={!isGuestMode}
-                kycStatus={effectiveProfile?.kyc?.kycStatus}
-                onOpenAuth={onOpenAuth} 
-                onOpenKyc={onOpenKyc}
-                onOpenAdmin={onOpenAdminPasswordModal || onOpenAdmin}
-              />
-            )
-          )}
-          {activeTab === 'logs' && (
-            hasFullAccess ? renderMobileLogsTab() : (
-              <LockedGuestOverlay 
-                title="Journal Logs Restricted" 
-                isAuth={!isGuestMode}
-                kycStatus={effectiveProfile?.kyc?.kycStatus}
-                onOpenAuth={onOpenAuth} 
-                onOpenKyc={onOpenKyc}
-                onOpenAdmin={onOpenAdminPasswordModal || onOpenAdmin}
-              />
-            )
-          )}
-          {activeTab === 'settings' && (
-            hasFullAccess ? renderMobileSettingsTab() : (
-              <LockedGuestOverlay 
-                title="Configuration Restricted" 
-                isAuth={!isGuestMode}
-                kycStatus={effectiveProfile?.kyc?.kycStatus}
-                onOpenAuth={onOpenAuth} 
-                onOpenKyc={onOpenKyc}
-                onOpenAdmin={onOpenAdminPasswordModal || onOpenAdmin}
-              />
-            )
-          )}
-
-          {/* Mandatory Disclaimer & Copyright Notice Footer */}
-          <div className={`mt-6 mb-2 p-3.5 rounded-2xl border text-center space-y-1.5 ${
-            isDark ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-200'
-          }`}>
-            <p className={`text-[9.5px] font-medium leading-relaxed ${
-              isDark ? 'text-amber-300' : 'text-amber-900'
-            }`}>
-              This app has not been validated clinically as a tool. It is intended for academic and training purposes. Please use cautiously.
-            </p>
-            <div className="flex items-center justify-center gap-1.5 pt-1">
-              <p className={`text-[9.5px] font-bold uppercase tracking-wider ${textMuted}`}>
-                Nepal ACLS Resuscitation Protocol • 2025 Standards
-              </p>
-              <button
-                type="button"
-                onClick={onOpenAdminPasswordModal || onOpenAdmin}
-                className="text-gray-400 hover:text-gray-600 text-[10px] p-0.5 bg-transparent border-none cursor-pointer"
-                title="Admin Portal"
-              >
-                🛡️
-              </button>
             </div>
+            <button
+              type="button"
+              onClick={onOpenAuth}
+              className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[9.5px] font-bold uppercase tracking-wider shrink-0 cursor-pointer border-none shadow-md text-center"
+            >
+              Sign In For Full Access
+            </button>
+          </div>
+        )}
+        
+        {/* Urgent Epinephrine Reminder Banner */}
+        {state.activePrompt === 'EPI_DUE' && (
+          <motion.div 
+            key={`epi-notification-interval-${Math.floor((state.epiDueElapsed || 0) / 7)}`}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="p-3.5 rounded-2xl bg-blue-600 text-white flex items-center justify-between gap-2 shadow-lg animate-pulse select-none text-left"
+          >
+            <div className="space-y-0.5">
+              <span className="text-[8.5px] font-black uppercase tracking-widest block opacity-90">Epinephrine Due</span>
+              <p className="text-[10px] font-black uppercase">ADMINISTER 1MG EPINEPHRINE NOW</p>
+            </div>
+            <button 
+              type="button"
+              onClick={handleEpi}
+              className="px-3.5 py-1.5 bg-white hover:bg-gray-100 text-blue-700 text-[9px] font-black uppercase tracking-wider rounded-xl border-none active:scale-95 transition-transform cursor-pointer shadow"
+            >
+              Push 1mg
+            </button>
+          </motion.div>
+        )}
+
+        {/* Active Tabs Layout Render */}
+        {activeTab === 'timer' && renderMobileTimerTab()}
+        {activeTab === 'interventions' && renderMobileInterventionsTab()}
+        {activeTab === 'algorithm' && (
+          hasFullAccess ? renderMobileAlgorithmTab() : (
+            <LockedGuestOverlay 
+              title="Flowchart Restricted" 
+              isAuth={!isGuestMode}
+              kycStatus={effectiveProfile?.kyc?.kycStatus}
+              onOpenAuth={onOpenAuth} 
+              onOpenKyc={onOpenKyc}
+              onOpenAdmin={onOpenAdminPasswordModal || onOpenAdmin}
+            />
+          )
+        )}
+        {activeTab === 'logs' && (
+          hasFullAccess ? renderMobileLogsTab() : (
+            <LockedGuestOverlay 
+              title="Journal Logs Restricted" 
+              isAuth={!isGuestMode}
+              kycStatus={effectiveProfile?.kyc?.kycStatus}
+              onOpenAuth={onOpenAuth} 
+              onOpenKyc={onOpenKyc}
+              onOpenAdmin={onOpenAdminPasswordModal || onOpenAdmin}
+            />
+          )
+        )}
+        {activeTab === 'settings' && (
+          hasFullAccess ? renderMobileSettingsTab() : (
+            <LockedGuestOverlay 
+              title="Configuration Restricted" 
+              isAuth={!isGuestMode}
+              kycStatus={effectiveProfile?.kyc?.kycStatus}
+              onOpenAuth={onOpenAuth} 
+              onOpenKyc={onOpenKyc}
+              onOpenAdmin={onOpenAdminPasswordModal || onOpenAdmin}
+            />
+          )
+        )}
+
+        {/* Mandatory Disclaimer & Copyright Notice Footer */}
+        <div className={`mt-6 mb-2 p-3.5 rounded-2xl border text-center space-y-1.5 ${
+          isDark ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-200'
+        }`}>
+          <p className={`text-[9.5px] font-medium leading-relaxed ${
+            isDark ? 'text-amber-300' : 'text-amber-900'
+          }`}>
+            This app has not been validated clinically as a tool. It is intended for academic and training purposes. Please use cautiously.
+          </p>
+          <div className="flex items-center justify-center gap-1.5 pt-1">
+            <p className={`text-[9.5px] font-bold uppercase tracking-wider ${textMuted}`}>
+              Nepal ACLS Resuscitation Protocol • 2025 Standards
+            </p>
+            <button
+              type="button"
+              onClick={onOpenAdminPasswordModal || onOpenAdmin}
+              className="text-gray-400 hover:text-gray-600 text-[10px] p-0.5 bg-transparent border-none cursor-pointer"
+              title="Admin Portal"
+            >
+              🛡️
+            </button>
           </div>
         </div>
+      </div>
 
-        {/* Centralized Persistent Bottom Navigation Bar */}
-        <nav className={`absolute bottom-0 left-0 right-0 h-16 backdrop-blur-md border-t flex items-center justify-around z-40 px-2 shadow-2xl ${
-          isDark ? 'bg-[#0c111d]/95 border-white/10' : 'bg-white/95 border-gray-200'
-        }`}>
+      {/* Native Persistent Bottom Navigation Bar */}
+      <nav className={`shrink-0 w-full border-t backdrop-blur-xl z-40 px-2 pb-[env(safe-area-inset-bottom,0px)] shadow-lg transition-colors ${
+        isDark ? 'bg-[#0c111d]/95 border-white/10' : 'bg-white/95 border-gray-200'
+      }`}>
+        <div className="w-full max-w-2xl mx-auto h-16 flex items-center justify-around">
           <NavButton active={activeTab === 'timer'} onClick={() => setActiveTab('timer')} icon={Activity} label="TIMERS" isDark={isDark} />
           <NavButton active={activeTab === 'interventions'} onClick={() => setActiveTab('interventions')} icon={Syringe} label="DRUGS" isDark={isDark} />
           <NavButton active={activeTab === 'algorithm'} onClick={() => setActiveTab('algorithm')} icon={ClipboardList} label="FLOWCHART" isLocked={!hasFullAccess} isDark={isDark} />
           <NavButton active={activeTab === 'logs'} onClick={() => setActiveTab('logs')} icon={History} label="JOURNAL" isLocked={!hasFullAccess} isDark={isDark} />
           <NavButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={Settings} label="CONFIG" isLocked={!hasFullAccess} isDark={isDark} />
-        </nav>
-      </div>
+        </div>
+      </nav>
     </div>
   );
 }
@@ -1237,25 +1236,25 @@ function NavButton({
     <button 
       type="button"
       onClick={onClick}
-      className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-xl border-none transition-all cursor-pointer relative ${
+      className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl border-none transition-all cursor-pointer relative select-none touch-manipulation active:scale-95 ${
         active 
           ? isDark 
-            ? 'text-red-400 bg-red-500/10 shadow-inner' 
-            : 'text-red-600 bg-red-50 shadow-inner font-extrabold'
+            ? 'text-red-400 bg-red-500/15 font-extrabold' 
+            : 'text-red-600 bg-red-50 font-extrabold'
           : isDark 
             ? 'text-slate-400 hover:text-slate-200 bg-transparent' 
             : 'text-gray-500 hover:text-gray-900 bg-transparent'
       }`}
     >
       <div className="relative">
-        <Icon className={`w-4 h-4 ${active ? (isDark ? 'text-red-400' : 'text-red-600') : ''}`} />
+        <Icon className={`w-5 h-5 ${active ? (isDark ? 'text-red-400' : 'text-red-600') : ''}`} />
         {isLocked && (
           <span className="absolute -top-1 -right-1.5 bg-red-600 text-white rounded-full p-0.5 text-[6px]">
             <Lock className="w-2.5 h-2.5 stroke-[3]" />
           </span>
         )}
       </div>
-      <span className="text-[8px] font-black mt-1 uppercase tracking-tight leading-none">{label}</span>
+      <span className="text-[8.5px] font-black mt-1 uppercase tracking-tight leading-none">{label}</span>
     </button>
   );
 }
