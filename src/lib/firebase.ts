@@ -133,6 +133,21 @@ export async function syncSavedCasesToFirestore(userId: string, cases: SavedCase
       savedCases: cases,
       lastCasesSyncAt: Date.now()
     }, { merge: true });
+
+    // Also mirror to global /cases collection for administrative review
+    for (const c of cases) {
+      try {
+        const caseRef = doc(db, 'cases', c.id);
+        await setDoc(caseRef, {
+          ...c,
+          userId: userId,
+          syncedAt: Date.now()
+        }, { merge: true });
+      } catch (err) {
+        // non-blocking
+      }
+    }
+
     return true;
   } catch (error) {
     console.error("Failed to sync saved cases to Firestore:", error);

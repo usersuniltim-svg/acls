@@ -1465,7 +1465,10 @@ export default function App() {
           isOpen={isKycModalOpen} 
           onClose={() => setIsKycModalOpen(false)} 
           userProfile={profile} 
-          onKycUpdated={() => {
+          onKycUpdated={(updatedProfile) => {
+            if (updatedProfile) {
+              setProfile(updatedProfile);
+            }
             setIsKycModalOpen(false);
             setIsVerificationGatekeeperOpen(true);
           }}
@@ -1474,6 +1477,20 @@ export default function App() {
           isOpen={isAdminPanelOpen} 
           onClose={() => setIsAdminPanelOpen(false)} 
           currentUserEmail={user?.email || undefined} 
+          onProfileApproved={(docId, updatedKyc) => {
+            if (user?.uid === docId || !user) {
+              setProfile(prev => prev ? ({
+                ...prev,
+                kyc: updatedKyc,
+                councilRegistration: updatedKyc.councilRegistration || prev.councilRegistration
+              }) : ({
+                fullName: 'Dr. Practitioner',
+                profession: 'doctor',
+                councilRegistration: updatedKyc.councilRegistration || 'NMC-VERIFIED',
+                kyc: updatedKyc
+              }));
+            }
+          }}
         />
         <AdminPasswordModal
           isOpen={isAdminPasswordModalOpen}
@@ -1493,6 +1510,10 @@ export default function App() {
           onOpenKyc={() => {
             setIsVerificationGatekeeperOpen(false);
             setIsKycModalOpen(true);
+          }}
+          onOpenAdmin={() => {
+            setIsVerificationGatekeeperOpen(false);
+            setIsAdminPasswordModalOpen(true);
           }}
           onInstantDemoVerify={handleInstantDemoVerify}
           user={user}

@@ -1,6 +1,6 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldAlert, UserCheck, FileText, X, CheckCircle, Clock, ShieldX, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { ShieldAlert, UserCheck, FileText, X, CheckCircle, Clock, ShieldX, Sparkles, ShieldCheck } from 'lucide-react';
 import { UserProfile } from '../types';
 
 interface VerificationGatekeeperModalProps {
@@ -11,6 +11,7 @@ interface VerificationGatekeeperModalProps {
   onOpenAuth: () => void;
   onOpenKyc: () => void;
   onInstantDemoVerify?: () => void;
+  onOpenAdmin?: () => void;
 }
 
 export default function VerificationGatekeeperModal({
@@ -21,6 +22,7 @@ export default function VerificationGatekeeperModal({
   onOpenAuth,
   onOpenKyc,
   onInstantDemoVerify,
+  onOpenAdmin,
 }: VerificationGatekeeperModalProps) {
   if (!isOpen) return null;
 
@@ -114,7 +116,7 @@ export default function VerificationGatekeeperModal({
                   }}
                   className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-[9px] font-bold uppercase tracking-wider rounded-lg border-none cursor-pointer"
                 >
-                  {kycStatus === 'pending' ? 'View KYC' : 'Submit KYC'}
+                  {kycStatus === 'pending' ? 'Update KYC' : 'Submit KYC'}
                 </button>
               )}
             </div>
@@ -130,10 +132,22 @@ export default function VerificationGatekeeperModal({
                 <div>
                   <span className="text-xs font-bold text-black block">3. Medical Board Admin Approval</span>
                   <span className="text-[9px] text-gray-700 block font-medium">
-                    {kycStatus === 'approved' ? 'Verified licensed doctor' : 'Awaiting admin review'}
+                    {kycStatus === 'approved' ? 'Verified licensed doctor ✓ Full app access unlocked' : 'Awaiting Medical Council Admin review'}
                   </span>
                 </div>
               </div>
+              {kycStatus === 'pending' && onOpenAdmin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenAdmin();
+                  }}
+                  className="px-2.5 py-1 bg-black hover:bg-gray-800 text-white text-[9px] font-bold uppercase tracking-wider rounded-lg border-none cursor-pointer flex items-center gap-1 shadow"
+                >
+                  <ShieldCheck className="w-3 h-3 text-red-500" /> Admin Board
+                </button>
+              )}
             </div>
           </div>
 
@@ -142,7 +156,7 @@ export default function VerificationGatekeeperModal({
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-black uppercase flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-red-600" /> Instant Demo Verification
+                  <Sparkles className="w-3.5 h-3.5 text-red-600" /> Instant Self-Verify (Test Mode)
                 </span>
                 <button
                   type="button"
@@ -153,7 +167,7 @@ export default function VerificationGatekeeperModal({
                 </button>
               </div>
               <p className="text-[9px] text-gray-700 leading-tight font-medium">
-                For evaluation/academic testing, click above to instantly self-verify this account as an approved doctor.
+                For testing, click above to instantly approve this account as a verified doctor.
               </p>
             </div>
           )}

@@ -36,6 +36,26 @@
         }
       },
       "required": ["fullName", "email", "profession"]
+    },
+    "SavedCase": {
+      "title": "Saved Resuscitation Case",
+      "description": "Certified resuscitation case registry records logged by medical doctors",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientCode": { "type": "string" },
+        "savedAt": { "type": "number" },
+        "totalDuration": { "type": "number" },
+        "cprCycleCount": { "type": "number" },
+        "shocksCount": { "type": "number" },
+        "epiCount": { "type": "number" },
+        "certifiedBy": { "type": "string" },
+        "councilRegistration": { "type": "string" },
+        "signatureDataUrl": { "type": "string" },
+        "doctorUid": { "type": "string" },
+        "doctorEmail": { "type": "string" }
+      },
+      "required": ["id", "patientCode", "savedAt"]
     }
   },
   "firestore": {
@@ -46,6 +66,10 @@
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User authentication profile copy indexed by Firebase Auth UID."
+    },
+    "/cases/{caseId}": {
+      "schema": "SavedCase",
+      "description": "Certified resuscitation case records accessible to medical council admins."
     }
   }
 }

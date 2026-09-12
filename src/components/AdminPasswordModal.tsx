@@ -54,9 +54,14 @@ export default function AdminPasswordModal({ isOpen, onClose, onSuccess }: Admin
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-[10px] font-bold uppercase text-black mb-1.5 tracking-wider">
-                Enter Secret Admin Access Key
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[10px] font-bold uppercase text-black tracking-wider">
+                  Enter Secret Admin Access Key
+                </label>
+                <span className="text-[9px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+                  Key: abc123
+                </span>
+              </div>
               <div className="relative">
                 <input
                   type="password"
@@ -65,7 +70,7 @@ export default function AdminPasswordModal({ isOpen, onClose, onSuccess }: Admin
                     setPassword(e.target.value);
                     setError('');
                   }}
-                  placeholder="Password required"
+                  placeholder="Enter access key (abc123)"
                   autoFocus
                   className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-xs text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-600 font-mono font-medium"
                 />

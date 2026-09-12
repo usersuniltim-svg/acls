@@ -218,7 +218,7 @@ export default function MobileDashboard({
 
   const isVerifiedDoctor = effectiveProfile?.kyc?.kycStatus === 'approved';
   const isPendingDoctor = effectiveProfile?.kyc?.kycStatus === 'pending';
-  const hasFullAccess = !isGuestMode && (isVerifiedDoctor || isPendingDoctor);
+  const hasFullAccess = !isGuestMode && isVerifiedDoctor;
 
   // Common Card Styles
   const cardClass = isDark
@@ -1141,13 +1141,40 @@ export default function MobileDashboard({
           {activeTab === 'timer' && renderMobileTimerTab()}
           {activeTab === 'interventions' && renderMobileInterventionsTab()}
           {activeTab === 'algorithm' && (
-            hasFullAccess ? renderMobileAlgorithmTab() : <LockedGuestOverlay title="Flowchart Restricted" onOpenAuth={onOpenAuth} onOpenKyc={onOpenKyc} />
+            hasFullAccess ? renderMobileAlgorithmTab() : (
+              <LockedGuestOverlay 
+                title="Flowchart Restricted" 
+                isAuth={!isGuestMode}
+                kycStatus={effectiveProfile?.kyc?.kycStatus}
+                onOpenAuth={onOpenAuth} 
+                onOpenKyc={onOpenKyc}
+                onOpenAdmin={onOpenAdminPasswordModal || onOpenAdmin}
+              />
+            )
           )}
           {activeTab === 'logs' && (
-            hasFullAccess ? renderMobileLogsTab() : <LockedGuestOverlay title="Journal Logs Restricted" onOpenAuth={onOpenAuth} onOpenKyc={onOpenKyc} />
+            hasFullAccess ? renderMobileLogsTab() : (
+              <LockedGuestOverlay 
+                title="Journal Logs Restricted" 
+                isAuth={!isGuestMode}
+                kycStatus={effectiveProfile?.kyc?.kycStatus}
+                onOpenAuth={onOpenAuth} 
+                onOpenKyc={onOpenKyc}
+                onOpenAdmin={onOpenAdminPasswordModal || onOpenAdmin}
+              />
+            )
           )}
           {activeTab === 'settings' && (
-            hasFullAccess ? renderMobileSettingsTab() : <LockedGuestOverlay title="Configuration Restricted" onOpenAuth={onOpenAuth} onOpenKyc={onOpenKyc} />
+            hasFullAccess ? renderMobileSettingsTab() : (
+              <LockedGuestOverlay 
+                title="Configuration Restricted" 
+                isAuth={!isGuestMode}
+                kycStatus={effectiveProfile?.kyc?.kycStatus}
+                onOpenAuth={onOpenAuth} 
+                onOpenKyc={onOpenKyc}
+                onOpenAdmin={onOpenAdminPasswordModal || onOpenAdmin}
+              />
+            )
           )}
 
           {/* Mandatory Disclaimer & Copyright Notice Footer */}
