@@ -8,8 +8,6 @@ import {
   Settings, 
   AlertCircle,
   Heart,
-  Smartphone,
-  Laptop,
   ShieldCheck,
   FileText,
   X,
@@ -49,7 +47,6 @@ import {
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import MobileDashboard from './components/MobileDashboard';
-import DesktopDashboard from './components/DesktopDashboard';
 import GeminiResusCopilot from './components/GeminiResusCopilot';
 
 const AuthModal = React.lazy(() => import('./components/AuthModal'));
@@ -141,7 +138,6 @@ export default function App() {
   });
 
   const [isGuestMode, setIsGuestMode] = useState(false);
-  const [viewMode, setViewMode] = useState<'auto' | 'android' | 'desktop'>('auto');
 
   // Cloud Database Sync Status ('synced' | 'syncing' | 'offline')
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline'>('synced');
@@ -202,8 +198,6 @@ export default function App() {
     }
   }, [theme]);
 
-  // Mobile Responsive detection
-  const [isMobileScreen, setIsMobileScreen] = useState(false);
   const [activeTab, setActiveTab] = useState<'timer' | 'interventions' | 'algorithm' | 'logs' | 'settings'>('timer');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [metronomeCount, setMetronomeCount] = useState(0);
@@ -238,16 +232,6 @@ export default function App() {
   });
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Screen size listener
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobileScreen(window.innerWidth < 1024);
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // Clock updates
   useEffect(() => {
@@ -908,8 +892,6 @@ export default function App() {
     setIsCopilotOpen(true);
   };
 
-  const renderInMobileLayout = viewMode === 'android' ? true : viewMode === 'desktop' ? false : isMobileScreen;
-
   const renderAppContent = () => {
     if (!hasSessionStarted) {
       const isDark = theme === 'clinical-dark';
@@ -1179,124 +1161,80 @@ export default function App() {
       );
     }
 
-    if (renderInMobileLayout) {
-      const isDark = theme === 'clinical-dark';
-      return (
-        <div className={`flex-1 w-full h-full flex flex-col items-center justify-center overflow-hidden ${
-          isDark ? 'bg-[#080c14]' : 'bg-[#e2e8f0]'
-        }`}>
-          {/* Centralized Phone Frame / Android Shell */}
-          <div className="w-full h-full max-w-md flex flex-col bg-transparent relative sm:p-2 sm:py-3">
-            <div className={`w-full h-full flex flex-col sm:rounded-[32px] sm:border-[6px] sm:shadow-2xl overflow-hidden relative ${
-              isDark ? 'bg-[#0b0f19] sm:border-slate-800' : 'bg-[#f8fafc] sm:border-slate-700'
+    const isDark = theme === 'clinical-dark';
+    return (
+      <div className={`flex-1 w-full h-full flex flex-col items-center justify-center overflow-hidden ${
+        isDark ? 'bg-[#080c14]' : 'bg-[#e2e8f0]'
+      }`}>
+        {/* Centralized Phone Frame / Android Shell */}
+        <div className="w-full h-full max-w-md flex flex-col bg-transparent relative sm:p-2 sm:py-3">
+          <div className={`w-full h-full flex flex-col sm:rounded-[32px] sm:border-[6px] sm:shadow-2xl overflow-hidden relative ${
+            isDark ? 'bg-[#0b0f19] sm:border-slate-800' : 'bg-[#f8fafc] sm:border-slate-700'
+          }`}>
+            {/* Centralized Phone Speaker Notch / Status Header on simulated desktop preview */}
+            <div className={`hidden sm:flex h-6 w-full px-5 items-center justify-between text-[9px] font-mono font-bold select-none shrink-0 z-30 border-b ${
+              isDark ? 'bg-[#0c111d] text-slate-400 border-white/5' : 'bg-gray-100 text-gray-700 border-gray-200'
             }`}>
-              {/* Centralized Phone Speaker Notch / Status Header on simulated desktop preview */}
-              <div className={`hidden sm:flex h-6 w-full px-5 items-center justify-between text-[9px] font-mono font-bold select-none shrink-0 z-30 border-b ${
-                isDark ? 'bg-[#0c111d] text-slate-400 border-white/5' : 'bg-gray-100 text-gray-700 border-gray-200'
-              }`}>
-                <span>{phoneTime}</span>
-                <div className="w-2.5 h-2.5 rounded-full bg-slate-900 dark:bg-slate-700 mx-auto" title="Camera Lens" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[8.5px]">5G</span>
-                  <span>🔋 {batteryLevel}%</span>
-                </div>
+              <span>{phoneTime}</span>
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-900 dark:bg-slate-700 mx-auto" title="Camera Lens" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-[8.5px]">5G</span>
+                <span>🔋 {batteryLevel}%</span>
               </div>
-
-              {/* Mobile Dashboard Component */}
-              <MobileDashboard 
-                state={state}
-                setState={setState}
-                hasSessionStarted={hasSessionStarted}
-                setHasSessionStarted={setHasSessionStarted}
-                activeTab={activeTab}
-                setActiveTab={setActiveTab}
-                phoneTime={phoneTime}
-                batteryLevel={batteryLevel}
-                isVibrating={isVibrating}
-                soundEnabled={soundEnabled}
-                setSoundEnabled={setSoundEnabled}
-                metronomeCount={metronomeCount}
-                triggerPwaInstall={triggerPwaInstall}
-                vibrateDevice={vibrateDevice}
-                formatTime={formatTime}
-                cprProgress={cprProgress}
-                epiProgress={epiProgress}
-                toggleTimer={toggleTimer}
-                resetCprTimer={resetCprTimer}
-                handleShock={handleShock}
-                handleEpi={handleEpi}
-                handleRosc={handleRosc}
-                handleRhythmSelect={handleRhythmSelect}
-                addLog={addLog}
-                effectiveProfile={effectiveProfile}
-                handleStartCPR={handleStartCPR}
-                hapticDuration={hapticDuration}
-                setHapticDuration={setHapticDuration}
-                hapticIntensity={hapticIntensity}
-                setHapticIntensity={setHapticIntensity}
-                onOpenAuth={() => setIsAuthModalOpen(true)}
-                onOpenKyc={() => setIsKycModalOpen(true)}
-                onOpenAdmin={() => setIsAdminPanelOpen(true)}
-                onOpenAdminPasswordModal={() => setIsAdminPasswordModalOpen(true)}
-                onSignOut={handleSignOut}
-                savedCases={savedCases}
-                onSaveCurrentCase={handleSaveCurrentCase}
-                onDeleteCase={handleDeleteCase}
-                isGuestMode={isGuestMode}
-                theme={theme}
-                setTheme={setTheme}
-                syncStatus={syncStatus}
-                lastSyncedAt={lastSyncedAt}
-                onForceSync={handleForceSync}
-                onOpenCopilot={handleOpenCopilot}
-              />
             </div>
+
+            {/* Mobile Dashboard Component */}
+            <MobileDashboard 
+              state={state}
+              setState={setState}
+              hasSessionStarted={hasSessionStarted}
+              setHasSessionStarted={setHasSessionStarted}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              phoneTime={phoneTime}
+              batteryLevel={batteryLevel}
+              isVibrating={isVibrating}
+              soundEnabled={soundEnabled}
+              setSoundEnabled={setSoundEnabled}
+              metronomeCount={metronomeCount}
+              triggerPwaInstall={triggerPwaInstall}
+              vibrateDevice={vibrateDevice}
+              formatTime={formatTime}
+              cprProgress={cprProgress}
+              epiProgress={epiProgress}
+              toggleTimer={toggleTimer}
+              resetCprTimer={resetCprTimer}
+              handleShock={handleShock}
+              handleEpi={handleEpi}
+              handleRosc={handleRosc}
+              handleRhythmSelect={handleRhythmSelect}
+              addLog={addLog}
+              effectiveProfile={effectiveProfile}
+              handleStartCPR={handleStartCPR}
+              hapticDuration={hapticDuration}
+              setHapticDuration={setHapticDuration}
+              hapticIntensity={hapticIntensity}
+              setHapticIntensity={setHapticIntensity}
+              onOpenAuth={() => setIsAuthModalOpen(true)}
+              onOpenKyc={() => setIsKycModalOpen(true)}
+              onOpenAdmin={() => setIsAdminPanelOpen(true)}
+              onOpenAdminPasswordModal={() => setIsAdminPasswordModalOpen(true)}
+              onSignOut={handleSignOut}
+              savedCases={savedCases}
+              onSaveCurrentCase={handleSaveCurrentCase}
+              onDeleteCase={handleDeleteCase}
+              isGuestMode={isGuestMode}
+              theme={theme}
+              setTheme={setTheme}
+              syncStatus={syncStatus}
+              lastSyncedAt={lastSyncedAt}
+              onForceSync={handleForceSync}
+              onOpenCopilot={handleOpenCopilot}
+            />
           </div>
         </div>
-      );
-    } else {
-      return (
-        <DesktopDashboard 
-          state={state}
-          setState={setState}
-          setHasSessionStarted={setHasSessionStarted}
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          toggleTimer={toggleTimer}
-          resetCprTimer={resetCprTimer}
-          handleShock={handleShock}
-          handleEpi={handleEpi}
-          handleRosc={handleRosc}
-          handleRhythmSelect={handleRhythmSelect}
-          addLog={addLog}
-          effectiveProfile={effectiveProfile}
-          formatTime={formatTime}
-          cprProgress={cprProgress}
-          epiProgress={epiProgress}
-          vibrateDevice={vibrateDevice}
-          triggerPwaInstall={triggerPwaInstall}
-          hapticDuration={hapticDuration}
-          setHapticDuration={setHapticDuration}
-          hapticIntensity={hapticIntensity}
-          setHapticIntensity={setHapticIntensity}
-          onOpenAuth={() => setIsAuthModalOpen(true)}
-          onOpenKyc={() => setIsKycModalOpen(true)}
-          onOpenAdmin={() => setIsAdminPanelOpen(true)}
-          onOpenAdminPasswordModal={() => setIsAdminPasswordModalOpen(true)}
-          onSignOut={handleSignOut}
-          savedCases={savedCases}
-          onSaveCurrentCase={handleSaveCurrentCase}
-          onDeleteCase={handleDeleteCase}
-          isGuestMode={isGuestMode}
-          theme={theme}
-          setTheme={setTheme}
-          syncStatus={syncStatus}
-          lastSyncedAt={lastSyncedAt}
-          onForceSync={handleForceSync}
-          onOpenCopilot={handleOpenCopilot}
-        />
-      );
-    }
+      </div>
+    );
   };
 
   // Global Dialog Overlay modals
@@ -1422,7 +1360,7 @@ export default function App() {
     <div className={`h-screen w-full font-sans antialiased flex flex-col overflow-hidden ${
       theme === 'clinical-dark' ? 'bg-[#0b0f19] text-white' : 'bg-white text-black'
     }`} id="acls-app-root">
-      {/* Top status & device view switcher bar */}
+      {/* Top status bar */}
       <div className={`h-9 w-full px-3 sm:px-4 flex items-center justify-between z-50 select-none text-[9px] font-bold font-mono shrink-0 border-b ${
         theme === 'clinical-dark' ? 'bg-[#0c111d] text-slate-300 border-white/10' : 'bg-gray-100 text-gray-800 border-gray-300'
       }`}>
@@ -1434,49 +1372,6 @@ export default function App() {
           <span className="text-[8px] bg-red-600 text-white px-1.5 py-0.5 rounded font-black uppercase">
             Nepal
           </span>
-        </div>
-
-        {/* Central View Mode Switcher (Android vs Desktop vs Auto) */}
-        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-0.5 rounded-xl border border-black/10 dark:border-white/10">
-          <button
-            type="button"
-            onClick={() => setViewMode('android')}
-            className={`px-2 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
-              viewMode === 'android'
-                ? 'bg-red-600 text-white shadow-sm font-extrabold'
-                : theme === 'clinical-dark' ? 'text-slate-400 hover:text-white' : 'text-gray-600 hover:text-black'
-            }`}
-            title="Preview Centralized Android Phone View"
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Android View</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('desktop')}
-            className={`px-2 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
-              viewMode === 'desktop'
-                ? 'bg-red-600 text-white shadow-sm font-extrabold'
-                : theme === 'clinical-dark' ? 'text-slate-400 hover:text-white' : 'text-gray-600 hover:text-black'
-            }`}
-            title="Desktop Workstation View"
-          >
-            <Laptop className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Desktop View</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('auto')}
-            className={`px-2 py-1 rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
-              viewMode === 'auto'
-                ? 'bg-red-600 text-white shadow-sm font-extrabold'
-                : theme === 'clinical-dark' ? 'text-slate-400 hover:text-white' : 'text-gray-600 hover:text-black'
-            }`}
-            title="Auto Responsive View"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Auto</span>
-          </button>
         </div>
 
         {/* Right Status info */}
