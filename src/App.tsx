@@ -1258,13 +1258,13 @@ export default function App() {
                       onClick={() => handleRhythmSelect('SHOCKABLE')}
                       className="h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold uppercase tracking-widest transition-transform cursor-pointer border-none shadow-md"
                     >
-                      VF / pulseless VT (YES SHOCK)
+                      VF / Pulseless VT
                     </button>
                     <button 
                       onClick={() => handleRhythmSelect('NON_SHOCKABLE')}
                       className="h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold uppercase tracking-widest transition-transform cursor-pointer border-none shadow-md"
                     >
-                      Asystole / PEA (NO SHOCK)
+                      Asystole / PEA
                     </button>
                   </div>
                 </div>

@@ -757,14 +757,14 @@ export default function DesktopDashboard({
                 <h3 className="text-lg font-display font-bold text-white uppercase tracking-tight">ACLS Cardiac Arrest Pathway</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl space-y-2">
-                    <span className="text-xs font-black text-red-400 uppercase">VF / Pulseless VT (Shockable)</span>
+                    <span className="text-xs font-black text-red-400 uppercase">VF / Pulseless VT</span>
                     <p className="text-xs text-slate-300">1. Deliver Shock ({state.selectedEnergy}J)</p>
                     <p className="text-xs text-slate-300">2. CPR 2 Min + IV/IO Access</p>
                     <p className="text-xs text-slate-300">3. Epinephrine 1mg Q3-5M</p>
                     <p className="text-xs text-slate-300">4. Amiodarone 300mg / Lidocaine 1-1.5mg/kg</p>
                   </div>
                   <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl space-y-2">
-                    <span className="text-xs font-black text-blue-400 uppercase">Asystole / PEA (Non-Shockable)</span>
+                    <span className="text-xs font-black text-blue-400 uppercase">Asystole / PEA</span>
                     <p className="text-xs text-slate-300">1. Epinephrine 1mg ASAP</p>
                     <p className="text-xs text-slate-300">2. CPR 2 Min + Advanced Airway</p>
                     <p className="text-xs text-slate-300">3. Re-evaluate Rhythm Q2M</p>
