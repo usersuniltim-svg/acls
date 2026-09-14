@@ -629,7 +629,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
 
           {/* Footer Info */}
           <div className="pt-3 border-t border-gray-200 text-[10px] text-gray-600 flex items-center justify-between font-mono uppercase font-bold">
-            <span>Admin Council Key ID: <strong className="text-black">ADMIN-NMC-2026-SYS</strong></span>
+            <span>Admin Council Session: <strong className="text-black">AUTH-NMC-2026</strong></span>
             <span>Nepal ACLS Protocol Board • Firestore Synced</span>
           </div>
 
