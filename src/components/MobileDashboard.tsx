@@ -304,51 +304,47 @@ export default function MobileDashboard({
           </div>
         </div>
 
-        {/* State Badge and Session Time */}
-        <div className={`w-full flex justify-between items-center p-3 rounded-2xl border ${cardClass}`}>
-          <div className="flex items-center gap-2">
-            <div className={`w-2.5 h-2.5 rounded-full ${state.isTimerRunning ? 'bg-red-600 animate-pulse ring-4 ring-red-500/20' : 'bg-slate-400'}`} />
-            <span className={`text-[9.5px] font-bold tracking-wider uppercase ${state.isTimerRunning ? 'text-red-600 font-black' : textMuted}`}>
-              {state.isTimerRunning ? 'CPR CYCLE IN PROGRESS' : 'TIMERS STANDBY'}
-            </span>
+        {/* State Badge, Audio Toggle, Session Time & Visual Pacing Beads */}
+        <div className={`w-full rounded-2xl p-3 border space-y-2.5 ${cardClass}`}>
+          <div className="flex justify-between items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className={`w-2.5 h-2.5 rounded-full ${state.isTimerRunning ? 'bg-red-600 animate-pulse ring-4 ring-red-500/20' : 'bg-slate-400'}`} />
+              <span className={`text-[9.5px] font-bold tracking-wider uppercase ${state.isTimerRunning ? 'text-red-600 font-black' : textMuted}`}>
+                {state.isTimerRunning ? 'CPR IN PROGRESS' : 'TIMERS STANDBY'}
+              </span>
+              <button 
+                type="button"
+                onClick={() => setSoundEnabled(prev => !prev)}
+                className={`text-[8px] font-bold uppercase tracking-wider flex items-center gap-1 px-2 py-0.5 rounded-lg border cursor-pointer transition-colors ${
+                  isDark ? 'bg-slate-800 border-white/10 text-slate-300 hover:bg-slate-700' : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200'
+                }`}
+                title={soundEnabled ? "Mute audio metronome" : "Enable audio metronome"}
+              >
+                {soundEnabled ? (
+                  <>
+                    <Volume2 className="w-3 h-3 text-emerald-500" /> Audio On
+                  </>
+                ) : (
+                  <>
+                    <VolumeX className="w-3 h-3 text-gray-400" /> Muted
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="text-right shrink-0">
+              <span className={`text-[8px] uppercase font-black block ${textMuted}`}>Total Elapsed</span>
+              <span className={`font-mono text-sm font-bold tabular-nums ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                {formatTime(state.totalTime)}
+              </span>
+            </div>
           </div>
-          <div className="text-right">
-            <span className={`text-[8px] uppercase font-black block ${textMuted}`}>Total Elapsed</span>
-            <span className={`font-mono text-sm font-bold tabular-nums ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              {formatTime(state.totalTime)}
-            </span>
-          </div>
-        </div>
 
-        {/* Metronome Visual LED Beads */}
-        <div className={`w-full rounded-2xl p-3 border text-center space-y-2 ${cardClass}`}>
-          <div className="flex items-center justify-between px-1">
-            <span className={`text-[8.5px] uppercase tracking-wider font-bold ${textMuted}`}>
-              Chest Compressions
-            </span>
-            <button 
-              type="button"
-              onClick={() => setSoundEnabled(prev => !prev)}
-              className={`text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 px-2 py-0.5 rounded-lg border cursor-pointer ${
-                isDark ? 'bg-slate-800 border-white/10 text-slate-300' : 'bg-gray-100 border-gray-200 text-gray-700'
-              }`}
-            >
-              {soundEnabled ? (
-                <>
-                  <Volume2 className="w-3 h-3 text-emerald-500" /> Audio On
-                </>
-              ) : (
-                <>
-                  <VolumeX className="w-3 h-3 text-gray-400" /> Muted
-                </>
-              )}
-            </button>
-          </div>
-          <div className="flex items-center justify-center gap-4 py-1">
+          {/* Visual LED Beads without text label */}
+          <div className="flex items-center justify-center gap-4 py-0.5">
             {[0, 1, 2, 3].map((dotIndex) => (
               <div 
                 key={dotIndex}
-                className={`w-4 h-4 rounded-full transition-all duration-150 ${
+                className={`w-3.5 h-3.5 rounded-full transition-all duration-150 ${
                   state.isTimerRunning && metronomeCount === dotIndex
                     ? 'bg-emerald-500 shadow-[0_0_12px_#10b981] scale-125'
                     : isDark ? 'bg-slate-800 scale-100' : 'bg-gray-200 scale-100'
