@@ -1306,7 +1306,7 @@ export default function App() {
                     
                     <button 
                       onClick={() => {
-                        addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} finalized & started`);
+                        addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`);
                         setState(prev => ({ 
                           ...prev, 
                           activePrompt: null, 
@@ -1316,7 +1316,7 @@ export default function App() {
                       }}
                       className="w-full h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase text-[9.5px] tracking-widest cursor-pointer border-none"
                     >
-                      Bypass to CPR Cycle #{state.cprCycleCount + 1}
+                      Begin CPR
                     </button>
                   </div>
                 </div>
