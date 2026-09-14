@@ -525,7 +525,7 @@ export default function DesktopDashboard({
               <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
               <div>
                 <p className="font-extrabold text-[11px] uppercase tracking-wider text-amber-300">
-                  Guest Mode Active (CPR Timer, Metronome Sound & Haptic Loop)
+                  Guest Mode Active (CPR Timers & Drug Tracker)
                 </p>
                 <p className="text-[10px] text-amber-100/90 leading-relaxed font-sans">
                   You are operating in Guest Mode. Please <strong className="text-white underline cursor-pointer" onClick={onOpenAuth}>Sign In</strong> to unlock full Resuscitation Registry, case saving & certified retrieval.

@@ -324,7 +324,7 @@ export default function MobileDashboard({
         <div className={`w-full rounded-2xl p-3 border text-center space-y-2 ${cardClass}`}>
           <div className="flex items-center justify-between px-1">
             <span className={`text-[8.5px] uppercase tracking-wider font-bold ${textMuted}`}>
-              Metronome Compressions (110 BPM)
+              Chest Compressions
             </span>
             <button 
               type="button"
