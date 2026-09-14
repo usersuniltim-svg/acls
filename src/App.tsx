@@ -1126,9 +1126,6 @@ export default function App() {
                     <Activity className="w-4 h-4 text-white" />
                     2. Guest Mode (Limited Access Only)
                   </span>
-                  <p className="text-[8.5px] text-white/90 font-normal">
-                    CPR 2-Min Timer, Metronome Sound & Emergency Drug Tracking
-                  </p>
                 </div>
               </button>
             </div>
