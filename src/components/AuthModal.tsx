@@ -300,39 +300,6 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
               </div>
             )}
 
-            {/* Quick Demo Fill Controls for testing Admin & Doctor logins */}
-            <div className="p-2.5 bg-gray-100 border border-gray-200 rounded-xl space-y-1.5 text-left">
-              <span className="text-[9px] font-bold text-gray-600 uppercase tracking-wider block">
-                One-Click Quick Test Accounts:
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail('user.suniltim@gmail.com');
-                    setPassword('abc12345');
-                    setIsSignUp(false);
-                    setError(null);
-                  }}
-                  className="flex-1 py-1.5 px-2 bg-red-100 hover:bg-red-200 text-red-800 text-[9.5px] font-bold rounded-lg border border-red-300 cursor-pointer text-center"
-                >
-                  Admin (Sunil)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail('doctor@hospital.org');
-                    setPassword('hospital123');
-                    setIsSignUp(false);
-                    setError(null);
-                  }}
-                  className="flex-1 py-1.5 px-2 bg-blue-100 hover:bg-blue-200 text-blue-800 text-[9.5px] font-bold rounded-lg border border-blue-300 cursor-pointer text-center"
-                >
-                  Doctor (Hospital)
-                </button>
-              </div>
-            </div>
-
             <button
               type="submit"
               disabled={isLoading}
