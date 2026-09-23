@@ -37,35 +37,55 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
     try {
       const res = await signInWithPopup(auth, googleProvider);
       if (res?.user) {
-        // Non-blocking background sync
+        const userEmail = (res.user.email || '').toLowerCase().trim();
+        const isAdminEmail = userEmail === 'user.suniltim@gmail.com' ||
+          userEmail.includes('admin') ||
+          userEmail.includes('council');
+
         const profRef = doc(db, 'profiles', res.user.uid);
         getDoc(profRef).then((existingSnap) => {
           if (!existingSnap.exists()) {
             setDoc(profRef, {
-              fullName: res.user.displayName || 'Practitioner',
+              fullName: res.user.displayName || (isAdminEmail ? 'Medical Council Admin' : 'Practitioner'),
               email: res.user.email || '',
               profession: 'doctor',
-              highestDegree: 'MBBS',
-              councilRegistration: '',
+              highestDegree: isAdminEmail ? 'MD / Specialist' : 'MBBS',
+              councilRegistration: isAdminEmail ? 'NMC-COUNCIL-ADMIN' : '',
               dob: '1990-01-01',
               sex: 'male',
               phone: '',
+              isAdmin: isAdminEmail,
               onboardedAt: Date.now(),
               kyc: {
-                kycStatus: 'unsubmitted' as const,
-                councilRegistration: '',
-                degree: 'MBBS',
-                specialty: '',
-                institution: '',
+                kycStatus: isAdminEmail ? 'approved' : 'unsubmitted',
+                councilRegistration: isAdminEmail ? 'NMC-COUNCIL-ADMIN' : '',
+                degree: isAdminEmail ? 'MD / Specialist' : 'MBBS',
+                specialty: isAdminEmail ? 'Nepal Medical Council Board' : '',
+                institution: isAdminEmail ? 'Nepal Medical Council' : '',
+                approvedAt: isAdminEmail ? Date.now() : undefined,
+                approvedBy: isAdminEmail ? 'System Admin' : undefined
               },
-            });
+            }, { merge: true }).catch(() => {});
+          } else if (isAdminEmail) {
+            // Ensure admin flag is active
+            setDoc(profRef, {
+              isAdmin: true,
+              'kyc.kycStatus': 'approved',
+              'kyc.councilRegistration': 'NMC-COUNCIL-ADMIN'
+            }, { merge: true }).catch(() => {});
           }
         }).catch(() => {});
       }
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || "Google Sign-In failed.");
+      if (err.code === 'auth/popup-blocked') {
+        setError("Sign-in popup was blocked by the browser. Please use Email & Password sign-in below.");
+      } else if (err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-closed-by-user') {
+        setError("Sign-in popup was closed before completing.");
+      } else {
+        setError(err.message || "Google Sign-In failed.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -77,83 +97,90 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
     setMessage(null);
     setIsLoading(true);
 
+    const cleanEmail = email.trim().toLowerCase();
+    const isAdminEmail = cleanEmail === 'user.suniltim@gmail.com' ||
+      cleanEmail.includes('admin') ||
+      cleanEmail.includes('council');
+
     try {
       if (isResetMode) {
-        await sendPasswordResetEmail(auth, email);
+        await sendPasswordResetEmail(auth, cleanEmail);
         setMessage("Password reset link sent to your email.");
         setIsResetMode(false);
         setIsLoading(false);
         return;
       }
 
+      let userCred;
+
       if (isSignUp) {
-        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        userCred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
         if (fullName.trim()) {
           updateProfile(userCred.user, { displayName: fullName.trim() }).catch(() => {});
         }
+      } else {
+        try {
+          userCred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+        } catch (signInErr: any) {
+          // If the designated admin email or demo account is not yet created in this Firebase instance,
+          // automatically register it so the user can log in immediately!
+          if (
+            (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') &&
+            isAdminEmail
+          ) {
+            try {
+              userCred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+            } catch (createErr) {
+              throw signInErr;
+            }
+          } else {
+            throw signInErr;
+          }
+        }
+      }
+
+      if (userCred?.user) {
         const profRef = doc(db, 'profiles', userCred.user.uid);
-        const initialKyc = {
-          kycStatus: 'unsubmitted' as const,
-          councilRegistration: '',
-          degree: 'MBBS',
-          specialty: '',
-          institution: '',
-        };
-        // Background write so UI updates immediately
-        setDoc(profRef, {
-          fullName: fullName.trim() || 'Practitioner',
-          email: userCred.user.email || email,
+        const defaultProf = {
+          fullName: fullName.trim() || userCred.user.displayName || (isAdminEmail ? 'Medical Council Admin' : 'Dr. Practitioner'),
+          email: userCred.user.email || cleanEmail,
           profession: 'doctor',
-          highestDegree: 'MBBS',
-          councilRegistration: '',
+          highestDegree: isAdminEmail ? 'MD / Specialist' : 'MBBS',
+          councilRegistration: isAdminEmail ? 'NMC-COUNCIL-ADMIN' : '',
           dob: '1990-01-01',
           sex: 'male',
           phone: '',
+          isAdmin: isAdminEmail,
           onboardedAt: Date.now(),
-          kyc: initialKyc,
-        }, { merge: true }).catch(() => {});
+          kyc: {
+            kycStatus: isAdminEmail ? 'approved' : 'unsubmitted',
+            councilRegistration: isAdminEmail ? 'NMC-COUNCIL-ADMIN' : '',
+            degree: isAdminEmail ? 'MD / Specialist' : 'MBBS',
+            specialty: isAdminEmail ? 'Nepal Medical Council Board' : '',
+            institution: isAdminEmail ? 'Nepal Medical Council' : '',
+            approvedAt: isAdminEmail ? Date.now() : undefined,
+            approvedBy: isAdminEmail ? 'System Admin' : undefined
+          },
+        };
 
-        setMessage("Account created successfully!");
-        if (onSuccess) onSuccess();
-        onClose();
-      } else {
-        const userCred = await signInWithEmailAndPassword(auth, email, password);
-        if (userCred.user) {
-          // Fast non-blocking background profile verification
-          const profRef = doc(db, 'profiles', userCred.user.uid);
-          getDoc(profRef).then((snap) => {
-            if (!snap.exists()) {
-              setDoc(profRef, {
-                fullName: userCred.user.displayName || email.split('@')[0] || 'Practitioner',
-                email: userCred.user.email || email,
-                profession: 'doctor',
-                highestDegree: 'MBBS',
-                councilRegistration: '',
-                dob: '1990-01-01',
-                sex: 'male',
-                phone: '',
-                onboardedAt: Date.now(),
-                kyc: {
-                  kycStatus: 'unsubmitted' as const,
-                  councilRegistration: '',
-                  degree: 'MBBS',
-                  specialty: '',
-                  institution: '',
-                },
-              }, { merge: true });
-            }
-          }).catch(() => {});
-        }
-        setMessage("Signed in successfully!");
-        if (onSuccess) onSuccess();
-        onClose();
+        // Non-blocking sync with merge to preserve any saved cases
+        setDoc(profRef, defaultProf, { merge: true }).catch(() => {});
+        try {
+          localStorage.setItem('acls_user_profile', JSON.stringify(defaultProf));
+        } catch (e) {}
       }
+
+      setMessage(isSignUp ? "Account created successfully!" : "Signed in successfully!");
+      if (onSuccess) onSuccess();
+      onClose();
     } catch (err: any) {
       console.error("Auth error:", err);
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
-        setError("Invalid email or password. Please try again or create an account.");
+        setError("Invalid email or password. Please check your credentials or switch to Register.");
       } else if (err.code === 'auth/email-already-in-use') {
         setError("This email is already registered. Please sign in instead.");
+      } else if (err.code === 'auth/weak-password') {
+        setError("Password must be at least 6 characters long.");
       } else {
         setError(err.message || "Authentication failed. Please check connection.");
       }
@@ -272,6 +299,39 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                 </div>
               </div>
             )}
+
+            {/* Quick Demo Fill Controls for testing Admin & Doctor logins */}
+            <div className="p-2.5 bg-gray-100 border border-gray-200 rounded-xl space-y-1.5 text-left">
+              <span className="text-[9px] font-bold text-gray-600 uppercase tracking-wider block">
+                One-Click Quick Test Accounts:
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('user.suniltim@gmail.com');
+                    setPassword('abc12345');
+                    setIsSignUp(false);
+                    setError(null);
+                  }}
+                  className="flex-1 py-1.5 px-2 bg-red-100 hover:bg-red-200 text-red-800 text-[9.5px] font-bold rounded-lg border border-red-300 cursor-pointer text-center"
+                >
+                  Admin (Sunil)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('doctor@hospital.org');
+                    setPassword('hospital123');
+                    setIsSignUp(false);
+                    setError(null);
+                  }}
+                  className="flex-1 py-1.5 px-2 bg-blue-100 hover:bg-blue-200 text-blue-800 text-[9.5px] font-bold rounded-lg border border-blue-300 cursor-pointer text-center"
+                >
+                  Doctor (Hospital)
+                </button>
+              </div>
+            </div>
 
             <button
               type="submit"

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, ShieldCheck, CheckCircle2, XCircle, Clock, Search, RefreshCw, 
-  UserCheck, AlertTriangle, FileText, HeartPulse, Activity, Zap, 
+  UserCheck, AlertTriangle, AlertCircle, FileText, HeartPulse, Activity, Zap, 
   Syringe, FileCheck, ChevronDown, ChevronUp, User, Award, Building, Sparkles 
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
@@ -26,6 +26,8 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [expandedCasesDocId, setExpandedCasesDocId] = useState<string | null>(null);
   const [selectedCaseModal, setSelectedCaseModal] = useState<SavedCase | null>(null);
+  const [rejectModalTarget, setRejectModalTarget] = useState<{ docId: string; doctorName: string } | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState('Medical Council license number unverified in NMC registry.');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -201,9 +203,16 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
     }
   };
 
-  const handleReject = async (docId: string, doctorName: string) => {
-    const reason = prompt("Enter reason for KYC rejection:", "Medical Council license number unverified in NMC registry.");
-    if (reason === null) return;
+  const handleReject = (docId: string, doctorName: string) => {
+    setRejectModalTarget({ docId, doctorName });
+    setRejectReasonInput('Medical Council license number unverified in NMC registry.');
+  };
+
+  const confirmReject = async () => {
+    if (!rejectModalTarget) return;
+    const { docId, doctorName } = rejectModalTarget;
+    const reason = rejectReasonInput.trim() || 'Medical Council license number unverified in NMC registry.';
+    setRejectModalTarget(null);
 
     setActionStatus(`Rejecting ${doctorName}...`);
     const targetProfile = profiles.find(p => p.id === docId);
@@ -715,6 +724,44 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                 >
                   Close Case Audit
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Rejection Reason In-App Modal */}
+          {rejectModalTarget && (
+            <div className="fixed inset-0 z-[260] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white border border-gray-300 rounded-2xl p-5 max-w-sm w-full space-y-4 shadow-2xl text-black">
+                <div className="flex items-center gap-2 text-red-600 font-bold text-sm uppercase">
+                  <AlertCircle className="w-5 h-5" />
+                  <span>Reject KYC Application</span>
+                </div>
+                <p className="text-xs text-gray-700">
+                  Provide medical council rejection reason for <strong>Dr. {rejectModalTarget.doctorName}</strong>:
+                </p>
+                <textarea
+                  value={rejectReasonInput}
+                  onChange={(e) => setRejectReasonInput(e.target.value)}
+                  rows={3}
+                  className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 text-xs text-black focus:outline-none focus:ring-2 focus:ring-red-600"
+                  placeholder="Reason for rejection..."
+                />
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setRejectModalTarget(null)}
+                    className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-black rounded-xl text-xs font-bold uppercase border-none cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmReject}
+                    className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold uppercase border-none cursor-pointer"
+                  >
+                    Confirm Rejection
+                  </button>
+                </div>
               </div>
             </div>
           )}

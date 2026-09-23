@@ -556,7 +556,7 @@ export default function DesktopDashboard({
                 )}
               </div>
               <span className="text-[8.5px] text-slate-500 uppercase tracking-widest font-black mt-0.5 block">
-                {effectiveProfile.profession.toUpperCase()} • NMC: {effectiveProfile.councilRegistration}
+                {(effectiveProfile.profession || 'Doctor').toUpperCase()} • NMC: {effectiveProfile.councilRegistration || 'N/A'}
               </span>
             </div>
           </div>

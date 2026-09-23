@@ -74,9 +74,13 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
       ...(targetStatus === 'approved' ? { approvedAt: currentKyc.approvedAt || Date.now() } : {})
     };
 
+    const currentUid = auth.currentUser?.uid || userProfile?.uid || 'practitioner_local';
+    const currentEmail = auth.currentUser?.email || userProfile?.email || '';
+    const currentDisplayName = auth.currentUser?.displayName || 'Practitioner';
+
     const profileData: UserProfile = {
-      fullName: fullName.trim() || 'Dr. ' + (auth.currentUser.displayName || 'Practitioner'),
-      email: auth.currentUser.email || userProfile?.email || '',
+      fullName: fullName.trim() || ('Dr. ' + currentDisplayName),
+      email: currentEmail,
       profession: 'doctor',
       councilRegistration: councilRegistration.toUpperCase().trim(),
       highestDegree: degree.trim(),
@@ -88,11 +92,11 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
     };
 
     try {
-      const profileRef = doc(db, 'profiles', auth.currentUser.uid);
+      const profileRef = doc(db, 'profiles', currentUid);
       await setDoc(profileRef, profileData, { merge: true });
 
       // Mirror to secondary collection
-      const userRef = doc(db, 'users', auth.currentUser.uid);
+      const userRef = doc(db, 'users', currentUid);
       await setDoc(userRef, profileData, { merge: true }).catch(() => {});
 
       try {

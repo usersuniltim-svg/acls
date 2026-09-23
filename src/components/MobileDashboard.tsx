@@ -216,9 +216,9 @@ export default function MobileDashboard({
     setHasSigned(false);
   };
 
-  const isVerifiedDoctor = effectiveProfile?.kyc?.kycStatus === 'approved';
-  const isPendingDoctor = effectiveProfile?.kyc?.kycStatus === 'pending';
-  const hasFullAccess = !isGuestMode && isVerifiedDoctor;
+  const isVerifiedDoctor = effectiveProfile?.kyc?.kycStatus === 'approved' || effectiveProfile?.isAdmin === true;
+  const isPendingDoctor = effectiveProfile?.kyc?.kycStatus === 'pending' && !effectiveProfile?.isAdmin;
+  const hasFullAccess = (!isGuestMode && isVerifiedDoctor) || effectiveProfile?.isAdmin === true;
 
   // Common Card Styles
   const cardClass = isDark
@@ -237,10 +237,10 @@ export default function MobileDashboard({
         <div className={`w-full flex items-center justify-between gap-2 p-2.5 rounded-2xl border text-left ${cardClass}`}>
           <div className="space-y-0.5 truncate pr-1">
             <span className={`text-[11px] font-bold block truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              {effectiveProfile.fullName}
+              {effectiveProfile.fullName || 'Practitioner'}
             </span>
             <span className={`text-[8.5px] uppercase font-mono block ${textMuted}`}>
-              {effectiveProfile.profession.toUpperCase()} • NMC: {effectiveProfile.councilRegistration}
+              {(effectiveProfile.profession || 'Doctor').toUpperCase()} • NMC: {effectiveProfile.councilRegistration || 'N/A'}
             </span>
           </div>
 
@@ -281,25 +281,50 @@ export default function MobileDashboard({
             >
               {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-600" />}
             </button>
+            {effectiveProfile.isAdmin && onOpenAdmin && (
+              <button
+                type="button"
+                onClick={onOpenAdmin}
+                className="px-2 py-1 rounded-xl text-[8.5px] font-bold uppercase tracking-wider cursor-pointer border bg-red-600 text-white border-red-700 hover:bg-red-700 shadow-sm"
+                title="Open Medical Council Admin Portal"
+              >
+                Admin
+              </button>
+            )}
+            {effectiveProfile.email && effectiveProfile.email !== 'guest@resuscitation.org' ? (
+              <button
+                type="button"
+                onClick={onSignOut}
+                className={`px-2 py-1 rounded-xl text-[8.5px] font-bold uppercase tracking-wider cursor-pointer border ${
+                  isDark ? 'bg-red-500/20 text-red-300 border-red-500/30 hover:bg-red-500/30' : 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100'
+                }`}
+                title="Sign Out"
+              >
+                Sign Out
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onOpenAuth}
+                className={`px-2 py-1 rounded-xl text-[8.5px] font-bold uppercase tracking-wider cursor-pointer border ${
+                  isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-white/10' : 'bg-gray-100 hover:bg-gray-200 text-slate-800 border-gray-300'
+                }`}
+              >
+                Sign In
+              </button>
+            )}
             <button
               type="button"
-              onClick={onOpenAuth}
+              onClick={effectiveProfile.isAdmin ? onOpenAdmin : onOpenKyc}
               className={`px-2 py-1 rounded-xl text-[8.5px] font-bold uppercase tracking-wider cursor-pointer border ${
-                isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-white/10' : 'bg-gray-100 hover:bg-gray-200 text-slate-800 border-gray-300'
+                effectiveProfile.isAdmin
+                  ? isDark ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-red-50 text-red-700 border-red-300'
+                  : isVerifiedDoctor
+                    ? isDark ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                    : isDark ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-amber-50 text-amber-700 border-amber-300'
               }`}
             >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={onOpenKyc}
-              className={`px-2 py-1 rounded-xl text-[8.5px] font-bold uppercase tracking-wider cursor-pointer border ${
-                isVerifiedDoctor
-                  ? isDark ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                  : isDark ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-amber-50 text-amber-700 border-amber-300'
-              }`}
-            >
-              {isVerifiedDoctor ? 'Verified' : 'KYC'}
+              {effectiveProfile.isAdmin ? 'Admin' : isVerifiedDoctor ? 'Verified' : 'KYC'}
             </button>
           </div>
         </div>

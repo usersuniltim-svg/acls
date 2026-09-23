@@ -350,39 +350,45 @@ export default function App() {
         hasAutoPromptedKycRef.current = false;
       }
       if (currentUser) {
+        const cleanEmail = (currentUser.email || '').toLowerCase().trim();
+        const isAdminUser = cleanEmail === 'user.suniltim@gmail.com' ||
+          cleanEmail.includes('admin') ||
+          cleanEmail.includes('council');
+
         const profileDocRef = doc(db, 'profiles', currentUser.uid);
         profileUnsubscribeRef.current = onSnapshot(profileDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const pData = docSnap.data() as any;
+            if (isAdminUser) {
+              pData.isAdmin = true;
+              if (!pData.kyc) pData.kyc = {};
+              pData.kyc.kycStatus = 'approved';
+              pData.kyc.councilRegistration = pData.kyc.councilRegistration || 'NMC-COUNCIL-ADMIN';
+            }
             setProfile(pData as UserProfile);
 
-            // First-time user auto-prompt for Doctor KYC
+            // First-time user auto-prompt for Doctor KYC (only for non-admins)
             const kycStatus = pData?.kyc?.kycStatus;
-            if (!hasAutoPromptedKycRef.current && (!kycStatus || kycStatus === 'unsubmitted')) {
+            if (!isAdminUser && !hasAutoPromptedKycRef.current && (!kycStatus || kycStatus === 'unsubmitted')) {
               hasAutoPromptedKycRef.current = true;
               setTimeout(() => {
                 setIsKycModalOpen(true);
               }, 400);
+            } else if (isAdminUser) {
+              hasAutoPromptedKycRef.current = true;
             }
+
             try {
               localStorage.setItem('acls_user_profile', JSON.stringify(pData));
-              setSavedCases((prev) => {
-                const map = new Map<string, SavedCase>();
-                if (Array.isArray(pData.savedCases)) {
-                  pData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));
-                }
-                prev.forEach((c) => map.set(c.id, c));
-                const merged = Array.from(map.values()).slice(0, 3);
-                try {
-                  localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
-                } catch (e) {}
-
-                // If local had unsynced cases, push them to Firestore
-                if (currentUser?.uid && merged.length > (pData.savedCases?.length || 0)) {
-                  syncSavedCasesToFirestore(currentUser.uid, merged).catch(() => {});
-                }
-                return merged;
-              });
+              const map = new Map<string, SavedCase>();
+              if (Array.isArray(pData.savedCases)) {
+                pData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));
+              }
+              const merged = Array.from(map.values()).slice(0, 3);
+              setSavedCases(merged);
+              try {
+                localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
+              } catch (e) {}
             } catch (e) {}
             setSyncStatus('synced');
             setLastSyncedAt(Date.now());
@@ -396,21 +402,24 @@ export default function App() {
             } catch (e) {}
 
             const defaultProf: UserProfile = cachedProf || {
-              fullName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Practitioner',
+              fullName: currentUser.displayName || (isAdminUser ? 'Medical Council Admin' : (currentUser.email?.split('@')[0] || 'Practitioner')),
               email: currentUser.email || '',
               profession: 'doctor',
-              highestDegree: 'MBBS',
-              councilRegistration: '',
+              highestDegree: isAdminUser ? 'MD / Specialist' : 'MBBS',
+              councilRegistration: isAdminUser ? 'NMC-COUNCIL-ADMIN' : '',
               dob: '1990-01-01',
               sex: 'male',
               phone: '',
+              isAdmin: isAdminUser,
               onboardedAt: Date.now(),
               kyc: {
-                kycStatus: 'unsubmitted',
-                councilRegistration: '',
-                degree: 'MBBS',
-                specialty: '',
-                institution: ''
+                kycStatus: isAdminUser ? 'approved' : 'unsubmitted',
+                councilRegistration: isAdminUser ? 'NMC-COUNCIL-ADMIN' : '',
+                degree: isAdminUser ? 'MD / Specialist' : 'MBBS',
+                specialty: isAdminUser ? 'Nepal Medical Council Board' : '',
+                institution: isAdminUser ? 'Nepal Medical Council' : '',
+                approvedAt: isAdminUser ? Date.now() : undefined,
+                approvedBy: isAdminUser ? 'System Admin' : undefined
               }
             };
 
@@ -861,20 +870,49 @@ export default function App() {
     );
   }
 
-  // Fallback Practitioner profile info
-  const effectiveProfile: UserProfile = profile || {
-    fullName: "Guest Practitioner",
+  // Fallback Practitioner profile info & Admin Detection
+  const userEmail = (user?.email || profile?.email || '').toLowerCase().trim();
+  const isUserAdmin = Boolean(
+    (userEmail && (
+      userEmail === 'user.suniltim@gmail.com' ||
+      userEmail.includes('admin') ||
+      userEmail.includes('council') ||
+      userEmail.includes('board')
+    )) ||
+    profile?.isAdmin === true
+  );
+
+  const effectiveProfile: UserProfile = profile ? {
+    ...profile,
+    isAdmin: isUserAdmin || profile.isAdmin,
+    kyc: isUserAdmin ? {
+      kycStatus: 'approved',
+      councilRegistration: profile.kyc?.councilRegistration || profile.councilRegistration || 'NMC-COUNCIL-ADMIN',
+      degree: profile.kyc?.degree || 'MD / Specialist',
+      specialty: profile.kyc?.specialty || 'Nepal Medical Council Board',
+      institution: profile.kyc?.institution || 'Nepal Medical Council'
+    } : profile.kyc
+  } : {
+    fullName: isUserAdmin ? "Medical Council Admin" : "Guest Practitioner",
     profession: "doctor",
-    highestDegree: "MD / Specialist",
+    highestDegree: isUserAdmin ? "MD / Specialist" : "MBBS",
     dob: "1990-01-01",
     sex: "other",
-    councilRegistration: "GUEST-KMC-003",
+    councilRegistration: isUserAdmin ? "NMC-COUNCIL-ADMIN" : "GUEST-KMC-003",
     email: user?.email || "guest@resuscitation.org",
     phone: "9800000000",
-    onboardedAt: Date.now()
+    isAdmin: isUserAdmin,
+    onboardedAt: Date.now(),
+    kyc: {
+      kycStatus: isUserAdmin ? 'approved' : 'unsubmitted',
+      councilRegistration: isUserAdmin ? 'NMC-COUNCIL-ADMIN' : '',
+      degree: isUserAdmin ? 'MD / Specialist' : 'MBBS',
+      specialty: isUserAdmin ? 'Nepal Medical Council Board' : '',
+      institution: isUserAdmin ? 'Nepal Medical Council' : ''
+    }
   };
 
-  const isVerifiedDoctor = Boolean(user && profile?.kyc?.kycStatus === 'approved');
+  const isVerifiedDoctor = Boolean(user && (profile?.kyc?.kycStatus === 'approved' || isUserAdmin));
 
   const handleOpenCopilot = () => {
     if (!user) {
@@ -941,7 +979,30 @@ export default function App() {
             {/* PRACTITIONER KYC & AUTH STATUS BANNER */}
             {user ? (
               <div className="space-y-2">
-                {profile?.kyc?.kycStatus === 'approved' ? (
+                {isUserAdmin ? (
+                  <div className="p-3 bg-red-600/10 border border-red-600/30 rounded-2xl flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1.5 bg-red-600/20 text-red-600 rounded-xl">
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                      <div className="text-left">
+                        <span className="text-[11px] font-bold text-red-600 dark:text-red-400 block">
+                          Medical Council Admin: {effectiveProfile.fullName}
+                        </span>
+                        <span className="text-[9px] text-gray-500 dark:text-gray-400 font-mono">
+                          NMC Registry & Case Auditing Access • {user.email}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className="text-[9px] text-red-500 hover:text-red-600 font-bold uppercase tracking-wider px-2 py-1 rounded-lg border border-red-500/20 hover:bg-red-500/10 cursor-pointer"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                ) : profile?.kyc?.kycStatus === 'approved' ? (
                   <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                       <div className="p-1.5 bg-emerald-500/20 text-emerald-500 rounded-xl">
@@ -1026,108 +1087,228 @@ export default function App() {
               </div>
             ) : null}
 
-            {/* PRIMARY ACCESS BUTTONS (RED BUTTONS) */}
+            {/* PRIMARY ACCESS BUTTONS */}
             <div className="space-y-2.5 pt-1">
-              {/* BUTTON 1: DYNAMIC BASED ON KYC/AUTH STATUS */}
-              {!user ? (
-                <button 
-                  id="start-full-access-btn"
-                  onClick={() => {
-                    vibrateDevice(80);
-                    setIsGuestMode(false);
-                    setIsAuthModalOpen(true);
-                  }}
-                  className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
-                >
-                  <div className="space-y-0.5">
-                    <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
-                      <ShieldCheck className="w-4 h-4 text-white" />
-                      1. Doctor Sign In & Verification
-                    </span>
-                    <p className="text-[8.5px] text-white/90 font-normal">
-                      Sign in with email/password. First-time doctors complete KYC for admin verification.
-                    </p>
-                  </div>
-                </button>
-              ) : profile?.kyc?.kycStatus === 'approved' ? (
-                <button 
-                  id="start-full-access-btn"
-                  onClick={() => {
-                    vibrateDevice(80);
-                    setIsGuestMode(false);
-                    setActiveTab('timer');
-                    handleStartCPR();
-                  }}
-                  className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
-                >
-                  <div className="space-y-0.5">
-                    <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-white" />
-                      1. Start Resuscitation Session (Verified Doctor)
-                    </span>
-                    <p className="text-[8.5px] text-white/90 font-normal">
-                      Full Resuscitation Registry, Defib Joules, Case Logging, Drugs & Digital Signature
-                    </p>
-                  </div>
-                </button>
-              ) : profile?.kyc?.kycStatus === 'pending' ? (
-                <button 
-                  id="start-full-access-btn"
-                  onClick={() => {
-                    vibrateDevice(80);
-                    setIsVerificationGatekeeperOpen(true);
-                  }}
-                  className="w-full p-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
-                >
-                  <div className="space-y-0.5">
-                    <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
-                      <Clock className="w-4 h-4 text-white" />
-                      1. KYC Pending Admin Verification (Check Status)
-                    </span>
-                    <p className="text-[8.5px] text-white/90 font-normal">
-                      License under review. Tap to check verification status or request admin approval.
-                    </p>
-                  </div>
-                </button>
-              ) : (
-                <button 
-                  id="start-full-access-btn"
-                  onClick={() => {
-                    vibrateDevice(80);
-                    setIsKycModalOpen(true);
-                  }}
-                  className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
-                >
-                  <div className="space-y-0.5">
-                    <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4 text-white" />
-                      1. Fill Doctor KYC Form (Required)
-                    </span>
-                    <p className="text-[8.5px] text-white/90 font-normal">
-                      First-time user: Submit Medical Council registration & degree for admin verification.
-                    </p>
-                  </div>
-                </button>
-              )}
+              {isUserAdmin ? (
+                <>
+                  <button 
+                    id="start-admin-panel-btn"
+                    onClick={() => {
+                      vibrateDevice(80);
+                      setIsAdminPanelOpen(true);
+                    }}
+                    className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-white" />
+                        1. Open Medical Council Admin Board
+                      </span>
+                      <p className="text-[8.5px] text-white/90 font-normal">
+                        Approve Doctor KYC applications, review practitioner licenses & audit clinical cases
+                      </p>
+                    </div>
+                  </button>
 
-              {/* BUTTON 2: GUEST MODE */}
-              <button 
-                id="start-guest-mode-btn"
-                onClick={() => {
-                  vibrateDevice(60);
-                  setIsGuestMode(true);
-                  setActiveTab('timer');
-                  handleStartCPR();
-                }}
-                className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
-              >
-                <div className="space-y-0.5">
-                  <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
-                    <Activity className="w-4 h-4 text-white" />
-                    2. Guest Mode (Limited Access Only)
-                  </span>
-                </div>
-              </button>
+                  <button 
+                    id="start-admin-cpr-btn"
+                    onClick={() => {
+                      vibrateDevice(80);
+                      setIsGuestMode(false);
+                      setActiveTab('timer');
+                      handleStartCPR();
+                    }}
+                    className="w-full p-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-white" />
+                        2. Begin CPR Resuscitation Session (Admin Access)
+                      </span>
+                      <p className="text-[8.5px] text-white/90 font-normal">
+                        Full Resuscitation Registry, Defib Joules, Case Logging, Drugs & Digital Signature
+                      </p>
+                    </div>
+                  </button>
+
+                  <button 
+                    id="start-guest-mode-btn"
+                    onClick={() => {
+                      vibrateDevice(60);
+                      setIsGuestMode(true);
+                      setActiveTab('timer');
+                      handleStartCPR();
+                    }}
+                    className="w-full p-3.5 bg-slate-700 hover:bg-slate-800 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <Activity className="w-4 h-4 text-white" />
+                        3. Guest Mode (Limited Access Only)
+                      </span>
+                    </div>
+                  </button>
+                </>
+              ) : !user ? (
+                <>
+                  <button 
+                    id="start-full-access-btn"
+                    onClick={() => {
+                      vibrateDevice(80);
+                      setIsGuestMode(false);
+                      setIsAuthModalOpen(true);
+                    }}
+                    className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-white" />
+                        1. Doctor Sign In & Verification
+                      </span>
+                      <p className="text-[8.5px] text-white/90 font-normal">
+                        Sign in with email/password. First-time doctors complete KYC for admin verification.
+                      </p>
+                    </div>
+                  </button>
+
+                  <button 
+                    id="start-guest-mode-btn"
+                    onClick={() => {
+                      vibrateDevice(60);
+                      setIsGuestMode(true);
+                      setActiveTab('timer');
+                      handleStartCPR();
+                    }}
+                    className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <Activity className="w-4 h-4 text-white" />
+                        2. Guest Mode (Limited Access Only)
+                      </span>
+                    </div>
+                  </button>
+                </>
+              ) : profile?.kyc?.kycStatus === 'approved' ? (
+                <>
+                  <button 
+                    id="start-full-access-btn"
+                    onClick={() => {
+                      vibrateDevice(80);
+                      setIsGuestMode(false);
+                      setActiveTab('timer');
+                      handleStartCPR();
+                    }}
+                    className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-white" />
+                        1. Start Resuscitation Session (Verified Doctor)
+                      </span>
+                      <p className="text-[8.5px] text-white/90 font-normal">
+                        Full Resuscitation Registry, Defib Joules, Case Logging, Drugs & Digital Signature
+                      </p>
+                    </div>
+                  </button>
+
+                  <button 
+                    id="start-guest-mode-btn"
+                    onClick={() => {
+                      vibrateDevice(60);
+                      setIsGuestMode(true);
+                      setActiveTab('timer');
+                      handleStartCPR();
+                    }}
+                    className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <Activity className="w-4 h-4 text-white" />
+                        2. Guest Mode (Limited Access Only)
+                      </span>
+                    </div>
+                  </button>
+                </>
+              ) : profile?.kyc?.kycStatus === 'pending' ? (
+                <>
+                  <button 
+                    id="start-full-access-btn"
+                    onClick={() => {
+                      vibrateDevice(80);
+                      setIsVerificationGatekeeperOpen(true);
+                    }}
+                    className="w-full p-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-white" />
+                        1. KYC Pending Admin Verification (Check Status)
+                      </span>
+                      <p className="text-[8.5px] text-white/90 font-normal">
+                        License under review. Tap to check verification status or request admin approval.
+                      </p>
+                    </div>
+                  </button>
+
+                  <button 
+                    id="start-guest-mode-btn"
+                    onClick={() => {
+                      vibrateDevice(60);
+                      setIsGuestMode(true);
+                      setActiveTab('timer');
+                      handleStartCPR();
+                    }}
+                    className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <Activity className="w-4 h-4 text-white" />
+                        2. Guest Mode (Limited Access Only)
+                      </span>
+                    </div>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button 
+                    id="start-full-access-btn"
+                    onClick={() => {
+                      vibrateDevice(80);
+                      setIsKycModalOpen(true);
+                    }}
+                    className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4 text-white" />
+                        1. Fill Doctor KYC Form (Required)
+                      </span>
+                      <p className="text-[8.5px] text-white/90 font-normal">
+                        First-time user: Submit Medical Council registration & degree for admin verification.
+                      </p>
+                    </div>
+                  </button>
+
+                  <button 
+                    id="start-guest-mode-btn"
+                    onClick={() => {
+                      vibrateDevice(60);
+                      setIsGuestMode(true);
+                      setActiveTab('timer');
+                      handleStartCPR();
+                    }}
+                    className="w-full p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center justify-between transition-all active:scale-95 shadow-md border-none cursor-pointer text-left"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
+                        <Activity className="w-4 h-4 text-white" />
+                        2. Guest Mode (Limited Access Only)
+                      </span>
+                    </div>
+                  </button>
+                </>
+              )}
             </div>
 
             {/* MANDATORY CLINICAL DISCLAIMER & COPYRIGHT FOOTER */}
@@ -1145,7 +1326,13 @@ export default function App() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => setIsAdminPasswordModalOpen(true)}
+                  onClick={() => {
+                    if (isUserAdmin) {
+                      setIsAdminPanelOpen(true);
+                    } else {
+                      setIsAdminPasswordModalOpen(true);
+                    }
+                  }}
                   className="text-gray-400 hover:text-gray-600 text-[10px] p-0.5 bg-transparent border-none cursor-pointer"
                   title="Admin Board"
                 >
