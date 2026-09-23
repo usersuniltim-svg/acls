@@ -973,7 +973,7 @@ export default function App() {
             </div>
 
             <p className={`text-[9.5px] leading-relaxed text-center font-medium ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
-              Please calibrate defibrillation joules. In case of active arrest code, click below immediately to activate resuscitation logs.
+              Please contact owner/developer of app via email at <a href="mailto:user.suniltim@gmail.com" className="text-red-600 dark:text-red-400 underline font-semibold">user.suniltim@gmail.com</a> to request access if you are physicians outside Nepal. In case of active arrest code, click below immediately to activate resuscitation logs.
             </p>
 
             {/* PRACTITIONER KYC & AUTH STATUS BANNER */}
