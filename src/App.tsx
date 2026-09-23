@@ -56,7 +56,10 @@ const AdminPasswordModal = React.lazy(() => import('./components/AdminPasswordMo
 const VerificationGatekeeperModal = React.lazy(() => import('./components/VerificationGatekeeperModal'));
 const SavedCasesList = React.lazy(() => import('./components/SavedCasesList'));
 
-function CprLogo({ className = "w-28 h-auto" }: { className?: string }) {
+function CprLogo({ className = "w-28 h-auto", isDark = false }: { className?: string; isDark?: boolean }) {
+  const primaryColor = isDark ? "#FFFFFF" : "#000000";
+  const cutColor = isDark ? "#000000" : "#FFFFFF";
+
   return (
     <svg viewBox="0 0 500 400" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
       {/* Red Heart Outline */}
@@ -68,28 +71,31 @@ function CprLogo({ className = "w-28 h-auto" }: { className?: string }) {
         strokeLinejoin="round"
         fill="none"
       />
-      {/* Black ECG Line */}
+      {/* ECG Line */}
       <path
         d="M 5, 210 H 75 L 95, 140 L 115, 265 L 135, 75 L 160, 250 L 180, 185 L 195, 210 H 215"
-        stroke="#000000"
+        stroke={primaryColor}
         strokeWidth="18"
         strokeLinecap="round"
         strokeLinejoin="round"
+        className="transition-colors duration-200"
       />
       {/* Rescuer Head */}
-      <circle cx="300" cy="52" r="32" fill="#000000" />
+      <circle cx="300" cy="52" r="32" fill={primaryColor} className="transition-colors duration-200" />
       {/* Rescuer Torso & Arms */}
       <path
         d="M 252, 110 H 348 C 352, 110 355, 115 352, 125 L 320, 240 H 280 L 248, 125 C 245, 115 248, 110 252, 110 Z"
-        fill="#000000"
+        fill={primaryColor}
+        className="transition-colors duration-200"
       />
-      {/* White V-Cut inside Rescuer Torso */}
+      {/* V-Cut inside Rescuer Torso */}
       <path
         d="M 276, 110 L 300, 195 L 324, 110 Z"
-        fill="#FFFFFF"
+        fill={cutColor}
+        className="transition-colors duration-200"
       />
       {/* Patient Head */}
-      <circle cx="180" cy="270" r="32" fill="#000000" />
+      <circle cx="180" cy="270" r="32" fill={primaryColor} className="transition-colors duration-200" />
       {/* Patient Torso & Body Lying Down */}
       <rect
         x="210"
@@ -97,7 +103,8 @@ function CprLogo({ className = "w-28 h-auto" }: { className?: string }) {
         width="240"
         height="64"
         rx="32"
-        fill="#000000"
+        fill={primaryColor}
+        className="transition-colors duration-200"
       />
     </svg>
   );
@@ -946,7 +953,7 @@ export default function App() {
           >
             {/* CPR Logo Graphic */}
             <div className="mx-auto flex items-center justify-center">
-              <CprLogo className="w-28 sm:w-32 h-auto max-h-24" />
+              <CprLogo className="w-28 sm:w-32 h-auto max-h-24" isDark={isDark} />
             </div>
 
             <div className="text-center">
