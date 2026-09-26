@@ -107,30 +107,31 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
 
   const handleCreateSampleCase = async () => {
     setActionStatus("Generating standard ACLS clinical resuscitation case...");
-    const sampleId = `case_${Date.now()}`;
+    const sampleId = `sample_${Date.now()}`;
+    const t0 = Date.now() - 480 * 1000; // sample code started 8 minutes ago
     const sampleCase: SavedCase & { doctorUid?: string; doctorEmail?: string } = {
       id: sampleId,
-      patientCode: `NEPAL-CODE-${Math.floor(1000 + Math.random() * 9000)}`,
+      patientCode: `SAMPLE-TEST-${Math.floor(1000 + Math.random() * 9000)}`,
       savedAt: Date.now(),
       totalDuration: 480, // 8 minutes
       cprCycleCount: 4,
       shocksCount: 2,
       epiCount: 2,
-      certifiedBy: currentUserEmail ? currentUserEmail.split('@')[0] : 'Nepal Medical Council Admin',
-      councilRegistration: 'NMC-COUNCIL-ADMIN',
+      certifiedBy: 'SAMPLE DATA - not a real patient',
+      councilRegistration: 'SAMPLE',
       signatureDataUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><path d="M10,25 Q30,5 50,20 T90,15 T110,28" fill="none" stroke="%2310b981" stroke-width="3"/></svg>',
       doctorUid: auth.currentUser?.uid || 'admin_user',
       doctorEmail: currentUserEmail || auth.currentUser?.email || 'user.suniltim@gmail.com',
       logs: [
-        { id: '1', timestamp: 0, type: 'CPR_START', description: 'Arrest recognized in Emergency Dept. CPR initiated immediately.' },
-        { id: '2', timestamp: 10, type: 'RHYTHM_CHECK', description: 'Rhythm Analysis: Coarse Ventricular Fibrillation (VF) confirmed.' },
-        { id: '3', timestamp: 25, type: 'SHOCK', description: 'Shock #1 delivered (200J Biphasic). Immediate CPR resumed for 2 minutes.' },
-        { id: '4', timestamp: 145, type: 'DRUG_EPI', description: '1mg Epinephrine IV pushed with 20ml saline flush.' },
-        { id: '5', timestamp: 155, type: 'RHYTHM_CHECK', description: 'Rhythm Check Cycle #2: Persistent VF/Pulseless VT.' },
-        { id: '6', timestamp: 170, type: 'SHOCK', description: 'Shock #2 delivered (200J Biphasic). CPR resumed.' },
-        { id: '7', timestamp: 290, type: 'DRUG_AMIO', description: 'Amiodarone 300mg IV bolus administered.' },
-        { id: '8', timestamp: 350, type: 'DRUG_EPI', description: '1mg Epinephrine second dose administered.' },
-        { id: '9', timestamp: 470, type: 'ROSC', description: 'Rhythm conversion: Normal Sinus with palpable central pulse. ROSC achieved.' }
+        { id: 's1', timestamp: t0 + 0 * 1000, type: 'CPR_START', description: 'Arrest recognized in Emergency Dept. CPR initiated immediately.' },
+        { id: 's2', timestamp: t0 + 10 * 1000, type: 'RHYTHM_CHECK', description: 'Rhythm Analysis: Coarse Ventricular Fibrillation (VF) confirmed.' },
+        { id: 's3', timestamp: t0 + 25 * 1000, type: 'SHOCK', description: 'Shock #1 delivered (200J Biphasic). Immediate CPR resumed for 2 minutes.' },
+        { id: 's4', timestamp: t0 + 145 * 1000, type: 'DRUG_EPI', description: '1mg Epinephrine IV pushed with 20ml saline flush.' },
+        { id: 's5', timestamp: t0 + 155 * 1000, type: 'RHYTHM_CHECK', description: 'Rhythm Check Cycle #2: Persistent VF/Pulseless VT.' },
+        { id: 's6', timestamp: t0 + 170 * 1000, type: 'SHOCK', description: 'Shock #2 delivered (200J Biphasic). CPR resumed.' },
+        { id: 's7', timestamp: t0 + 290 * 1000, type: 'DRUG_AMIO', description: 'Amiodarone 300mg IV bolus administered.' },
+        { id: 's8', timestamp: t0 + 350 * 1000, type: 'DRUG_EPI', description: '1mg Epinephrine second dose administered.' },
+        { id: 's9', timestamp: t0 + 470 * 1000, type: 'ROSC', description: 'Rhythm conversion: Normal Sinus with palpable central pulse. ROSC achieved.' }
       ]
     };
 
@@ -141,6 +142,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
       await setDoc(caseRef, {
         ...sampleCase,
         userId: auth.currentUser?.uid || 'admin_user',
+        isSample: true,
         syncedAt: Date.now()
       }, { merge: true });
       setActionStatus("✓ Sample Resuscitation Case generated & synced to Firestore Registry");

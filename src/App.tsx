@@ -52,7 +52,6 @@ import GeminiResusCopilot from './components/GeminiResusCopilot';
 const AuthModal = React.lazy(() => import('./components/AuthModal'));
 const DoctorKycModal = React.lazy(() => import('./components/DoctorKycModal'));
 const AdminKycPanel = React.lazy(() => import('./components/AdminKycPanel'));
-const AdminPasswordModal = React.lazy(() => import('./components/AdminPasswordModal'));
 const VerificationGatekeeperModal = React.lazy(() => import('./components/VerificationGatekeeperModal'));
 const SavedCasesList = React.lazy(() => import('./components/SavedCasesList'));
 
@@ -128,7 +127,6 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isKycModalOpen, setIsKycModalOpen] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
-  const [isAdminPasswordModalOpen, setIsAdminPasswordModalOpen] = useState(false);
   const [isVerificationGatekeeperOpen, setIsVerificationGatekeeperOpen] = useState(false);
   const [isLandingSavedCasesOpen, setIsLandingSavedCasesOpen] = useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
@@ -358,9 +356,7 @@ export default function App() {
       }
       if (currentUser) {
         const cleanEmail = (currentUser.email || '').toLowerCase().trim();
-        const isAdminUser = cleanEmail === 'user.suniltim@gmail.com' ||
-          cleanEmail.includes('admin') ||
-          cleanEmail.includes('council');
+        const isAdminUser = cleanEmail === 'user.suniltim@gmail.com';
 
         const profileDocRef = doc(db, 'profiles', currentUser.uid);
         profileUnsubscribeRef.current = onSnapshot(profileDocRef, (docSnap) => {
@@ -434,8 +430,7 @@ export default function App() {
                 degree: isAdminUser ? 'MD / Specialist' : 'MBBS',
                 specialty: isAdminUser ? 'Nepal Medical Council Board' : '',
                 institution: isAdminUser ? 'Nepal Medical Council' : '',
-                approvedAt: isAdminUser ? Date.now() : undefined,
-                approvedBy: isAdminUser ? 'System Admin' : undefined
+                ...(isAdminUser ? { approvedAt: Date.now(), approvedBy: 'System Admin' } : {})
               }
             };
 
@@ -839,36 +834,6 @@ export default function App() {
     }
   };
 
-  const handleInstantDemoVerify = async () => {
-    const verifiedKyc = {
-      degree: profile?.highestDegree || "MBBS / MD Specialist",
-      councilRegistration: profile?.councilRegistration || "NMC-8821",
-      specialty: "Emergency & Resuscitation",
-      institution: "Kathmandu Medical College",
-      kycStatus: 'approved' as const,
-      submittedAt: Date.now(),
-      approvedAt: Date.now(),
-    };
-
-    if (user?.uid) {
-      const profRef = doc(db, 'profiles', user.uid);
-      await setDoc(profRef, { kyc: verifiedKyc, councilRegistration: verifiedKyc.councilRegistration }, { merge: true }).catch(() => {});
-    }
-
-    const updatedProf = {
-      ...(profile || effectiveProfile),
-      councilRegistration: verifiedKyc.councilRegistration,
-      kyc: verifiedKyc
-    };
-
-    setProfile(updatedProf);
-    try {
-      localStorage.setItem('acls_user_profile', JSON.stringify(updatedProf));
-    } catch (e) {}
-
-    setIsVerificationGatekeeperOpen(false);
-  };
-
   const formatTime = (seconds: number) => {
     const min = Math.floor(seconds / 60);
     const sec = seconds % 60;
@@ -889,12 +854,7 @@ export default function App() {
   // Fallback Practitioner profile info & Admin Detection
   const userEmail = (user?.email || profile?.email || '').toLowerCase().trim();
   const isUserAdmin = Boolean(
-    (userEmail && (
-      userEmail === 'user.suniltim@gmail.com' ||
-      userEmail.includes('admin') ||
-      userEmail.includes('council') ||
-      userEmail.includes('board')
-    )) ||
+    userEmail === 'user.suniltim@gmail.com' ||
     profile?.isAdmin === true
   );
 
@@ -1346,7 +1306,7 @@ export default function App() {
                     if (isUserAdmin) {
                       setIsAdminPanelOpen(true);
                     } else {
-                      setIsAdminPasswordModalOpen(true);
+                      setIsAuthModalOpen(true);
                     }
                   }}
                   className="text-gray-400 hover:text-gray-600 text-[10px] p-0.5 bg-transparent border-none cursor-pointer"
@@ -1396,7 +1356,7 @@ export default function App() {
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenKyc={() => setIsKycModalOpen(true)}
         onOpenAdmin={() => setIsAdminPanelOpen(true)}
-        onOpenAdminPasswordModal={() => setIsAdminPasswordModalOpen(true)}
+        onOpenAdminPasswordModal={() => (isUserAdmin ? setIsAdminPanelOpen(true) : setIsAuthModalOpen(true))}
         onSignOut={handleSignOut}
         savedCases={savedCases}
         onSaveCurrentCase={handleSaveCurrentCase}
@@ -1669,7 +1629,7 @@ export default function App() {
           }}
         />
         <AdminKycPanel 
-          isOpen={isAdminPanelOpen} 
+          isOpen={isAdminPanelOpen && isUserAdmin} 
           onClose={() => setIsAdminPanelOpen(false)} 
           currentUserEmail={user?.email || undefined} 
           onProfileApproved={(docId, updatedKyc) => {
@@ -1687,14 +1647,6 @@ export default function App() {
             }
           }}
         />
-        <AdminPasswordModal
-          isOpen={isAdminPasswordModalOpen}
-          onClose={() => setIsAdminPasswordModalOpen(false)}
-          onSuccess={() => {
-            setIsAdminPasswordModalOpen(false);
-            setIsAdminPanelOpen(true);
-          }}
-        />
         <VerificationGatekeeperModal
           isOpen={isVerificationGatekeeperOpen}
           onClose={() => setIsVerificationGatekeeperOpen(false)}
@@ -1708,9 +1660,12 @@ export default function App() {
           }}
           onOpenAdmin={() => {
             setIsVerificationGatekeeperOpen(false);
-            setIsAdminPasswordModalOpen(true);
+            if (isUserAdmin) {
+              setIsAdminPanelOpen(true);
+            } else {
+              setIsAuthModalOpen(true);
+            }
           }}
-          onInstantDemoVerify={handleInstantDemoVerify}
           user={user}
           userProfile={profile}
         />
