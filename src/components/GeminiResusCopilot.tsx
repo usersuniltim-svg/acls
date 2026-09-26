@@ -246,7 +246,7 @@ export default function GeminiResusCopilot({
       // Seamlessly retrieve from local verified RAG protocol engine
       const relevantRagDocs = queryAclsRag(textToSend, 3);
       const primaryRag = relevantRagDocs[0] || ACLS_RAG_KNOWLEDGE_BASE[0];
-      const fallbackContent = `**ACLS 2025 Clinical Evidence & RAG Protocol** 🩺\n\n${primaryRag.protocolContent}\n\n*Verified Source: ${primaryRag.source} (${primaryRag.updatedAt})*`;
+      const fallbackContent = `**Offline ACLS reference notes** (AI assistant not connected)\n\n${primaryRag.protocolContent}\n\n*These are built-in notes, not a live AI answer. Check against the current AHA guidelines.*`;
 
       const assistantMsg: ChatMessage = {
         id: `assistant-${Date.now()}`,
@@ -293,7 +293,7 @@ export default function GeminiResusCopilot({
       const relevantDocs = queryAclsRag(query, 4);
       const ragMatrix = relevantDocs.map(d => `### [${d.title}] (${d.category})\n**Summary**: ${d.summary}\n\n${d.protocolContent}`).join('\n\n---\n\n');
       setSearchResults({
-        text: `### Verified ACLS 2025 Clinical Evidence Matrix\n\n${ragMatrix}`,
+        text: `### Offline ACLS reference notes (AI assistant not connected)\n\n${ragMatrix}`,
         groundingChunks: relevantDocs.map(d => ({
           uri: 'https://cpr.heart.org/en/resuscitation-science/cpr-and-ecc-guidelines',
           title: d.title
@@ -463,7 +463,7 @@ export default function GeminiResusCopilot({
                 {!isUserSignedIn ? (
                   'You are currently operating in Guest Mode. Please sign in with your doctor credentials and complete KYC verification to unlock the AI Co-Pilot.'
                 ) : kycStatus === 'pending' ? (
-                  'Your medical council credentials have been submitted and are under review by the Medical Board Admin. Once approved, the AI Co-Pilot will be unlocked automatically.'
+                  'Your registration details have been submitted and are under review by the app admin. Once approved, the AI Co-Pilot will be unlocked automatically.'
                 ) : (
                   `Signed in as ${userEmail || 'Practitioner'}. Please submit your Medical Council Registration & degree to obtain verified doctor status.`
                 )}
@@ -509,7 +509,7 @@ export default function GeminiResusCopilot({
 
             <div className="flex items-center gap-2 text-[10px] text-slate-400">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Medical Council (NMC) verification required for clinical decision safety</span>
+              <span>Registration verification required (licensed clinicians only)</span>
             </div>
           </div>
         ) : (

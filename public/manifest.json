@@ -1,7 +1,7 @@
 {
   "short_name": "ACLS 2025",
   "name": "ACLS Kathmandu Companion",
-  "description": "Nepal Clinical Resuscitation Protocol Guard & Lifecycle Metronome Monitor",
+  "description": "ACLS code timer, CPR metronome and code log based on the 2025 AHA guidelines",
   "icons": [
     {
       "src": "/icon-192.png",

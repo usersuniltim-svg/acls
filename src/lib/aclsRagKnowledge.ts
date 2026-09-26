@@ -1,6 +1,6 @@
 export interface RagKnowledgeChunk {
   id: string;
-  category: 'cardiac_arrest' | 'shockable' | 'non_shockable' | 'drugs' | 'hs_and_ts' | 'post_rosc' | 'pals' | 'tachycardia' | 'bradycardia' | 'toxicology' | 'nepal_standards';
+  category: 'cardiac_arrest' | 'shockable' | 'non_shockable' | 'drugs' | 'hs_and_ts' | 'post_rosc' | 'pals' | 'tachycardia' | 'bradycardia' | 'toxicology';
   title: string;
   keywords: string[];
   summary: string;
@@ -233,23 +233,6 @@ export const ACLS_RAG_KNOWLEDGE_BASE: RagKnowledgeChunk[] = [
     source: 'American College of Medical Toxicology / ACLS 2025 Tox Guidelines',
     updatedAt: '2025/2026'
   },
-  {
-    id: 'rag-nepal-resuscitation-standards',
-    category: 'nepal_standards',
-    title: 'Nepal National Resuscitation & Emergency Standards (TUIOM / NMC)',
-    keywords: ['nepal', 'nepal standards', 'nmc', 'tuiom', 'bir hospital', 'tribhuvan', 'resource limited', 'nepal resuscitation'],
-    summary: 'Nepal Medical Council (NMC) credentialing requirements, resource-adapted critical care, and emergency code compliance.',
-    protocolContent: `**Nepal Resuscitation Standards & Clinical Policy:**
-
-1. **Practitioner Authorization**:
-   - Resuscitation documentation and CPR administration in hospitals across Nepal require registration with the **Nepal Medical Council (NMC)** or Nepal Nursing Council (NNC).
-2. **Defibrillator Calibration**:
-   - Confirm calibrated biphasic waveform (200J default) or monophasic (360J). Check manual paddle contact gel / adhesive electrode impedance.
-3. **Registry Logging & Legal Record**:
-   - Under Nepal healthcare standards, all active CPR arrest events require chronological documentation of shock timestamp, joules delivered, epinephrine administration times, rhythm checks, and time of ROSC / cessation of resuscitation signed by the lead medical doctor with NMC license number.`,
-    source: 'Nepal Medical Council (NMC) & Emergency Medicine Association of Nepal (EMAN)',
-    updatedAt: '2025/2026'
-  }
 ];
 
 /**

@@ -66,7 +66,7 @@ export default function PrintableReport({
         {/* REPORT HEADER */}
         <div className="border-b-2 border-black pb-4 text-center relative">
           <div className="flex justify-between items-center mb-2 text-xs font-mono font-bold uppercase text-gray-600">
-            <span>OFFICIAL CLINICAL REGISTRY</span>
+            <span>RESUSCITATION CODE LOG</span>
             <span>CONFIDENTIAL MEDICAL RECORD</span>
           </div>
           <h1 className="text-2xl font-black uppercase tracking-wider text-black">
@@ -78,7 +78,7 @@ export default function PrintableReport({
           <div className="mt-2 text-[10px] font-mono font-bold text-gray-600 flex justify-around border-t border-gray-300 pt-2">
             <span>Report Ref: {patientCode}</span>
             <span>Date & Time: {reportDate}</span>
-            <span>Status: CERTIFIED CASE RECORD</span>
+            <span>{signatureDataUrl ? 'Signed by clinician' : 'Not signed'}</span>
           </div>
         </div>
 
@@ -233,19 +233,16 @@ export default function PrintableReport({
           </div>
 
           <div className="text-right space-y-1">
-            <p className="text-[9px] font-black uppercase text-gray-600">Doctor Digital Seal & Signature:</p>
+            <p className="text-[9px] font-black uppercase text-gray-600">Clinician Signature:</p>
             {signatureDataUrl ? (
               <div className="border border-gray-400 p-1 rounded bg-white inline-block">
-                <img src={signatureDataUrl} alt="Certified Doctor Signature" className="h-14 max-w-[220px] object-contain" />
+                <img src={signatureDataUrl} alt="Clinician signature" className="h-14 max-w-[220px] object-contain" />
               </div>
             ) : (
               <div className="h-12 w-44 border border-dashed border-gray-400 flex items-center justify-center text-[8px] text-gray-500 font-mono">
-                [Digitally Certified Seal]
+                [Not signed]
               </div>
             )}
-            <p className="text-[8px] font-mono text-emerald-800 font-bold uppercase block">
-              ✓ Verified Medical License Certified
-            </p>
           </div>
         </div>
 

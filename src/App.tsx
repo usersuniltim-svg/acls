@@ -313,7 +313,7 @@ export default function App() {
 
   const triggerPwaInstall = async () => {
     if (!deferredPrompt) {
-      alert("Nepal ACLS app PWA is already cached or manual installation via Chrome menu is required on this device browser.");
+      alert("To install: open your browser menu and choose 'Add to Home screen' or 'Install app'.");
       return;
     }
     deferredPrompt.prompt();
@@ -389,7 +389,7 @@ export default function App() {
               pData.isAdmin = true;
               if (!pData.kyc) pData.kyc = {};
               pData.kyc.kycStatus = 'approved';
-              pData.kyc.councilRegistration = pData.kyc.councilRegistration || 'NMC-COUNCIL-ADMIN';
+              pData.kyc.councilRegistration = pData.kyc.councilRegistration || 'ADMIN';
             }
             setProfile(pData as UserProfile);
 
@@ -437,11 +437,11 @@ export default function App() {
               email: currentUser.email || cachedProf.email,
               isAdmin: isAdminUser || cachedProf.isAdmin
             } : {
-              fullName: currentUser.displayName || (isAdminUser ? 'Medical Council Admin' : (currentUser.email?.split('@')[0] || 'Practitioner')),
+              fullName: currentUser.displayName || (isAdminUser ? 'App Admin' : (currentUser.email?.split('@')[0] || 'Practitioner')),
               email: currentUser.email || '',
               profession: 'doctor',
               highestDegree: isAdminUser ? 'MD / Specialist' : 'MBBS',
-              councilRegistration: isAdminUser ? 'NMC-COUNCIL-ADMIN' : '',
+              councilRegistration: isAdminUser ? 'ADMIN' : '',
               dob: '1990-01-01',
               sex: 'male',
               phone: '',
@@ -449,10 +449,10 @@ export default function App() {
               onboardedAt: Date.now(),
               kyc: {
                 kycStatus: isAdminUser ? 'approved' : 'unsubmitted',
-                councilRegistration: isAdminUser ? 'NMC-COUNCIL-ADMIN' : '',
+                councilRegistration: isAdminUser ? 'ADMIN' : '',
                 degree: isAdminUser ? 'MD / Specialist' : 'MBBS',
-                specialty: isAdminUser ? 'Nepal Medical Council Board' : '',
-                institution: isAdminUser ? 'Nepal Medical Council' : '',
+                specialty: isAdminUser ? 'App administrator' : '',
+                institution: '',
                 ...(isAdminUser ? { approvedAt: Date.now(), approvedBy: 'System Admin' } : {})
               }
             };
@@ -871,28 +871,28 @@ export default function App() {
     isAdmin: isUserAdmin || profile.isAdmin,
     kyc: isUserAdmin ? {
       kycStatus: 'approved',
-      councilRegistration: profile.kyc?.councilRegistration || profile.councilRegistration || 'NMC-COUNCIL-ADMIN',
+      councilRegistration: profile.kyc?.councilRegistration || profile.councilRegistration || 'ADMIN',
       degree: profile.kyc?.degree || 'MD / Specialist',
-      specialty: profile.kyc?.specialty || 'Nepal Medical Council Board',
-      institution: profile.kyc?.institution || 'Nepal Medical Council'
+      specialty: profile.kyc?.specialty || 'App administrator',
+      institution: profile.kyc?.institution || ''
     } : profile.kyc
   } : {
-    fullName: isUserAdmin ? "Medical Council Admin" : "Guest Practitioner",
+    fullName: isUserAdmin ? "App Admin" : "Guest Practitioner",
     profession: "doctor",
     highestDegree: isUserAdmin ? "MD / Specialist" : "MBBS",
     dob: "1990-01-01",
     sex: "other",
-    councilRegistration: isUserAdmin ? "NMC-COUNCIL-ADMIN" : "GUEST-KMC-003",
+    councilRegistration: isUserAdmin ? "ADMIN" : "GUEST",
     email: user?.email || "guest@resuscitation.org",
     phone: "9800000000",
     isAdmin: isUserAdmin,
     onboardedAt: Date.now(),
     kyc: {
       kycStatus: isUserAdmin ? 'approved' : 'unsubmitted',
-      councilRegistration: isUserAdmin ? 'NMC-COUNCIL-ADMIN' : '',
+      councilRegistration: isUserAdmin ? 'ADMIN' : '',
       degree: isUserAdmin ? 'MD / Specialist' : 'MBBS',
-      specialty: isUserAdmin ? 'Nepal Medical Council Board' : '',
-      institution: isUserAdmin ? 'Nepal Medical Council' : ''
+      specialty: isUserAdmin ? 'App administrator' : '',
+      institution: ''
     }
   };
 
@@ -953,7 +953,7 @@ export default function App() {
                   )}
                 </button>
               </div>
-              <p className="text-red-600 text-[8.5px] uppercase tracking-widest font-mono font-bold">Practice & Live Monitor System • 2025 Nepal Standards</p>
+              <p className="text-red-600 text-[8.5px] uppercase tracking-widest font-mono font-bold">Practice & Live Monitor • Based on 2025 AHA Guidelines</p>
             </div>
 
             <p className={`text-[9.5px] leading-relaxed text-center font-medium ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
@@ -971,10 +971,10 @@ export default function App() {
                       </div>
                       <div className="text-left">
                         <span className="text-[11px] font-bold text-red-600 dark:text-red-400 block">
-                          Medical Council Admin: {effectiveProfile.fullName}
+                          App Admin: {effectiveProfile.fullName}
                         </span>
                         <span className="text-[9px] text-gray-500 dark:text-gray-400 font-mono">
-                          NMC Registry & Case Auditing Access • {user.email}
+                          Doctor Verification & Case Review • {user.email}
                         </span>
                       </div>
                     </div>
@@ -1027,7 +1027,7 @@ export default function App() {
                       </button>
                     </div>
                     <p className="text-[9.5px] text-slate-600 dark:text-slate-300 leading-tight">
-                      Registration <strong>{profile?.kyc?.councilRegistration || 'Submitted'}</strong> is awaiting Medical Board Admin verification. Once verified, you can use the rest of the app.
+                      Registration <strong>{profile?.kyc?.councilRegistration || 'Submitted'}</strong> is awaiting verification by the app admin. Once verified, you can use the rest of the app.
                     </p>
                     <div className="flex items-center gap-2 pt-1">
                       <button
@@ -1086,7 +1086,7 @@ export default function App() {
                     <div className="space-y-0.5">
                       <span className="text-[11px] uppercase tracking-wider font-extrabold block text-white flex items-center gap-1.5">
                         <ShieldCheck className="w-4 h-4 text-white" />
-                        1. Open Medical Council Admin Board
+                        1. Open Admin Panel
                       </span>
                       <p className="text-[8.5px] text-white/90 font-normal">
                         Approve Doctor KYC applications, review practitioner licenses & audit clinical cases
@@ -1110,7 +1110,7 @@ export default function App() {
                         2. Begin CPR Resuscitation Session (Admin Access)
                       </span>
                       <p className="text-[8.5px] text-white/90 font-normal">
-                        Full Resuscitation Registry, Defib Joules, Case Logging, Drugs & Digital Signature
+                        Full Case Logs, Defib Joules, Case Logging, Drugs & Digital Signature
                       </p>
                     </div>
                   </button>
@@ -1191,7 +1191,7 @@ export default function App() {
                         1. Start Resuscitation Session (Verified Doctor)
                       </span>
                       <p className="text-[8.5px] text-white/90 font-normal">
-                        Full Resuscitation Registry, Defib Joules, Case Logging, Drugs & Digital Signature
+                        Full Case Logs, Defib Joules, Case Logging, Drugs & Digital Signature
                       </p>
                     </div>
                   </button>
@@ -1306,7 +1306,7 @@ export default function App() {
               </p>
               <div className="flex items-center justify-center gap-2">
                 <p className={`text-[9.5px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                  Nepal ACLS Resuscitation Protocol • 2025 Standards
+                  ACLS Companion • Based on 2025 AHA Guidelines
                 </p>
                 <button
                   type="button"
@@ -1652,7 +1652,7 @@ export default function App() {
               }) : ({
                 fullName: 'Dr. Practitioner',
                 profession: 'doctor',
-                councilRegistration: updatedKyc.councilRegistration || 'NMC-VERIFIED',
+                councilRegistration: updatedKyc.councilRegistration || '',
                 kyc: updatedKyc
               }));
             }

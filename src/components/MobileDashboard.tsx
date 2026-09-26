@@ -297,7 +297,7 @@ export default function MobileDashboard({
                 type="button"
                 onClick={onOpenAdmin}
                 className="px-2 py-1 rounded-xl text-[8.5px] font-bold uppercase tracking-wider cursor-pointer border bg-red-600 text-white border-red-700 hover:bg-red-700 shadow-sm"
-                title="Open Medical Council Admin Portal"
+                title="Open Admin Panel"
               >
                 Admin
               </button>
@@ -644,7 +644,7 @@ export default function MobileDashboard({
             Interactive ACLS Flowchart
           </h2>
           <p className={`text-[8.5px] uppercase font-bold tracking-widest mt-0.5 ${textMuted}`}>
-            2025 Nepal Registry & AHA Standard Pathway
+            Based on the 2025 AHA ACLS Cardiac Arrest Algorithm
           </p>
         </div>
 
@@ -742,7 +742,7 @@ export default function MobileDashboard({
             Resuscitation Journal Logs
           </h2>
           <p className={`text-[8.5px] uppercase font-bold tracking-widest mt-0.5 ${textMuted}`}>
-            Nepal Registry Log, Export & Digital Signatures
+            Code Log, Export & Clinician Signature
           </p>
         </div>
 
@@ -876,7 +876,7 @@ export default function MobileDashboard({
           </div>
           {hasSigned && (
             <span className="text-[8.5px] text-emerald-600 font-bold uppercase tracking-wider block animate-pulse">
-              ✓ Log certified by practitioner: {effectiveProfile.fullName} (NMC: {effectiveProfile.councilRegistration})
+              ✓ Log signed by clinician: {effectiveProfile.fullName} (NMC: {effectiveProfile.councilRegistration})
             </span>
           )}
         </div>
@@ -1263,7 +1263,7 @@ export default function MobileDashboard({
           </p>
           <div className="flex items-center justify-center gap-1.5 pt-1">
             <p className={`text-[9.5px] font-bold uppercase tracking-wider ${textMuted}`}>
-              Nepal ACLS Resuscitation Protocol • 2025 Standards
+              ACLS Companion • Based on 2025 AHA Guidelines
             </p>
             <button
               type="button"
