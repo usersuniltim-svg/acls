@@ -29,7 +29,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
   const [expandedCasesDocId, setExpandedCasesDocId] = useState<string | null>(null);
   const [selectedCaseModal, setSelectedCaseModal] = useState<SavedCase | null>(null);
   const [rejectModalTarget, setRejectModalTarget] = useState<{ docId: string; doctorName: string } | null>(null);
-  const [rejectReasonInput, setRejectReasonInput] = useState('Medical Council license number unverified in NMC registry.');
+  const [rejectReasonInput, setRejectReasonInput] = useState('Registration number could not be verified in the Nepal Medical Council public register.');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -160,7 +160,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
     setActionStatus(`Approving Dr. ${doctorName}...`);
     const targetProfile = profiles.find(p => p.id === docId);
     const existingKyc = targetProfile?.kyc || {
-      councilRegistration: targetProfile?.councilRegistration || 'NMC-VERIFIED',
+      councilRegistration: targetProfile?.councilRegistration || 'Not provided',
       degree: targetProfile?.highestDegree || 'MBBS',
       specialty: 'Clinical Practice',
       institution: 'Hospital Practice'
@@ -168,10 +168,10 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
 
     const updatedKyc: DoctorKyc = {
       ...existingKyc,
-      councilRegistration: existingKyc.councilRegistration || targetProfile?.councilRegistration || 'NMC-VERIFIED',
+      councilRegistration: existingKyc.councilRegistration || targetProfile?.councilRegistration || 'Not provided',
       kycStatus: 'approved',
       approvedAt: Date.now(),
-      approvedBy: currentUserEmail || 'Nepal Medical Council Admin Board'
+      approvedBy: currentUserEmail || 'App admin'
     };
 
     // Update in-memory state immediately for instant feedback
@@ -228,19 +228,19 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
 
   const handleReject = (docId: string, doctorName: string) => {
     setRejectModalTarget({ docId, doctorName });
-    setRejectReasonInput('Medical Council license number unverified in NMC registry.');
+    setRejectReasonInput('Registration number could not be verified in the Nepal Medical Council public register.');
   };
 
   const confirmReject = async () => {
     if (!rejectModalTarget) return;
     const { docId, doctorName } = rejectModalTarget;
-    const reason = rejectReasonInput.trim() || 'Medical Council license number unverified in NMC registry.';
+    const reason = rejectReasonInput.trim() || 'Registration number could not be verified in the Nepal Medical Council public register.';
     setRejectModalTarget(null);
 
     setActionStatus(`Rejecting ${doctorName}...`);
     const targetProfile = profiles.find(p => p.id === docId);
     const existingKyc = targetProfile?.kyc || {
-      councilRegistration: targetProfile?.councilRegistration || 'NMC-UNVERIFIED',
+      councilRegistration: targetProfile?.councilRegistration || 'Not provided',
       degree: targetProfile?.highestDegree || 'MBBS',
       specialty: 'Clinical Practice',
       institution: 'Hospital Practice'
@@ -319,10 +319,10 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-black uppercase tracking-tight">
-                  Medical Council Admin Dashboard
+                  Admin: Doctor Verification & Case Review
                 </h2>
                 <p className="text-gray-600 text-xs font-medium">
-                  Review Doctor KYC Licenses & Audit Saved Resuscitation Cases (Nepal ACLS Registry)
+                  Review doctor registration details and saved case logs
                 </p>
               </div>
             </div>
@@ -366,7 +366,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
               }`}
             >
               <HeartPulse className="w-4 h-4" />
-              Saved Resuscitation Registry ({allCases.length})
+              Saved Case Logs ({allCases.length})
             </button>
           </div>
 
@@ -447,7 +447,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                   filteredProfiles.map((prof) => {
                     const kyc = prof.kyc || {
                       kycStatus: 'unsubmitted',
-                      councilRegistration: prof.councilRegistration || 'NMC-PENDING',
+                      councilRegistration: prof.councilRegistration || 'Not provided',
                       degree: prof.highestDegree || 'MBBS',
                       specialty: 'Clinical Medicine',
                       institution: 'Hospital Practice'
@@ -541,7 +541,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                         {isCasesExpanded && prof.savedCases && (
                           <div className="mt-2 pt-2 border-t border-gray-200 bg-white p-3 rounded-xl border space-y-2">
                             <span className="text-[10px] font-bold text-black uppercase tracking-wider block">
-                              Certified Cases Saved by Dr. {prof.fullName}:
+                              Case logs saved by Dr. {prof.fullName}:
                             </span>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               {prof.savedCases.map((c) => (
@@ -561,7 +561,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                                   </div>
                                   {c.signatureDataUrl && (
                                     <div className="pt-1 flex items-center gap-1 text-[9px] text-emerald-700 font-bold">
-                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Digitally Certified
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Signed by clinician
                                     </div>
                                   )}
                                 </div>
@@ -582,7 +582,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
             <div className="flex-1 overflow-y-auto py-3 space-y-3 custom-scrollbar">
               <div className="flex items-center justify-between pb-2 border-b border-gray-200">
                 <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Audit Registry ({allCases.length} Certified {allCases.length === 1 ? 'Case' : 'Cases'})
+                  Case Logs ({allCases.length} saved)
                 </span>
                 <button
                   type="button"
@@ -597,7 +597,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
               {allCases.length === 0 ? (
                 <div className="text-center py-12 text-gray-500 text-xs bg-gray-50 rounded-xl border border-gray-200 p-8 space-y-3">
                   <HeartPulse className="w-8 h-8 text-red-500 mx-auto mb-2 opacity-60" />
-                  <p className="font-bold uppercase tracking-wider text-black">No certified resuscitation cases in registry yet.</p>
+                  <p className="font-bold uppercase tracking-wider text-black">No saved case logs yet.</p>
                   <p className="text-[10px] text-gray-600 mt-1 font-medium max-w-sm mx-auto">
                     When verified doctors complete cardiac arrest resuscitations and click &quot;Save Case&quot; with digital signature, cases will render here in real-time.
                   </p>
@@ -670,7 +670,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                         <div className="bg-white p-2 rounded-lg border border-gray-200 flex items-center justify-between">
                           <div className="text-[9px] text-gray-600">
                             <span className="font-bold block text-black">PHYSICIAN SIGNATURE</span>
-                            <span>Certified on device</span>
+                            <span>Signed on device</span>
                           </div>
                           <img
                             src={c.signatureDataUrl}
@@ -689,8 +689,8 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
 
           {/* Footer Info */}
           <div className="pt-3 border-t border-gray-200 text-[10px] text-gray-600 flex items-center justify-between font-mono uppercase font-bold">
-            <span>Admin Council Session: <strong className="text-black">AUTH-NMC-2026</strong></span>
-            <span>Nepal ACLS Protocol Board • Firestore Synced</span>
+            <span>Admin view</span>
+            <span>Synced to cloud</span>
           </div>
 
           {/* Case Detail Inspection Modal */}
@@ -703,7 +703,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                       Resuscitation Audit Log • {selectedCaseModal.patientCode}
                     </h3>
                     <p className="text-[10px] text-gray-600">
-                      Certified by Dr. {selectedCaseModal.certifiedBy} (NMC: {selectedCaseModal.councilRegistration})
+                      Signed by Dr. {selectedCaseModal.certifiedBy} (NMC: {selectedCaseModal.councilRegistration})
                     </p>
                   </div>
                   <button
@@ -757,7 +757,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                   <div className="border border-gray-200 p-2.5 rounded-xl bg-gray-50 flex items-center justify-between">
                     <div>
                       <span className="text-[9px] font-bold uppercase text-black block">Doctor Digital Signature</span>
-                      <span className="text-[9px] text-gray-500">Certified by {selectedCaseModal.certifiedBy}</span>
+                      <span className="text-[9px] text-gray-500">Signed by {selectedCaseModal.certifiedBy}</span>
                     </div>
                     <img
                       src={selectedCaseModal.signatureDataUrl}
@@ -788,7 +788,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                   <span>Reject KYC Application</span>
                 </div>
                 <p className="text-xs text-gray-700">
-                  Provide medical council rejection reason for <strong>Dr. {rejectModalTarget.doctorName}</strong>:
+                  Reason for rejecting the verification of <strong>Dr. {rejectModalTarget.doctorName}</strong>:
                 </p>
                 <textarea
                   value={rejectReasonInput}

@@ -200,7 +200,7 @@ export default function SavedCasesList({
           <FileText className="w-8 h-8 text-gray-500 mx-auto" />
           <p className="text-xs font-bold text-black uppercase tracking-wider">No Saved Cases Yet</p>
           <p className="text-[9px] text-gray-700 leading-normal max-w-xs mx-auto font-medium">
-            You can save up to 3 resuscitation case logs with certified signatures, timestamps, epinephrine doses, and shock records.
+            You can save up to 3 resuscitation case logs with clinician signatures, timestamps, epinephrine doses, and shock records.
           </p>
         </div>
       ) : (
@@ -256,7 +256,7 @@ export default function SavedCasesList({
                 </div>
 
                 <div className="text-[8.5px] text-gray-700 font-sans border-t border-gray-200 pt-1.5">
-                  <span className="text-gray-500 block font-bold">Certified Practitioner:</span>
+                  <span className="text-gray-500 block font-bold">Signed by:</span>
                   <strong className="text-black font-bold block truncate">{item.certifiedBy}</strong>
                 </div>
               </div>
@@ -313,7 +313,7 @@ export default function SavedCasesList({
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-black uppercase tracking-wider">Save Resuscitation Case</h3>
-                  <p className="text-[9px] text-red-600 font-mono uppercase font-bold">Nepal Registry Protocol Audit</p>
+                  <p className="text-[9px] text-red-600 font-mono uppercase font-bold">Case Log Review</p>
                 </div>
               </div>
 
@@ -577,7 +577,7 @@ export default function SavedCasesList({
               {/* Certified Signature Display */}
               {viewingCase.signatureDataUrl && (
                 <div className="p-2.5 bg-gray-50 border border-gray-300 rounded-xl space-y-1">
-                  <span className="text-[8px] font-mono font-bold uppercase text-red-600 block">Doctor Certified Digital Signature:</span>
+                  <span className="text-[8px] font-mono font-bold uppercase text-red-600 block">Clinician Signature:</span>
                   <div className="bg-white border border-gray-200 rounded-lg p-1 max-h-16 flex items-center justify-center">
                     <img src={viewingCase.signatureDataUrl} alt="Doctor Signature" className="max-h-12 object-contain" />
                   </div>
@@ -585,7 +585,7 @@ export default function SavedCasesList({
               )}
 
               <div className="pt-2 border-t border-gray-200 flex flex-wrap justify-between items-center text-[9px] text-black font-bold shrink-0 gap-2">
-                <span>Certified: <strong className="text-black">{viewingCase.certifiedBy}</strong> ({viewingCase.councilRegistration})</span>
+                <span>Signed by: <strong className="text-black">{viewingCase.certifiedBy}</strong> ({viewingCase.councilRegistration})</span>
                 <div className="flex gap-2">
                   <button
                     type="button"

@@ -56,7 +56,7 @@ export default function VerificationGatekeeperModal({
           </div>
 
           <p className="text-xs text-black leading-relaxed font-medium">
-            To ensure patient safety and compliance, every practitioner must <strong>Sign In</strong>, submit <strong>Medical Council KYC</strong>, and be <strong>Verified by Medical Board Admin</strong> before accessing active resuscitation tools.
+            To ensure patient safety and compliance, every practitioner must <strong>Sign In</strong>, submit their <strong>registration details</strong>, and be <strong>verified by the app admin</strong> before accessing active resuscitation tools.
           </p>
 
           {/* Stepper Verification Checklist */}
@@ -103,7 +103,7 @@ export default function VerificationGatekeeperModal({
                 <div>
                   <span className="text-xs font-bold text-black block">2. Doctor KYC Submission</span>
                   <span className="text-[9px] text-gray-700 block font-medium">
-                    {kycStatus === 'approved' ? 'Medical council KYC approved' : kycStatus === 'pending' ? 'KYC details submitted & pending review' : kycStatus === 'rejected' ? 'KYC rejected. Re-submission needed' : 'Council reg & degree verification'}
+                    {kycStatus === 'approved' ? 'Registration verified' : kycStatus === 'pending' ? 'KYC details submitted & pending review' : kycStatus === 'rejected' ? 'KYC rejected. Re-submission needed' : 'Council reg & degree verification'}
                   </span>
                 </div>
               </div>
@@ -130,9 +130,9 @@ export default function VerificationGatekeeperModal({
                   <div className="w-4 h-4 rounded-full border border-gray-400 flex items-center justify-center text-[9px] text-black font-bold">3</div>
                 )}
                 <div>
-                  <span className="text-xs font-bold text-black block">3. Medical Board Admin Approval</span>
+                  <span className="text-xs font-bold text-black block">3. App Admin Approval</span>
                   <span className="text-[9px] text-gray-700 block font-medium">
-                    {kycStatus === 'approved' ? 'Verified licensed doctor ✓ Full app access unlocked' : 'Awaiting Medical Council Admin review'}
+                    {kycStatus === 'approved' ? 'Verified licensed doctor ✓ Full app access unlocked' : 'Awaiting app admin review'}
                   </span>
                 </div>
               </div>

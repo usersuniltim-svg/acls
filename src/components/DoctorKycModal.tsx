@@ -109,7 +109,7 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
       if (targetStatus === 'approved') {
         setSuccessMsg("Doctor KYC details updated and verified.");
       } else {
-        setSuccessMsg("Doctor KYC application submitted successfully! Pending Medical Council Admin verification.");
+        setSuccessMsg("Doctor KYC application submitted successfully! Pending verification by the app admin.");
       }
 
       if (onKycUpdated) onKycUpdated(profileData);
@@ -127,7 +127,7 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
         }));
       } catch (e) {}
       if (onKycUpdated) onKycUpdated(profileData);
-      setSuccessMsg("Doctor KYC application saved locally! Pending Medical Council Admin verification.");
+      setSuccessMsg("Doctor KYC application saved locally! Pending verification by the app admin.");
       setTimeout(() => {
         onClose();
       }, 1000);
@@ -145,7 +145,7 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
               <CheckCircle2 className="w-5 h-5 shrink-0 text-red-600" />
               <div>
                 <span className="font-bold uppercase tracking-wider block text-black">VERIFIED LICENSED DOCTOR ✓</span>
-                <span className="text-[10px] text-gray-700">Approved by Council Admin</span>
+                <span className="text-[10px] text-gray-700">Approved by app admin</span>
               </div>
             </div>
             <span className="text-[10px] font-mono bg-red-100 text-red-700 px-2 py-1 rounded border border-red-300 font-bold">
@@ -159,7 +159,7 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
             <Clock className="w-5 h-5 shrink-0 text-amber-600 animate-pulse" />
             <div>
               <span className="font-bold uppercase tracking-wider block">KYC APPLICATION PENDING APPROVAL</span>
-              <span className="text-[10px] text-gray-700">Your details have been submitted and are under review by the Medical Board Admin.</span>
+              <span className="text-[10px] text-gray-700">Your details have been submitted and are under review by the app admin.</span>
             </div>
           </div>
         );
@@ -179,7 +179,7 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
             <ShieldCheck className="w-5 h-5 shrink-0 text-red-600" />
             <div>
               <span className="font-bold uppercase tracking-wider block">UNVERIFIED PRACTITIONER</span>
-              <span className="text-[10px] text-gray-700">Submit your Medical Council License to receive official verified practitioner status.</span>
+              <span className="text-[10px] text-gray-700">Submit your medical council registration number to be verified by the app admin.</span>
             </div>
           </div>
         );
@@ -212,7 +212,7 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
               Doctor KYC Verification Form
             </h2>
             <p className="text-gray-600 text-xs font-medium">
-              Medical Board Verification for Licensed Physicians & Specialists
+              License Verification for Physicians & Specialists
             </p>
           </div>
 

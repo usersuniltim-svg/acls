@@ -52,7 +52,7 @@ export default function LockedGuestOverlay({
                 Doctor KYC Submitted • Awaiting Admin Verification
               </p>
               <p className="text-[10px] text-amber-300/80 font-normal">
-                Your medical council registration details are pending review by the Medical Board Admin. Once approved, all resuscitation registries, case exports, and protocols unlock automatically.
+                Your registration details are pending review by the app admin. Once approved, case logs, exports and flowcharts unlock automatically.
               </p>
             </div>
           ) : isRejected ? (
@@ -68,7 +68,7 @@ export default function LockedGuestOverlay({
             </p>
           ) : (
             <p className="text-xs sm:text-sm font-bold text-amber-300 leading-relaxed bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3 shadow-inner">
-              Guest Mode: Sign in with your Medical Council credentials for full access.
+              Guest Mode: sign in and verify your registration for full access.
             </p>
           )}
 
@@ -116,7 +116,7 @@ export default function LockedGuestOverlay({
                   onClick={onOpenAdmin}
                   className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg transition-all border-none cursor-pointer"
                 >
-                  <ShieldCheck className="w-4 h-4" /> Open Medical Board Admin Portal
+                  <ShieldCheck className="w-4 h-4" /> Open Admin Panel
                 </button>
               )}
             </div>
@@ -126,7 +126,7 @@ export default function LockedGuestOverlay({
         {/* Protocol Footer */}
         <div className="pt-2 border-t border-white/10 text-center">
           <span className="text-[9.5px] text-slate-400 font-mono block">
-            Verification: <strong className="text-slate-200">Nepal Medical Council ACLS Registry</strong>
+            Verification: <strong className="text-slate-200">registration number checked by the app admin</strong>
           </span>
         </div>
       </div>

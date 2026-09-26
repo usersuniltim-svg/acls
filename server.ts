@@ -123,7 +123,7 @@ Guidelines:
 
     // Direct RAG Response Fallback when API Key is pending or network throttled
     const primaryRag = relevantRagDocs[0] || ACLS_RAG_KNOWLEDGE_BASE[0];
-    const fallbackResponse = `**ACLS 2025 Clinical Evidence & RAG Protocol** 🩺\n\n${primaryRag.protocolContent}\n\n*Source: ${primaryRag.source} (${primaryRag.updatedAt})*`;
+    const fallbackResponse = `**Offline ACLS reference notes** (AI assistant not connected)\n\n${primaryRag.protocolContent}\n\n*These are built-in notes, not a live AI answer. Check against the current AHA guidelines.*`;
 
     return res.json({
       text: fallbackResponse,
@@ -163,7 +163,7 @@ app.post('/api/gemini/search', async (req, res) => {
       try {
         const response = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
-          contents: `Clinical Resuscitation Query: ${query}\n\nVerified Core Protocols:\n${ragContext}`,
+          contents: `Clinical Resuscitation Query: ${query}\n\nReference notes:\n${ragContext}`,
           config: {
             systemInstruction: 'You are an Emergency Medicine Information Specialist. Use Google Search Grounding along with provided ACLS knowledge to deliver high-yield evidence.',
             tools: [{ googleSearch: {} }],
@@ -190,7 +190,7 @@ app.post('/api/gemini/search', async (req, res) => {
 
     // Direct RAG Search fallback
     res.json({
-      text: `### Verified ACLS 2025 Clinical Evidence Matrix\n\n${ragContext}`,
+      text: `### Offline ACLS reference notes (AI assistant not connected)\n\n${ragContext}`,
       groundingChunks: relevantDocs.map(d => ({
         uri: 'https://cpr.heart.org/en/resuscitation-science/cpr-and-ecc-guidelines',
         title: d.title
