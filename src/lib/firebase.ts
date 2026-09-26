@@ -20,6 +20,9 @@ const app = initializeApp(firebaseConfig);
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
   experimentalAutoDetectLongPolling: false,
+  // Without this, any field set to `undefined` makes setDoc() throw before
+  // it reaches the server - which silently blocked every new doctor profile.
+  ignoreUndefinedProperties: true,
 }, (firebaseConfig as any).firestoreDatabaseId && (firebaseConfig as any).firestoreDatabaseId !== '(default)' 
   ? (firebaseConfig as any).firestoreDatabaseId 
   : undefined);

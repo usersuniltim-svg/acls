@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, ShieldCheck, CheckCircle2, XCircle, Clock, Search, RefreshCw, 
   UserCheck, AlertTriangle, AlertCircle, FileText, HeartPulse, Activity, Zap, 
-  Syringe, FileCheck, ChevronDown, ChevronUp, User, Award, Building, Sparkles 
+  Syringe, FileCheck, ChevronDown, ChevronUp, User, Award, Building, Sparkles,
+  PlusCircle
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
@@ -21,6 +22,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
   const [profiles, setProfiles] = useState<(UserProfile & { id: string })[]>([]);
   const [allCases, setAllCases] = useState<(SavedCase & { doctorUid?: string; doctorEmail?: string })[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [actionStatus, setActionStatus] = useState<string | null>(null);
@@ -33,6 +35,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
     if (!isOpen) return;
 
     setLoading(true);
+    setLoadError(null);
 
     // 1. Subscribe to profiles collection
     const profilesCol = collection(db, 'profiles');
@@ -55,27 +58,6 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
         }
       });
 
-      // Merge local profile if not in list
-      try {
-        const local = localStorage.getItem('acls_user_profile');
-        if (local) {
-          const parsed = JSON.parse(local) as UserProfile;
-          const currentUid = auth.currentUser?.uid || 'local_doctor';
-          if (!list.some(p => p.id === currentUid || (p.email && p.email === parsed.email))) {
-            list.push({ ...parsed, id: currentUid });
-            if (parsed.savedCases && Array.isArray(parsed.savedCases)) {
-              parsed.savedCases.forEach((sc) => {
-                extractedCases.push({
-                  ...sc,
-                  doctorUid: currentUid,
-                  doctorEmail: parsed.email || ''
-                });
-              });
-            }
-          }
-        }
-      } catch (e) {}
-
       setProfiles(list);
       setAllCases(prev => {
         // combine deduplicated cases
@@ -88,19 +70,10 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
       });
       setLoading(false);
     }, (err) => {
-      console.warn("Firestore profiles snapshot notice:", err);
-      // Fallback to local profile so admin can always review current device session
-      try {
-        const local = localStorage.getItem('acls_user_profile');
-        if (local) {
-          const parsed = JSON.parse(local) as UserProfile;
-          const currentUid = auth.currentUser?.uid || 'local_doctor';
-          setProfiles([{ ...parsed, id: currentUid }]);
-          if (parsed.savedCases) {
-            setAllCases(parsed.savedCases.map(c => ({ ...c, doctorUid: currentUid, doctorEmail: parsed.email })));
-          }
-        }
-      } catch (e) {}
+      console.error("Admin panel could not load profiles:", err);
+      // Show the real error instead of quietly falling back to this device's data
+      setLoadError(err?.code ? `${err.code}: ${err.message}` : String(err));
+      setProfiles([]);
       setLoading(false);
     });
 
@@ -122,7 +95,8 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
         });
       }
     }, (err) => {
-      console.warn("Firestore cases snapshot notice:", err);
+      console.error("Admin panel could not load cases:", err);
+      setLoadError(prev => prev || (err?.code ? `${err.code}: ${err.message}` : String(err)));
     });
 
     return () => {
@@ -130,6 +104,53 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
       unsubCases();
     };
   }, [isOpen]);
+
+  const handleCreateSampleCase = async () => {
+    setActionStatus("Generating standard ACLS clinical resuscitation case...");
+    const sampleId = `case_${Date.now()}`;
+    const sampleCase: SavedCase & { doctorUid?: string; doctorEmail?: string } = {
+      id: sampleId,
+      patientCode: `NEPAL-CODE-${Math.floor(1000 + Math.random() * 9000)}`,
+      savedAt: Date.now(),
+      totalDuration: 480, // 8 minutes
+      cprCycleCount: 4,
+      shocksCount: 2,
+      epiCount: 2,
+      certifiedBy: currentUserEmail ? currentUserEmail.split('@')[0] : 'Nepal Medical Council Admin',
+      councilRegistration: 'NMC-COUNCIL-ADMIN',
+      signatureDataUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><path d="M10,25 Q30,5 50,20 T90,15 T110,28" fill="none" stroke="%2310b981" stroke-width="3"/></svg>',
+      doctorUid: auth.currentUser?.uid || 'admin_user',
+      doctorEmail: currentUserEmail || auth.currentUser?.email || 'user.suniltim@gmail.com',
+      logs: [
+        { id: '1', timestamp: 0, type: 'CPR_START', description: 'Arrest recognized in Emergency Dept. CPR initiated immediately.' },
+        { id: '2', timestamp: 10, type: 'RHYTHM_CHECK', description: 'Rhythm Analysis: Coarse Ventricular Fibrillation (VF) confirmed.' },
+        { id: '3', timestamp: 25, type: 'SHOCK', description: 'Shock #1 delivered (200J Biphasic). Immediate CPR resumed for 2 minutes.' },
+        { id: '4', timestamp: 145, type: 'DRUG_EPI', description: '1mg Epinephrine IV pushed with 20ml saline flush.' },
+        { id: '5', timestamp: 155, type: 'RHYTHM_CHECK', description: 'Rhythm Check Cycle #2: Persistent VF/Pulseless VT.' },
+        { id: '6', timestamp: 170, type: 'SHOCK', description: 'Shock #2 delivered (200J Biphasic). CPR resumed.' },
+        { id: '7', timestamp: 290, type: 'DRUG_AMIO', description: 'Amiodarone 300mg IV bolus administered.' },
+        { id: '8', timestamp: 350, type: 'DRUG_EPI', description: '1mg Epinephrine second dose administered.' },
+        { id: '9', timestamp: 470, type: 'ROSC', description: 'Rhythm conversion: Normal Sinus with palpable central pulse. ROSC achieved.' }
+      ]
+    };
+
+    setAllCases(prev => [sampleCase, ...prev]);
+
+    try {
+      const caseRef = doc(db, 'cases', sampleId);
+      await setDoc(caseRef, {
+        ...sampleCase,
+        userId: auth.currentUser?.uid || 'admin_user',
+        syncedAt: Date.now()
+      }, { merge: true });
+      setActionStatus("✓ Sample Resuscitation Case generated & synced to Firestore Registry");
+      setTimeout(() => setActionStatus(null), 3000);
+    } catch (err) {
+      console.warn("Could not save sample case to Firestore:", err);
+      setActionStatus("✓ Sample Resuscitation Case created in registry view");
+      setTimeout(() => setActionStatus(null), 3000);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -408,6 +429,12 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                     <RefreshCw className="w-4 h-4 animate-spin text-red-600" />
                     <span>Loading Practitioner KYC Records from Firestore...</span>
                   </div>
+                ) : loadError ? (
+                  <div className="text-left py-6 text-xs bg-red-50 rounded-xl border border-red-300 p-4 text-red-800">
+                    <p className="font-bold uppercase tracking-wider mb-1">Could not load doctor records from the database</p>
+                    <p className="font-mono text-[10px] break-all">{loadError}</p>
+                    <p className="text-[10px] mt-2 text-red-700">If this says "permission-denied", make sure you are signed in with the admin Google account or admin credentials.</p>
+                  </div>
                 ) : filteredProfiles.length === 0 ? (
                   <div className="text-center py-12 text-gray-500 text-xs bg-gray-50 rounded-xl border border-gray-200 p-8">
                     <UserCheck className="w-8 h-8 text-gray-400 mx-auto mb-2" />
@@ -551,13 +578,35 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
           {/* VIEW 2: RESUSCITATION CASE REGISTRY */}
           {activeView === 'cases' && (
             <div className="flex-1 overflow-y-auto py-3 space-y-3 custom-scrollbar">
+              <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  Audit Registry ({allCases.length} Certified {allCases.length === 1 ? 'Case' : 'Cases'})
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCreateSampleCase}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border-none shadow transition-all"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  + Generate Sample Case for Audit
+                </button>
+              </div>
+
               {allCases.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 text-xs bg-gray-50 rounded-xl border border-gray-200 p-8">
+                <div className="text-center py-12 text-gray-500 text-xs bg-gray-50 rounded-xl border border-gray-200 p-8 space-y-3">
                   <HeartPulse className="w-8 h-8 text-red-500 mx-auto mb-2 opacity-60" />
                   <p className="font-bold uppercase tracking-wider text-black">No certified resuscitation cases in registry yet.</p>
-                  <p className="text-[10px] text-gray-600 mt-1 font-medium">
+                  <p className="text-[10px] text-gray-600 mt-1 font-medium max-w-sm mx-auto">
                     When verified doctors complete cardiac arrest resuscitations and click &quot;Save Case&quot; with digital signature, cases will render here in real-time.
                   </p>
+                  <button
+                    type="button"
+                    onClick={handleCreateSampleCase}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center gap-2 cursor-pointer border-none shadow transition-all"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Create First Test Case Now
+                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

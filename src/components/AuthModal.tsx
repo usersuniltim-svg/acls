@@ -36,51 +36,15 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
     setError(null);
     try {
       const res = await signInWithPopup(auth, googleProvider);
-      if (res?.user) {
-        const userEmail = (res.user.email || '').toLowerCase().trim();
-        const isAdminEmail = userEmail === 'user.suniltim@gmail.com' ||
-          userEmail.includes('admin') ||
-          userEmail.includes('council');
-
-        const profRef = doc(db, 'profiles', res.user.uid);
-        getDoc(profRef).then((existingSnap) => {
-          if (!existingSnap.exists()) {
-            setDoc(profRef, {
-              fullName: res.user.displayName || (isAdminEmail ? 'Medical Council Admin' : 'Practitioner'),
-              email: res.user.email || '',
-              profession: 'doctor',
-              highestDegree: isAdminEmail ? 'MD / Specialist' : 'MBBS',
-              councilRegistration: isAdminEmail ? 'NMC-COUNCIL-ADMIN' : '',
-              dob: '1990-01-01',
-              sex: 'male',
-              phone: '',
-              isAdmin: isAdminEmail,
-              onboardedAt: Date.now(),
-              kyc: {
-                kycStatus: isAdminEmail ? 'approved' : 'unsubmitted',
-                councilRegistration: isAdminEmail ? 'NMC-COUNCIL-ADMIN' : '',
-                degree: isAdminEmail ? 'MD / Specialist' : 'MBBS',
-                specialty: isAdminEmail ? 'Nepal Medical Council Board' : '',
-                institution: isAdminEmail ? 'Nepal Medical Council' : '',
-                approvedAt: isAdminEmail ? Date.now() : undefined,
-                approvedBy: isAdminEmail ? 'System Admin' : undefined
-              },
-            }, { merge: true }).catch(() => {});
-          } else if (isAdminEmail) {
-            // Ensure admin flag is active
-            setDoc(profRef, {
-              isAdmin: true,
-              'kyc.kycStatus': 'approved',
-              'kyc.councilRegistration': 'NMC-COUNCIL-ADMIN'
-            }, { merge: true }).catch(() => {});
-          }
-        }).catch(() => {});
-      }
+      // Profile creation is handled once, in App.tsx's auth listener.
+      void res;
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
       if (err.code === 'auth/popup-blocked') {
         setError("Sign-in popup was blocked by the browser. Please use Email & Password sign-in below.");
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError("Sign-in isn't enabled for this web address yet. (Admin: add this domain in Firebase Console → Authentication → Settings → Authorized domains.)");
       } else if (err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-closed-by-user') {
         setError("Sign-in popup was closed before completing.");
       } else {
@@ -98,9 +62,6 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
     setIsLoading(true);
 
     const cleanEmail = email.trim().toLowerCase();
-    const isAdminEmail = cleanEmail === 'user.suniltim@gmail.com' ||
-      cleanEmail.includes('admin') ||
-      cleanEmail.includes('council');
 
     try {
       if (isResetMode) {
@@ -119,56 +80,11 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           updateProfile(userCred.user, { displayName: fullName.trim() }).catch(() => {});
         }
       } else {
-        try {
-          userCred = await signInWithEmailAndPassword(auth, cleanEmail, password);
-        } catch (signInErr: any) {
-          // If the designated admin email or demo account is not yet created in this Firebase instance,
-          // automatically register it so the user can log in immediately!
-          if (
-            (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') &&
-            isAdminEmail
-          ) {
-            try {
-              userCred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-            } catch (createErr) {
-              throw signInErr;
-            }
-          } else {
-            throw signInErr;
-          }
-        }
+        userCred = await signInWithEmailAndPassword(auth, cleanEmail, password);
       }
 
-      if (userCred?.user) {
-        const profRef = doc(db, 'profiles', userCred.user.uid);
-        const defaultProf = {
-          fullName: fullName.trim() || userCred.user.displayName || (isAdminEmail ? 'Medical Council Admin' : 'Dr. Practitioner'),
-          email: userCred.user.email || cleanEmail,
-          profession: 'doctor',
-          highestDegree: isAdminEmail ? 'MD / Specialist' : 'MBBS',
-          councilRegistration: isAdminEmail ? 'NMC-COUNCIL-ADMIN' : '',
-          dob: '1990-01-01',
-          sex: 'male',
-          phone: '',
-          isAdmin: isAdminEmail,
-          onboardedAt: Date.now(),
-          kyc: {
-            kycStatus: isAdminEmail ? 'approved' : 'unsubmitted',
-            councilRegistration: isAdminEmail ? 'NMC-COUNCIL-ADMIN' : '',
-            degree: isAdminEmail ? 'MD / Specialist' : 'MBBS',
-            specialty: isAdminEmail ? 'Nepal Medical Council Board' : '',
-            institution: isAdminEmail ? 'Nepal Medical Council' : '',
-            approvedAt: isAdminEmail ? Date.now() : undefined,
-            approvedBy: isAdminEmail ? 'System Admin' : undefined
-          },
-        };
-
-        // Non-blocking sync with merge to preserve any saved cases
-        setDoc(profRef, defaultProf, { merge: true }).catch(() => {});
-        try {
-          localStorage.setItem('acls_user_profile', JSON.stringify(defaultProf));
-        } catch (e) {}
-      }
+      // Profile creation is handled once, in App.tsx's auth listener.
+      void userCred;
 
       setMessage(isSignUp ? "Account created successfully!" : "Signed in successfully!");
       if (onSuccess) onSuccess();

@@ -405,10 +405,19 @@ export default function App() {
             let cachedProf: UserProfile | null = null;
             try {
               const local = localStorage.getItem('acls_user_profile');
-              if (local) cachedProf = JSON.parse(local);
+              if (local) {
+                const parsed = JSON.parse(local);
+                if (parsed.email === currentUser.email) {
+                  cachedProf = parsed;
+                }
+              }
             } catch (e) {}
 
-            const defaultProf: UserProfile = cachedProf || {
+            const defaultProf: UserProfile = cachedProf ? {
+              ...cachedProf,
+              email: currentUser.email || cachedProf.email,
+              isAdmin: isAdminUser || cachedProf.isAdmin
+            } : {
               fullName: currentUser.displayName || (isAdminUser ? 'Medical Council Admin' : (currentUser.email?.split('@')[0] || 'Practitioner')),
               email: currentUser.email || '',
               profession: 'doctor',
