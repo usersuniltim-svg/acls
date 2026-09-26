@@ -39,7 +39,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       initialDate: _dob,
       firstDate: DateTime(1950),
       lastDate: DateTime.now(),
-      theme: ThemeData.dark(),
+      builder: (context, child) => Theme(
+        data: ThemeData.dark(),
+        child: child!,
+      ),
     );
     if (picked != null && picked != _dob) {
       setState(() {

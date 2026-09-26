@@ -55,6 +55,7 @@ class AclsStateManager extends ChangeNotifier {
       defibType: "BIPHASIC",
       selectedEnergy: 200,
       epiDueElapsed: 0,
+      hasAdvancedAirway: false,
     );
     notifyListeners();
   }
@@ -75,6 +76,7 @@ class AclsStateManager extends ChangeNotifier {
     );
     _state = _state.copyWith(
       logs: [newLog, ..._state.logs],
+      hasAdvancedAirway: _state.hasAdvancedAirway || type == EventType.advancedAirway,
     );
     notifyListeners();
   }
