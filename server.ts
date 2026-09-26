@@ -250,14 +250,9 @@ ${(caseData.timeline || []).map((t: any) => `  * [${t.time}] ${t.event}: ${t.det
       }
     }
 
-    res.json({
-      analysis: `### ACLS Clinical Code Performance Review
-- **Guideline Adherence Score**: 9.2 / 10
-- **CPR Quality**: Consistent 2-minute CPR cycle intervals with defibrillation timing strictly following AHA 2025 guidelines.
-- **Pharmacotherapy**: Epinephrine administered in 3-5 minute intervals.
-- **Hs & Ts Reversible Causes**: Aggressively investigate Hypoxia, Acidosis, and Hyperkalemia.
-- **Actionable debrief**: Continue minimizing pre- and post-shock compression pauses (<5 seconds).`,
-      groundingChunks: [],
+    // No AI available: say so. Never return a made-up score or review.
+    res.status(503).json({
+      error: 'AI case review is unavailable right now. No score or review was generated for this case.',
     });
   } catch (error: any) {
     console.error('Error in /api/gemini/analyze-case:', error);

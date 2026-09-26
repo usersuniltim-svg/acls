@@ -27,6 +27,29 @@ export interface AclsState {
   defibType: 'BIPHASIC' | 'MONOPHASIC';
   selectedEnergy: number;
   epiDueElapsed?: number;
+
+  // --- Real-clock anchors (epoch ms). All timers above are recalculated from
+  // these, so a locked or dimmed phone can never slow the clock down. ---
+  /** When the current code started; null when no code is running. */
+  codeStartedAt?: number | null;
+  /** When ROSC was confirmed; null while the patient is in arrest. */
+  roscAt?: number | null;
+  /** Time spent in ROSC before a re-arrest (not counted as arrest time). */
+  roscPausedMs?: number;
+  /** When the current 2-minute CPR cycle ends (while compressions are running). */
+  cprEndsAt?: number | null;
+  /** Time left in the CPR cycle while it is on hold. */
+  cprRemainingMs?: number;
+  /** When the current rhythm-check pause began. */
+  rhythmCheckStartedAt?: number | null;
+  /** Last epinephrine dose (or code start): the 3-5 min interval is timed from here. */
+  epiAnchorAt?: number | null;
+  /** Rhythm checks completed since the arrest (or re-arrest) began. */
+  rhythmCheckCount?: number;
+  amioCount?: number;
+  lidoCount?: number;
+  /** Sound to play; `seq` changes each time a new alert is raised. */
+  alert?: { seq: number; kind: 'cycleEnd' | 'urgent' | 'epi' } | null;
 }
 
 export type KycStatus = 'unsubmitted' | 'pending' | 'approved' | 'rejected';

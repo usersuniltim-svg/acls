@@ -37,6 +37,27 @@ import {
   EPI_INTERVAL, 
 } from './constants';
 import { MedicalAudio } from './lib/audio';
+import {
+  advanceClock,
+  arrestSeconds,
+  clearedClockFields,
+  confirmRosc,
+  deliverShock,
+  giveAmiodarone,
+  giveEpinephrine,
+  giveLidocaine,
+  isCodeActive,
+  pauseCpr,
+  resumeCpr,
+  selectRhythm,
+  startCode,
+  startCprCycle,
+  stopClock,
+  amiodaroneDoseLabel,
+  lidocaineDoseLabel,
+  AMIODARONE_MAX_DOSES,
+  LIDOCAINE_MAX_DOSES,
+} from './lib/codeClock';
 import { 
   auth, 
   db, 
@@ -233,10 +254,12 @@ export default function App() {
       defibType: (savedDefibType as 'BIPHASIC' | 'MONOPHASIC') || 'BIPHASIC',
       selectedEnergy: savedEnergy ? parseInt(savedEnergy, 10) : 200,
       epiDueElapsed: 0,
+      ...clearedClockFields(),
+      amioCount: 0,
+      lidoCount: 0,
+      alert: null,
     };
   });
-
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Clock updates
   useEffect(() => {
@@ -549,81 +572,62 @@ export default function App() {
     };
   }, [state.isTimerRunning, state.rhythmCheckTimeLeft, state.activePrompt, soundEnabled]);
 
-  // Active Resuscitation Timer Core Loop tick
+  // Resuscitation clock. Every timer is recalculated from real timestamps
+  // (see src/lib/codeClock.ts), so a dimmed or locked phone can't slow it down.
+  // Runs for the whole code, including while prompts are open and while the
+  // home screen is showing.
   useEffect(() => {
-    if (hasSessionStarted && (state.isTimerRunning || state.activePrompt === 'RHYTHM_CHECK')) {
-      timerRef.current = setInterval(() => {
-        setState(prev => {
-          let nextTotal = prev.totalTime;
-          let nextCpr = prev.cprTimeLeft;
-          let nextEpi = prev.epiTimeLeft > 0 ? prev.epiTimeLeft - 1 : 0;
-          let nextRhythmCheckLeft = prev.rhythmCheckTimeLeft;
-          let nextActivePrompt = prev.activePrompt;
-          let nextIsRunning = prev.isTimerRunning;
-
-          // Increment Total
-          if (nextIsRunning || nextActivePrompt === 'RHYTHM_CHECK') {
-            nextTotal += 1;
-          }
-
-          // CPR cycle ticker - should NOT stop when nextActivePrompt is 'EPI_DUE'
-          if (nextIsRunning && nextCpr > 0 && (nextActivePrompt === null || nextActivePrompt === 'EPI_DUE')) {
-            nextCpr -= 1;
-            if (nextCpr === 0) {
-              // Time's up: prompt rhythm check evaluation
-              nextActivePrompt = 'RHYTHM_CHECK';
-              nextRhythmCheckLeft = 10;
-              nextIsRunning = false;
-              MedicalAudio.playCycleEnd();
-            }
-          }
-
-          // Rhythm Evaluation evaluation ticking
-          if (nextActivePrompt === 'RHYTHM_CHECK' && nextRhythmCheckLeft > 0) {
-            nextRhythmCheckLeft -= 1;
-            if (nextRhythmCheckLeft === 0) {
-              // Sound alert on 10s interruption breach
-              MedicalAudio.playUrgent();
-            }
-          }
-
-          // Epinephrine Drug reminder ticker
-          let nextEpiDueElapsed = prev.epiDueElapsed !== undefined ? prev.epiDueElapsed : 0;
-          if (nextIsRunning && prev.epiTimeLeft > 0 && nextEpi === 0) {
-            nextActivePrompt = 'EPI_DUE';
-            nextEpiDueElapsed = 0;
-            MedicalAudio.playAlert();
-          }
-
-          if (nextActivePrompt === 'EPI_DUE') {
-            nextEpiDueElapsed += 1;
-            if (nextEpiDueElapsed > 0 && nextEpiDueElapsed % 7 === 0) {
-              MedicalAudio.playAlert();
-            }
-          } else {
-            nextEpiDueElapsed = 0;
-          }
-
-          return {
-            ...prev,
-            totalTime: nextTotal,
-            cprTimeLeft: nextCpr,
-            epiTimeLeft: nextEpi,
-            rhythmCheckTimeLeft: nextRhythmCheckLeft,
-            activePrompt: nextActivePrompt,
-            isTimerRunning: nextIsRunning,
-            epiDueElapsed: nextEpiDueElapsed,
-          };
-        });
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+    if (!state.codeStartedAt) return;
+    const tick = () => setState(prev => advanceClock(prev, Date.now()));
+    tick();
+    const interval = setInterval(tick, 250);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
     };
-  }, [hasSessionStarted, state.isTimerRunning, state.activePrompt]);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [state.codeStartedAt]);
+
+  // Play each clock alert exactly once.
+  const lastAlertSeqRef = useRef(0);
+  useEffect(() => {
+    const alert = state.alert;
+    if (!alert || alert.seq === lastAlertSeqRef.current) return;
+    lastAlertSeqRef.current = alert.seq;
+    if (alert.kind === 'cycleEnd') MedicalAudio.playCycleEnd();
+    else if (alert.kind === 'urgent') MedicalAudio.playUrgent();
+    else MedicalAudio.playAlert();
+  }, [state.alert?.seq]);
+
+  // Keep the screen on while the patient is in arrest.
+  const codeIsActive = isCodeActive(state);
+  useEffect(() => {
+    if (!codeIsActive || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+    let lock: { release: () => Promise<void> } | null = null;
+    let cancelled = false;
+    const request = async () => {
+      try {
+        const l = await (navigator as any).wakeLock.request('screen');
+        if (cancelled) l.release().catch(() => {});
+        else lock = l;
+      } catch (e) {
+        // Not allowed right now (e.g. low battery mode); the clock stays accurate regardless.
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && !cancelled) request();
+    };
+    request();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      lock?.release().catch(() => {});
+    };
+  }, [codeIsActive]);
 
   const addLog = (type: EventType, description: string) => {
     const newLog: LogEvent = {
@@ -634,125 +638,129 @@ export default function App() {
     };
     setState(prev => ({
       ...prev,
-      logs: [newLog, ...prev.logs].slice(0, 50),
+      // Keep every event: the journal is the record of the whole code.
+      logs: [newLog, ...prev.logs],
     }));
+  };
+
+  const formatClock = (seconds: number) => `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
+
+  const logReArrestIfNeeded = () => {
+    if (state.roscAt) {
+      addLog('CPR_START', `Re-arrest after ROSC - CPR restarted (arrest time so far ${formatClock(arrestSeconds(state, state.roscAt))})`);
+    }
   };
 
   const toggleTimer = () => {
     vibrateDevice(40);
-    if (!state.isTimerRunning && state.totalTime === 0) {
-      addLog('CPR_START', 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.');
-      MedicalAudio.playAlert();
+    const now = Date.now();
+    if (state.isTimerRunning) {
+      addLog('INFO', `Compressions paused - CPR cycle held at ${formatClock(state.cprTimeLeft)}`);
+      setState(prev => pauseCpr(prev, now));
+      return;
     }
-    setState(prev => ({ 
-      ...prev, 
-      isTimerRunning: !prev.isTimerRunning,
-      cprCycleCount: (!prev.isTimerRunning && prev.totalTime === 0) ? 1 : prev.cprCycleCount,
-      activePrompt: prev.activePrompt === 'RHYTHM_CHECK' ? null : prev.activePrompt,
-      rhythmCheckTimeLeft: prev.activePrompt === 'RHYTHM_CHECK' ? 0 : prev.rhythmCheckTimeLeft
-    }));
+    if (state.roscAt) {
+      logReArrestIfNeeded();
+      MedicalAudio.playAlert();
+    } else if (!state.codeStartedAt) {
+      addLog('CPR_START', 'Resuscitation started');
+      MedicalAudio.playAlert();
+    } else {
+      addLog('INFO', 'Compressions resumed');
+    }
+    setState(prev => resumeCpr(prev, now));
   };
 
   const resetCprTimer = () => {
     vibrateDevice(75);
-    setState(prev => ({ 
-      ...prev, 
-      cprTimeLeft: CPR_CYCLE_DURATION,
-      cprCycleCount: prev.cprCycleCount + 1,
-      activePrompt: null,
-      rhythmCheckTimeLeft: 0,
-      isTimerRunning: true
-    }));
-    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} finalized & restarted`);
+    logReArrestIfNeeded();
+    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`);
+    setState(prev => startCprCycle(prev, Date.now()));
+  };
+
+  const handleBeginCpr = () => {
+    vibrateDevice(75);
+    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`);
+    setState(prev => startCprCycle(prev, Date.now()));
   };
 
   const handleShock = () => {
     vibrateDevice([300, 100, 300, 100, 450]);
     MedicalAudio.playUrgent();
-    setState(prev => ({ 
-      ...prev, 
-      shocksCount: prev.shocksCount + 1,
-      cprTimeLeft: CPR_CYCLE_DURATION,
-      cprCycleCount: prev.cprCycleCount + 1,
-      currentRhythm: 'SHOCKABLE',
-      activePrompt: null,
-      rhythmCheckTimeLeft: 0,
-      isTimerRunning: true
-    }));
+    logReArrestIfNeeded();
     addLog('SHOCK', `Defibrillation administered: ${state.selectedEnergy}J (Shock #${state.shocksCount + 1}) - Resuming CPR Cycle immediately`);
+    setState(prev => deliverShock(prev, Date.now()));
   };
 
   const handleEpi = () => {
     vibrateDevice([150, 80, 150]);
     MedicalAudio.playAlert();
-    setState(prev => ({ 
-      ...prev, 
-      epiCount: prev.epiCount + 1,
-      epiTimeLeft: EPI_INTERVAL,
-      activePrompt: prev.activePrompt === 'EPI_DUE' ? null : prev.activePrompt,
-      epiDueElapsed: 0
-    }));
     addLog('DRUG_EPI', `Administered 1mg Epinephrine IV/IO (Total Dose Count: #${state.epiCount + 1}) - 3m countdown running`);
+    setState(prev => giveEpinephrine(prev, Date.now()));
+  };
+
+  const handleAmiodarone = () => {
+    const dose = (state.amioCount ?? 0) + 1;
+    if (dose > AMIODARONE_MAX_DOSES) return;
+    vibrateDevice([150, 80, 150]);
+    addLog('DRUG_AMIO', `Amiodarone ${amiodaroneDoseLabel(dose)} IV/IO (dose ${dose} of ${AMIODARONE_MAX_DOSES})`);
+    setState(prev => giveAmiodarone(prev));
+  };
+
+  const handleLidocaine = () => {
+    const dose = (state.lidoCount ?? 0) + 1;
+    if (dose > LIDOCAINE_MAX_DOSES) return;
+    vibrateDevice([150, 80, 150]);
+    addLog('DRUG_LIDO', `Lidocaine ${lidocaineDoseLabel(dose)} IV/IO (dose ${dose}; max total 3 mg/kg)`);
+    setState(prev => giveLidocaine(prev));
   };
 
   const handleRhythmSelect = (rhythm: PatientRhythm) => {
     vibrateDevice(50);
-    setState(prev => {
-      let nextPrompt: 'SHOCK_ADVISED' | 'EPI_ADVISED' | null = null;
-      if (rhythm === 'SHOCKABLE') {
-        nextPrompt = 'SHOCK_ADVISED';
-      } else if (rhythm === 'NON_SHOCKABLE') {
-        nextPrompt = 'EPI_ADVISED';
-        MedicalAudio.playAlert();
-      }
-      
-      return { 
-        ...prev, 
-        currentRhythm: rhythm,
-        activePrompt: nextPrompt,
-        isTimerRunning: nextPrompt ? false : true,
-        rhythmCheckTimeLeft: 0, 
-        cprTimeLeft: rhythm === 'NON_SHOCKABLE' ? CPR_CYCLE_DURATION : prev.cprTimeLeft
-      };
-    });
-    addLog('RHYTHM_CHECK', `Rhythm Evaluation: Selected ${rhythm}`);
+    if (rhythm === 'NON_SHOCKABLE') {
+      MedicalAudio.playAlert();
+    }
+    const checkNumber = (state.rhythmCheckCount ?? 0) + 1;
+    const label = rhythm === 'SHOCKABLE' ? 'VF / pulseless VT (shockable)' : rhythm === 'NON_SHOCKABLE' ? 'Asystole / PEA (non-shockable)' : rhythm;
+    addLog('RHYTHM_CHECK', `Rhythm check #${checkNumber}: ${label}`);
+    setState(prev => selectRhythm(prev, rhythm, Date.now()));
   };
 
   const handleRosc = () => {
+    if (!state.codeStartedAt || state.roscAt) return;
     vibrateDevice([60, 60, 60, 60, 400]);
-    setState(prev => ({ 
-      ...prev, 
-      isTimerRunning: false,
-      activePrompt: null
-    }));
-    addLog('ROSC', 'ROSC ACHIEVED - Initiating Post-Cardiac Arrest Care Protocol');
+    const now = Date.now();
+    addLog('ROSC', `ROSC achieved after ${formatClock(arrestSeconds(state, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`);
+    setState(prev => confirmRosc(prev, now));
+  };
+
+  const handleRoscAtRhythmCheck = () => {
+    if (!state.codeStartedAt || state.roscAt) return;
+    vibrateDevice([60, 60, 60, 60, 400]);
+    const now = Date.now();
+    const checkNumber = (state.rhythmCheckCount ?? 0) + 1;
+    addLog('RHYTHM_CHECK', `Rhythm check #${checkNumber}: organized rhythm with pulse`);
+    addLog('ROSC', `ROSC confirmed at rhythm check #${checkNumber} after ${formatClock(arrestSeconds(state, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`);
+    setState(prev => confirmRosc({ ...prev, rhythmCheckCount: (prev.rhythmCheckCount ?? 0) + 1 }, now));
   };
 
   const handleStartCPR = () => {
     vibrateDevice(100);
-    setState(prev => ({
-      ...prev,
-      isTimerRunning: false,
-      cprCycleCount: 0,
-      activePrompt: 'RHYTHM_CHECK',
-      rhythmCheckTimeLeft: 10,
-      totalTime: 0,
-      cprTimeLeft: CPR_CYCLE_DURATION,
-      epiTimeLeft: EPI_INTERVAL,
-    }));
+    // A code is already running (e.g. the user tapped back to the home screen):
+    // go back to it instead of restarting the clock.
+    if (isCodeActive(state)) {
+      setHasSessionStarted(true);
+      return;
+    }
     addLog('CPR_START', 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.');
+    setState(prev => startCode(prev, Date.now()));
     setHasSessionStarted(true);
   };
 
   const handleSignOut = async () => {
     try {
       MedicalAudio.stopAll();
-      setState(prev => ({
-        ...prev,
-        isTimerRunning: false,
-        activePrompt: null,
-        rhythmCheckTimeLeft: 0,
-      }));
+      setState(prev => stopClock(prev));
       setHasSessionStarted(false);
       try {
         localStorage.removeItem('acls_user_profile');
@@ -1345,6 +1353,8 @@ export default function App() {
         handleShock={handleShock}
         handleEpi={handleEpi}
         handleRosc={handleRosc}
+        handleAmiodarone={handleAmiodarone}
+        handleLidocaine={handleLidocaine}
         handleRhythmSelect={handleRhythmSelect}
         addLog={addLog}
         effectiveProfile={effectiveProfile}
@@ -1426,6 +1436,15 @@ export default function App() {
                     >
                       Asystole / PEA
                     </button>
+                    {/* Not offered at the first rhythm check of an arrest */}
+                    {(state.rhythmCheckCount ?? 0) >= 1 && (
+                      <button 
+                        onClick={handleRoscAtRhythmCheck}
+                        className="h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-widest transition-transform cursor-pointer border-none shadow-md flex items-center justify-center gap-1.5"
+                      >
+                        <Heart className="w-3.5 h-3.5 fill-current" /> Confirm ROSC (Pulse Present)
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -1468,15 +1487,7 @@ export default function App() {
                     </button>
                     
                     <button 
-                      onClick={() => {
-                        addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`);
-                        setState(prev => ({ 
-                          ...prev, 
-                          activePrompt: null, 
-                          isTimerRunning: true,
-                          cprCycleCount: prev.cprCycleCount + 1
-                        }));
-                      }}
+                      onClick={handleBeginCpr}
                       className="w-full h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase text-[9.5px] tracking-widest cursor-pointer border-none"
                     >
                       Begin CPR

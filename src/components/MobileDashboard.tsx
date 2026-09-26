@@ -36,6 +36,13 @@ import {
   SavedCase
 } from '../types';
 import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
+import {
+  clearedClockFields,
+  amiodaroneDoseLabel,
+  lidocaineDoseLabel,
+  AMIODARONE_MAX_DOSES,
+  LIDOCAINE_MAX_DOSES,
+} from '../lib/codeClock';
 import SavedCasesList from './SavedCasesList';
 import LockedGuestOverlay from './LockedGuestOverlay';
 import PrintableReport from './PrintableReport';
@@ -63,6 +70,8 @@ interface MobileDashboardProps {
   handleShock: () => void;
   handleEpi: () => void;
   handleRosc: () => void;
+  handleAmiodarone: () => void;
+  handleLidocaine: () => void;
   handleRhythmSelect: (rhythm: PatientRhythm) => void;
   addLog: (type: EventType, description: string) => void;
   effectiveProfile: UserProfile;
@@ -111,6 +120,8 @@ export default function MobileDashboard({
   handleShock,
   handleEpi,
   handleRosc,
+  handleAmiodarone,
+  handleLidocaine,
   handleRhythmSelect,
   addLog,
   effectiveProfile,
@@ -333,9 +344,9 @@ export default function MobileDashboard({
         <div className={`w-full rounded-2xl p-3 border space-y-2.5 ${cardClass}`}>
           <div className="flex justify-between items-center gap-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <div className={`w-2.5 h-2.5 rounded-full ${state.isTimerRunning ? 'bg-red-600 animate-pulse ring-4 ring-red-500/20' : 'bg-slate-400'}`} />
-              <span className={`text-[9.5px] font-bold tracking-wider uppercase ${state.isTimerRunning ? 'text-red-600 font-black' : textMuted}`}>
-                {state.isTimerRunning ? 'CPR IN PROGRESS' : 'TIMERS STANDBY'}
+              <div className={`w-2.5 h-2.5 rounded-full ${state.roscAt ? 'bg-emerald-500' : state.isTimerRunning ? 'bg-red-600 animate-pulse ring-4 ring-red-500/20' : 'bg-slate-400'}`} />
+              <span className={`text-[9.5px] font-bold tracking-wider uppercase ${state.roscAt ? 'text-emerald-600 font-black' : state.isTimerRunning ? 'text-red-600 font-black' : textMuted}`}>
+                {state.roscAt ? 'ROSC - POST-ARREST CARE' : state.isTimerRunning ? 'CPR IN PROGRESS' : 'CPR ON HOLD'}
               </span>
               <button 
                 type="button"
@@ -357,7 +368,7 @@ export default function MobileDashboard({
               </button>
             </div>
             <div className="text-right shrink-0">
-              <span className={`text-[8px] uppercase font-black block ${textMuted}`}>Total Elapsed</span>
+              <span className={`text-[8px] uppercase font-black block ${textMuted}`}>{state.roscAt ? 'Arrest Time' : 'Total Elapsed'}</span>
               <span className={`font-mono text-sm font-bold tabular-nums ${isDark ? 'text-white' : 'text-slate-900'}`}>
                 {formatTime(state.totalTime)}
               </span>
@@ -430,7 +441,7 @@ export default function MobileDashboard({
               </>
             ) : (
               <>
-                <Play className="w-4 h-4 fill-current" /> Resume Code
+                <Play className="w-4 h-4 fill-current" /> {state.roscAt ? 'Re-Arrest: Restart CPR' : 'Resume Code'}
               </>
             )}
           </button>
@@ -513,6 +524,48 @@ export default function MobileDashboard({
             </span>
           </button>
         </div>
+
+        {/* Antiarrhythmics for shock-refractory VF / pVT */}
+        {(() => {
+          const amioGiven = state.amioCount ?? 0;
+          const lidoGiven = state.lidoCount ?? 0;
+          const amioDone = amioGiven >= AMIODARONE_MAX_DOSES;
+          const lidoDone = lidoGiven >= LIDOCAINE_MAX_DOSES;
+          // AHA: first antiarrhythmic dose after the 3rd shock.
+          const antiarrhythmicDue = state.currentRhythm === 'SHOCKABLE' && state.shocksCount >= 3 && amioGiven + lidoGiven === 0;
+          const cardBase = 'h-20 rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition-all shadow-md px-2 text-center';
+          const activeCard = antiarrhythmicDue
+            ? 'bg-violet-600 text-white border-violet-400 animate-pulse cursor-pointer active:scale-95'
+            : isDark
+              ? 'bg-violet-500/20 text-violet-200 border-violet-500/30 hover:bg-violet-500/30 cursor-pointer active:scale-95'
+              : 'bg-violet-100 text-violet-900 border-violet-300 hover:bg-violet-200 cursor-pointer active:scale-95';
+          const doneCard = isDark ? 'bg-slate-800 text-slate-500 border-white/10 cursor-not-allowed' : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed';
+          return (
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-2 gap-2.5">
+                <button type="button" onClick={handleAmiodarone} disabled={amioDone} className={`${cardBase} ${amioDone ? doneCard : activeCard}`}>
+                  <Syringe className="w-4 h-4" />
+                  <span className="text-[10px] uppercase tracking-wider font-black">Amiodarone ({amioGiven})</span>
+                  <span className="text-[8.5px] font-bold uppercase tracking-wide opacity-90">
+                    {amioDone ? 'Max 2 doses given' : `Next: ${amiodaroneDoseLabel(amioGiven + 1)} IV/IO`}
+                  </span>
+                </button>
+                <button type="button" onClick={handleLidocaine} disabled={lidoDone} className={`${cardBase} ${lidoDone ? doneCard : activeCard}`}>
+                  <Syringe className="w-4 h-4" />
+                  <span className="text-[10px] uppercase tracking-wider font-black">Lidocaine ({lidoGiven})</span>
+                  <span className="text-[8.5px] font-bold uppercase tracking-wide opacity-90">
+                    {lidoDone ? 'Max 3 mg/kg reached' : `Next: ${lidocaineDoseLabel(lidoGiven + 1)} IV/IO`}
+                  </span>
+                </button>
+              </div>
+              <p className={`text-[8px] uppercase font-bold tracking-wider text-center ${antiarrhythmicDue ? 'text-violet-600' : textMuted}`}>
+                {antiarrhythmicDue
+                  ? 'Shock-refractory VF/pVT: consider amiodarone or lidocaine now'
+                  : 'For shock-refractory VF / pVT (after 3rd shock)'}
+              </p>
+            </div>
+          );
+        })()}
 
         {/* ROSC Achievements */}
         <button 
@@ -1093,6 +1146,9 @@ export default function MobileDashboard({
                 logs: [],
                 activePrompt: null,
                 rhythmCheckTimeLeft: 0,
+                ...clearedClockFields(),
+                amioCount: 0,
+                lidoCount: 0,
               }));
               setHasSessionStarted(false);
             }
