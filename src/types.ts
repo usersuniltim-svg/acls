@@ -1,5 +1,3 @@
-import { LucideIcon } from 'lucide-react';
-
 export type EventType = 'CPR_START' | 'SHOCK' | 'DRUG_EPI' | 'DRUG_AMIO' | 'DRUG_LIDO' | 'ROSC' | 'RHYTHM_CHECK' | 'ADVANCED_AIRWAY' | 'INFO';
 
 export interface LogEvent {
