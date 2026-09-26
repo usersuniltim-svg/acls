@@ -15,10 +15,10 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn()
         && request.auth.token.email != null
-        && (
-          request.auth.token.email == 'user.suniltim@gmail.com'
-          || request.auth.token.email.lower() == 'user.suniltim@gmail.com'
-        );
+        && request.auth.token.email.lower() == 'user.suniltim@gmail.com'
+        // Required: otherwise anyone could register this address with a
+        // password (unverified) and become admin. Sign in with Google as admin.
+        && request.auth.token.email_verified == true;
     }
 
     // A user may submit KYC for review, but can never approve themselves.
