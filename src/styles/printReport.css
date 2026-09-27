@@ -1,0 +1,496 @@
+.acls-print-report-portal {
+  display: none;
+}
+
+.acls-print-report {
+  font-family: Arial, Helvetica, sans-serif;
+  color: #111827;
+  background: #ffffff;
+  font-size: 9.5pt;
+  line-height: 1.35;
+}
+
+.acls-print-page {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 257mm;
+  padding: 0;
+  background: #ffffff;
+  break-after: page;
+  page-break-after: always;
+}
+
+.acls-print-page:last-child {
+  break-after: auto;
+  page-break-after: auto;
+}
+
+.acls-print-header,
+.acls-print-page-header,
+.acls-print-footer,
+.acls-print-intro,
+.acls-print-section-heading-row,
+.acls-print-physician-card,
+.acls-print-signed-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.acls-print-header {
+  align-items: flex-start;
+  padding-bottom: 10px;
+}
+
+.acls-print-brand {
+  font-size: 15pt;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.acls-print-title {
+  margin-top: 2px;
+  font-size: 20pt;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+.acls-print-header-meta {
+  text-align: right;
+  font-size: 7.5pt;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: #4b5563;
+}
+
+.acls-print-status {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 3px 7px;
+  border: 1px solid #9ca3af;
+  border-radius: 999px;
+  color: #374151;
+}
+
+.acls-print-status.signed {
+  border-color: #15803d;
+  color: #166534;
+}
+
+.acls-print-rule {
+  height: 2px;
+  background: #111827;
+  margin-bottom: 18px;
+}
+
+.acls-print-intro {
+  align-items: flex-end;
+  margin-bottom: 22px;
+}
+
+.acls-print-eyebrow {
+  font-size: 7.5pt;
+  font-weight: 800;
+  letter-spacing: .11em;
+  color: #6b7280;
+  text-transform: uppercase;
+}
+
+.acls-print-intro h1 {
+  margin: 3px 0 3px;
+  font-size: 16pt;
+  line-height: 1.15;
+}
+
+.acls-print-intro p {
+  margin: 0;
+  color: #4b5563;
+  font-size: 8.5pt;
+}
+
+.acls-print-case-badge {
+  min-width: 145px;
+  padding: 9px 11px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  text-align: right;
+}
+
+.acls-print-case-badge span,
+.acls-print-info-grid span,
+.acls-print-metrics span,
+.acls-print-review-grid span,
+.acls-print-signed-meta span,
+.acls-print-record-info span {
+  display: block;
+  margin-bottom: 2px;
+  color: #6b7280;
+  font-size: 7.5pt;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.acls-print-case-badge strong {
+  font-family: "Courier New", monospace;
+  font-size: 9pt;
+}
+
+.acls-print-section {
+  margin-top: 17px;
+}
+
+.acls-print-section h2 {
+  margin: 0 0 7px;
+  padding-bottom: 5px;
+  border-bottom: 1.5px solid #111827;
+  font-size: 9.5pt;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.acls-print-info-grid,
+.acls-print-metrics,
+.acls-print-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid #d1d5db;
+  border-left: 1px solid #d1d5db;
+}
+
+.acls-print-info-grid > div,
+.acls-print-metrics > div,
+.acls-print-review-grid > div {
+  min-height: 42px;
+  padding: 8px 9px;
+  border-right: 1px solid #d1d5db;
+  border-bottom: 1px solid #d1d5db;
+}
+
+.acls-print-info-grid strong,
+.acls-print-metrics strong,
+.acls-print-review-grid strong {
+  display: block;
+  font-size: 9pt;
+}
+
+.acls-print-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.acls-print-metrics > div {
+  min-height: 56px;
+}
+
+.acls-print-physician-card {
+  align-items: center;
+  margin-top: 24px;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+.acls-print-physician-card h2 {
+  margin-bottom: 5px;
+  border: 0;
+  padding: 0;
+}
+
+.acls-print-physician-card strong,
+.acls-print-physician-card span {
+  display: block;
+}
+
+.acls-print-physician-card strong {
+  font-size: 10pt;
+}
+
+.acls-print-physician-card span {
+  margin-top: 2px;
+  color: #4b5563;
+  font-size: 8pt;
+}
+
+.acls-print-attestation-chip {
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  font-size: 7.5pt;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.acls-print-page-header {
+  padding-bottom: 9px;
+  border-bottom: 1.5px solid #111827;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.acls-print-page-header span {
+  color: #6b7280;
+}
+
+.acls-print-page-header strong {
+  font-size: 8.5pt;
+}
+
+.acls-print-section-heading-row {
+  align-items: flex-end;
+}
+
+.acls-print-section-heading-row span {
+  padding-bottom: 7px;
+  color: #6b7280;
+  font-size: 7.5pt;
+}
+
+.acls-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 8.5pt;
+}
+
+.acls-print-table th {
+  padding: 6px 7px;
+  border: 1px solid #9ca3af;
+  background: #f3f4f6;
+  text-align: left;
+  font-size: 7.5pt;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.acls-print-table td {
+  padding: 6px 7px;
+  border: 1px solid #d1d5db;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.acls-print-table th:first-child,
+.acls-print-table td:first-child {
+  width: 7%;
+}
+
+.acls-print-table th:nth-child(2),
+.acls-print-table td:nth-child(2) {
+  width: 19%;
+}
+
+.acls-print-table .mono,
+.acls-print-table td:nth-child(2) {
+  font-family: "Courier New", monospace;
+  white-space: nowrap;
+}
+
+.acls-print-timeline-table th:nth-child(3),
+.acls-print-timeline-table td:nth-child(3) {
+  width: auto;
+}
+
+.acls-print-empty {
+  padding: 12px;
+  border: 1px dashed #cbd5e1;
+  color: #6b7280;
+  font-size: 8.5pt;
+}
+
+.acls-print-rhythm-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid #d1d5db;
+  border-left: 1px solid #d1d5db;
+}
+
+.acls-print-rhythm-item {
+  padding: 8px 9px;
+  border-right: 1px solid #d1d5db;
+  border-bottom: 1px solid #d1d5db;
+}
+
+.acls-print-rhythm-item span {
+  display: block;
+  margin-bottom: 2px;
+  font-family: "Courier New", monospace;
+  color: #6b7280;
+  font-size: 7.5pt;
+}
+
+.acls-print-rhythm-item strong {
+  font-size: 8.5pt;
+}
+
+.acls-print-attestation-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.acls-print-attestation-box {
+  margin-top: 24px;
+  padding: 18px;
+  border: 1.5px solid #111827;
+  border-radius: 6px;
+}
+
+.acls-print-attestation-box > p {
+  max-width: 620px;
+  margin: 8px 0 17px;
+  font-size: 9pt;
+  line-height: 1.5;
+}
+
+.acls-print-signatory {
+  padding-bottom: 14px;
+  border-bottom: 1px solid #d1d5db;
+}
+
+.acls-print-signatory strong,
+.acls-print-signatory span {
+  display: block;
+}
+
+.acls-print-signatory strong {
+  font-size: 10pt;
+}
+
+.acls-print-signatory span {
+  margin-top: 2px;
+  color: #4b5563;
+  font-size: 8pt;
+}
+
+.acls-print-signature-label {
+  margin-top: 17px;
+  margin-bottom: 5px;
+  font-size: 7.5pt;
+  font-weight: 800;
+  letter-spacing: .08em;
+  color: #4b5563;
+}
+
+.acls-print-signature-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 86px;
+  border: 1px dashed #9ca3af;
+  background: #ffffff;
+}
+
+.acls-print-signature-box.has-signature {
+  border-style: solid;
+}
+
+.acls-print-signature-box img {
+  display: block;
+  max-width: 85%;
+  max-height: 72px;
+  object-fit: contain;
+}
+
+.acls-print-signature-box span {
+  color: #9ca3af;
+  font-size: 8pt;
+}
+
+.acls-print-signed-meta {
+  margin-top: 14px;
+}
+
+.acls-print-signed-meta > div {
+  flex: 1;
+}
+
+.acls-print-record-info {
+  margin-top: 20px;
+  padding: 11px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+.acls-print-record-info h2 {
+  margin: 0 0 8px;
+  font-size: 8.5pt;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.acls-print-record-info > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.acls-print-record-info span,
+.acls-print-record-info strong {
+  margin: 0;
+}
+
+.acls-print-record-info strong {
+  font-size: 8pt;
+  text-align: right;
+}
+
+.acls-print-final-note {
+  margin-top: 16px;
+  color: #6b7280;
+  font-size: 7pt;
+  line-height: 1.4;
+}
+
+.acls-print-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding-top: 7px;
+  border-top: 1px solid #d1d5db;
+  color: #6b7280;
+  font-family: "Courier New", monospace;
+  font-size: 7pt;
+}
+
+@media print {
+  .acls-print-report-portal {
+    display: block !important;
+  }
+
+  .acls-print-report {
+    display: block !important;
+  }
+
+  .acls-print-page {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 257mm !important;
+  }
+
+  .acls-print-page-header,
+  .acls-print-header,
+  .acls-print-footer,
+  .acls-print-section,
+  .acls-print-attestation-box,
+  .acls-print-record-info {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .acls-print-table thead {
+    display: table-header-group;
+  }
+
+  .acls-print-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
