@@ -63,7 +63,6 @@ import {
   db, 
   testFirestoreConnection, 
   syncUserProfileToFirestore, 
-  syncSavedCasesToFirestore 
 } from './lib/firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -142,6 +141,7 @@ export default function App() {
   });
   const [loading, setLoading] = useState(true);
   const profileUnsubscribeRef = useRef<(() => void) | null>(null);
+  const caseUnsubscribeRef = useRef<(() => void) | null>(null);
   const [hasSessionStarted, setHasSessionStarted] = useState(false);
 
   // Modal Dialog States
@@ -373,6 +373,10 @@ export default function App() {
         profileUnsubscribeRef.current();
         profileUnsubscribeRef.current = null;
       }
+      if (caseUnsubscribeRef.current) {
+        caseUnsubscribeRef.current();
+        caseUnsubscribeRef.current = null;
+      }
       setUser(currentUser);
       if (!currentUser) {
         hasAutoPromptedKycRef.current = false;
@@ -380,6 +384,21 @@ export default function App() {
       if (currentUser) {
         const cleanEmail = (currentUser.email || '').toLowerCase().trim();
         const isAdminUser = cleanEmail === 'user.suniltim@gmail.com';
+
+        if (caseUnsubscribeRef.current) {
+          caseUnsubscribeRef.current();
+          caseUnsubscribeRef.current = null;
+        }
+        caseUnsubscribeRef.current = subscribeToUserCases(currentUser.uid, (canonicalCases) => {
+          setSavedCases(canonicalCases);
+          try {
+            localStorage.setItem('acls_saved_cases', JSON.stringify(canonicalCases));
+          } catch (e) {}
+          setSyncStatus('synced');
+          setLastSyncedAt(Date.now());
+        }, () => {
+          setSyncStatus('offline');
+        });
 
         const profileDocRef = doc(db, 'profiles', currentUser.uid);
         profileUnsubscribeRef.current = onSnapshot(profileDocRef, (docSnap) => {
@@ -504,6 +523,9 @@ export default function App() {
       if (profileUnsubscribeRef.current) {
         profileUnsubscribeRef.current();
       }
+      if (caseUnsubscribeRef.current) {
+        caseUnsubscribeRef.current();
+      }
     };
   }, []);
 
@@ -513,8 +535,7 @@ export default function App() {
     try {
       await testFirestoreConnection();
       if (user?.uid) {
-        await syncSavedCasesToFirestore(user.uid, savedCases);
-        if (profile) {
+                if (profile) {
           await syncUserProfileToFirestore(user.uid, profile);
         }
       }
@@ -540,7 +561,7 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [user, profile, savedCases]);
+  }, [user, profile]);
 
   // Sync Defibrillator and Haptic configuration to LocalStorage
   useEffect(() => {
@@ -801,7 +822,7 @@ export default function App() {
 
     if (user?.uid) {
       setSyncStatus('syncing');
-      syncSavedCasesToFirestore(user.uid, updated)
+      saveUserCaseToFirestore(user.uid, newCase)
         .then((ok) => {
           if (ok) {
             setSyncStatus('synced');
@@ -826,7 +847,7 @@ export default function App() {
 
     if (user?.uid) {
       setSyncStatus('syncing');
-      syncSavedCasesToFirestore(user.uid, updated)
+      deleteUserCaseFromFirestore(user.uid, caseId)
         .then((ok) => {
           if (ok) {
             setSyncStatus('synced');
