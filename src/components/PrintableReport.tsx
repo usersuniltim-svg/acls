@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { LogEvent } from '../types';
 
 interface PrintableReportProps {
+  /** Identifies this report so printReport() can print it on its own. */
+  printId: string;
   patientCode: string;
   savedAt?: number | string;
   totalDuration: number;
@@ -66,6 +68,7 @@ function getRhythmLabel(description: string) {
 }
 
 export default function PrintableReport({
+  printId,
   patientCode,
   savedAt,
   totalDuration,
@@ -108,7 +111,7 @@ export default function PrintableReport({
   const recordStatus = signed ? 'SIGNED / ATTESTED' : 'UNSIGNED / DRAFT';
 
   const report = (
-    <div className="acls-print-report-portal" aria-hidden="true">
+    <div className="acls-print-report-portal" data-print-id={printId} aria-hidden="true">
       <main className="acls-print-report">
         {/* PAGE 1 */}
         <section className="acls-print-page">

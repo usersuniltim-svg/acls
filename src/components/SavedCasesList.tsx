@@ -3,6 +3,7 @@ import { SavedCase, LogEvent } from '../types';
 import { FileText, Trash2, Calendar, Clock, Zap, Syringe, Eye, AlertCircle, PlusCircle, CheckCircle2, X, PenTool, RotateCcw, Printer, ShieldCheck, AlertTriangle, Download, FileDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PrintableReport from './PrintableReport';
+import { printReport } from '../lib/printReport';
 
 interface SavedCasesListProps {
   savedCases: SavedCase[];
@@ -273,11 +274,9 @@ export default function SavedCasesList({
                   type="button"
                   onClick={() => {
                     setViewingCase(item);
+                    // Wait for the report to mount, then print only this case.
                     setTimeout(() => {
-                      const origTitle = document.title;
-                      document.title = `ACLS_Case_Report_${item.patientCode.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-                      window.print();
-                      setTimeout(() => { document.title = origTitle; }, 1000);
+                      printReport(`case-${item.id}`, `ACLS_Case_Report_${item.patientCode.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
                     }, 100);
                   }}
                   className="py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer border-none shadow-sm"
@@ -589,12 +588,7 @@ export default function SavedCasesList({
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      const origTitle = document.title;
-                      document.title = `ACLS_Case_Report_${viewingCase.patientCode.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-                      window.print();
-                      setTimeout(() => { document.title = origTitle; }, 1000);
-                    }}
+                    onClick={() => printReport(`case-${viewingCase.id}`, `ACLS_Case_Report_${viewingCase.patientCode.replace(/[^a-zA-Z0-9_-]/g, '_')}`)}
                     className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer border-none"
                   >
                     <Download className="w-3.5 h-3.5" /> Export PDF / Print Report
@@ -613,9 +607,10 @@ export default function SavedCasesList({
         )}
       </AnimatePresence>
 
-      {/* OFFICIAL PRINTABLE PDF REPORT VIEW (Triggered on window.print()) */}
+      {/* Printable report for the case being viewed (printed via printReport) */}
       {viewingCase && (
         <PrintableReport
+          printId={`case-${viewingCase.id}`}
           patientCode={viewingCase.patientCode}
           savedAt={viewingCase.savedAt}
           totalDuration={viewingCase.totalDuration}
