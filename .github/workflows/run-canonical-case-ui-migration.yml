@@ -1,0 +1,30 @@
+name: Apply canonical case UI migration
+
+on:
+  push:
+    paths:
+      - 'scripts/migrate-canonical-case-ui.py'
+      - '.github/workflows/run-canonical-case-ui-migration.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: ${{ !contains(github.event.head_commit.message, 'Apply canonical case UI migration') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply migration
+        run: python scripts/migrate-canonical-case-ui.py
+
+      - name: Commit migration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m 'Apply canonical case UI migration'
+          git push
