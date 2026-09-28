@@ -1,0 +1,83 @@
+name: Apply unlimited case UI migration
+
+on:
+  push:
+    branches: [fix/unlimited-case-ui]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply case UI migration
+        shell: python
+        run: |
+          from pathlib import Path
+
+          app = Path('src/App.tsx')
+          text = app.read_text()
+
+          old = """  // Saved Cases State (Max 3 Cases)\n  const [savedCases, setSavedCases] = useState<SavedCase[]>(() => {\n    try {\n      const raw = localStorage.getItem('acls_saved_cases');\n      return raw ? JSON.parse(raw) : [];\n    } catch (e) {\n      return [];\n    }\n  });\n"""
+          new = """  // Saved cases are loaded from the user's canonical case collection when available.\n  // localStorage remains an offline cache only. There is no application-level 3-case limit.\n  const [savedCases, setSavedCases] = useState<SavedCase[]>(() => {\n    try {\n      const raw = localStorage.getItem('acls_saved_cases');\n      return raw ? JSON.parse(raw) : [];\n    } catch (e) {\n      return [];\n    }\n  });\n"""
+          if old not in text:
+              raise SystemExit('Expected saved-cases state block not found')
+          text = text.replace(old, new, 1)
+
+          old = """              const map = new Map<string, SavedCase>();\n              if (Array.isArray(pData.savedCases)) {\n                pData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));\n              }\n              const merged = Array.from(map.values()).slice(0, 3);\n              setSavedCases(merged);\n              try {\n                localStorage.setItem('acls_saved_cases', JSON.stringify(merged));\n              } catch (e) {}\n"""
+          new = """              const map = new Map<string, SavedCase>();\n              if (Array.isArray(pData.savedCases)) {\n                pData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));\n              }\n              // Do not truncate legacy cases. The profile field is a compatibility cache;\n              // the canonical users/{uid}/cases collection is reconciled separately.\n              const cachedCases = Array.from(map.values());\n              setSavedCases(cachedCases);\n              try {\n                localStorage.setItem('acls_saved_cases', JSON.stringify(cachedCases));\n              } catch (e) {}\n"""
+          if old not in text:
+              raise SystemExit('Expected legacy case merge block not found')
+          text = text.replace(old, new, 1)
+
+          old = """  const handleSaveCurrentCase = (patientCode: string, signatureDataUrl?: string): boolean => {\n    if (savedCases.length >= 3) {\n      return false; // Limit of 3 cases reached\n    }\n\n    const newCase: SavedCase = {\n"""
+          new = """  const handleSaveCurrentCase = (patientCode: string, signatureDataUrl?: string): boolean => {\n    const newCase: SavedCase = {\n"""
+          if old not in text:
+              raise SystemExit('Expected save-case limit block not found')
+          text = text.replace(old, new, 1)
+
+          old = """  // Force Cloud Database Synchronizer\n  const handleForceSync = async () => {\n    setSyncStatus('syncing');\n    try {\n      await testFirestoreConnection();\n      if (user?.uid) {\n        await syncSavedCasesToFirestore(user.uid, savedCases);\n        if (profile) {\n          await syncUserProfileToFirestore(user.uid, profile);\n        }\n      }\n      setSyncStatus('synced');\n      setLastSyncedAt(Date.now());\n    } catch (e) {\n      console.warn(\"Force sync offline/fallback:\", e);\n      setSyncStatus('offline');\n    }\n  };\n"""
+          new = """  // Force profile/config sync. Case records are synchronized individually by the case repository.\n  const handleForceSync = async () => {\n    setSyncStatus('syncing');\n    try {\n      await testFirestoreConnection();\n      if (user?.uid && profile) {\n        await syncUserProfileToFirestore(user.uid, profile);\n      }\n      setSyncStatus('synced');\n      setLastSyncedAt(Date.now());\n    } catch (e) {\n      console.warn(\"Force sync offline/fallback:\", e);\n      setSyncStatus('offline');\n    }\n  };\n"""
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          app.write_text(text)
+
+          cases = Path('src/components/SavedCasesList.tsx')
+          text = cases.read_text()
+          replacements = [
+            ("  // Canvas Signature Pad State\n", "  // Canvas Signature Pad State\n"),
+            ("    if (savedCases.length >= 3) {\n      setSaveError('Maximum 3 saved cases reached. Delete an older case first.');\n      return;\n    }\n\n", ""),
+            ("            <strong className=\"text-red-600\">{savedCases.length} / 3 Maximum Cases</strong>", "            <strong className=\"text-red-600\">{savedCases.length} Saved Cases</strong>"),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  if old.strip():
+                      raise SystemExit(f'Expected SavedCasesList block not found: {old[:80]!r}')
+              else:
+                  text = text.replace(old, new, 1)
+
+          text = text.replace("      setSaveError('Maximum 3 saved cases reached. Delete an older case first.');\n      setShowConfirmModal(false);\n      setShowSaveModal(true);\n", "      setSaveError('The case could not be saved. Check your connection and try again.');\n      setShowConfirmModal(false);\n      setShowSaveModal(true);\n", 1)
+          text = text.replace("      <div className=\"space-y-4 text-left text-black\">", "      <div className=\"space-y-4 text-left text-black\">", 1)
+          text = text.replace("      {/* Case Limit Reached Warning Banner */}\n      {savedCases.length >= 3 && (\n        <div className=\"p-3 bg-red-100 border border-red-300 rounded-xl flex items-center gap-2 text-red-700 text-[10px] font-medium\">\n          <AlertCircle className=\"w-4 h-4 shrink-0 text-red-600\" />\n          <span>Storage limit reached (3 / 3 cases). Delete an existing case below to make room for new sessions.</span>\n        </div>\n      )}\n\n", "")
+          text = text.replace("            You can save up to 3 resuscitation case logs with clinician signatures, timestamps, epinephrine doses, and shock records.", "            Resuscitation case logs are stored with clinician signatures, timestamps, epinephrine doses, shock records, and the full event journal.")
+          text = text.replace("      setSaveError('Maximum 3 saved cases reached. Delete an older case first.');\n      setShowConfirmModal(false);\n      setShowSaveModal(true);\n", "      setSaveError('The case could not be saved. Check your connection and try again.');\n      setShowConfirmModal(false);\n      setShowSaveModal(true);\n", 1)
+          cases.write_text(text)
+
+      - name: Commit migration
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No migration changes were necessary."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/components/SavedCasesList.tsx
+          git commit -m "Remove three-case application limit"
+          git push
