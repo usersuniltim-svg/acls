@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'scripts/migrate-canonical-case-ui.py'
+      - 'scripts/migrate-canonical-case-ui-v2.py'
       - '.github/workflows/run-canonical-case-ui-migration.yml'
 
 permissions:
@@ -18,7 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Apply migration
-        run: python scripts/migrate-canonical-case-ui.py
+        run: python scripts/migrate-canonical-case-ui-v2.py
 
       - name: Commit migration
         run: |
