@@ -46,6 +46,7 @@ import {
 import SavedCasesList from './SavedCasesList';
 import LockedGuestOverlay from './LockedGuestOverlay';
 import PrintableReport from './PrintableReport';
+import { printReport } from '../lib/printReport';
 
 interface MobileDashboardProps {
   state: AclsState;
@@ -773,12 +774,7 @@ export default function MobileDashboard({
               {state.logs.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    const origTitle = document.title;
-                    document.title = `ACLS_Active_Session_Report_${new Date().toISOString().slice(0, 10)}`;
-                    window.print();
-                    setTimeout(() => { document.title = origTitle; }, 1000);
-                  }}
+                  onClick={() => printReport('active-session', `ACLS_Active_Session_Report_${new Date().toISOString().slice(0, 10)}`)}
                   className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[8.5px] font-bold uppercase tracking-wider flex items-center gap-1 border-none cursor-pointer shadow-sm"
                 >
                   <Download className="w-3 h-3" /> Export PDF
@@ -811,6 +807,7 @@ export default function MobileDashboard({
         {/* ACTIVE SESSION PRINT REPORT FOR MOBILE */}
         {state.logs.length > 0 && (
           <PrintableReport
+            printId="active-session"
             patientCode="ACTIVE-SESSION"
             savedAt={new Date().getTime()}
             totalDuration={state.totalTime}
