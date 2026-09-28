@@ -108,10 +108,6 @@ export default function SavedCasesList({
       setSaveError("Doctor's signature is REQUIRED to certify and save this resuscitation log. Please draw your signature on the pad below.");
       return;
     }
-    if (savedCases.length >= 3) {
-      setSaveError('Maximum 3 saved cases reached. Delete an older case first.');
-      return;
-    }
 
     const signatureDataUrl = canvasRef.current ? canvasRef.current.toDataURL() : '';
     setPendingData({
@@ -140,7 +136,7 @@ export default function SavedCasesList({
       setIsAccuracyConfirmed(false);
       clearSignature();
     } else {
-      setSaveError('Maximum 3 saved cases reached. Delete an older case first.');
+      setSaveError('The case could not be saved. Check your connection and try again.');
       setShowConfirmModal(false);
       setShowSaveModal(true);
     }
@@ -156,17 +152,13 @@ export default function SavedCasesList({
             <h3 className="text-xs font-bold text-black uppercase tracking-wider">Saved Resuscitation Cases</h3>
           </div>
           <p className="text-[9px] font-mono text-gray-700 mt-0.5 uppercase font-bold">
-            Stored: <strong className="text-red-600">{savedCases.length} / 3 Maximum Cases</strong>
+            Stored: <strong className="text-red-600">{savedCases.length} Saved Cases</strong>
           </p>
         </div>
 
         <button
           type="button"
           onClick={() => {
-            if (savedCases.length >= 3) {
-              alert("You have reached the maximum limit of 3 saved cases. Please delete an existing case to free up a slot.");
-              return;
-            }
             if (!hasCurrentLogs) {
               alert("No active resuscitation logs to save in the current session.");
               return;
@@ -188,12 +180,6 @@ export default function SavedCasesList({
       </div>
 
       {/* Case Limit Reached Warning Banner */}
-      {savedCases.length >= 3 && (
-        <div className="p-3 bg-red-100 border border-red-300 rounded-xl flex items-center gap-2 text-red-700 text-[10px] font-medium">
-          <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-          <span>Storage limit reached (3 / 3 cases). Delete an existing case below to make room for new sessions.</span>
-        </div>
-      )}
 
       {/* Saved Cases Cards List */}
       {savedCases.length === 0 ? (
@@ -201,7 +187,7 @@ export default function SavedCasesList({
           <FileText className="w-8 h-8 text-gray-500 mx-auto" />
           <p className="text-xs font-bold text-black uppercase tracking-wider">No Saved Cases Yet</p>
           <p className="text-[9px] text-gray-700 leading-normal max-w-xs mx-auto font-medium">
-            You can save up to 3 resuscitation case logs with clinician signatures, timestamps, epinephrine doses, and shock records.
+            Resuscitation case logs are stored with clinician signatures, timestamps, epinephrine doses, shock records, and the full event journal.
           </p>
         </div>
       ) : (
