@@ -16,12 +16,9 @@ service cloud.firestore {
       return signedIn()
         && request.auth.token.email != null
         && request.auth.token.email.lower() == 'user.suniltim@gmail.com'
-        // Required: otherwise anyone could register this address with a
-        // password (unverified) and become admin. Sign in with Google as admin.
         && request.auth.token.email_verified == true;
     }
 
-    // A user may submit KYC for review, but can never approve themselves.
     function kycIsSelfServe(data) {
       return !('kyc' in data)
         || (data.kyc.kycStatus in ['unsubmitted', 'pending']
@@ -40,7 +37,7 @@ service cloud.firestore {
         && (!changed.hasAny(['kyc']) || kycIsSelfServe(request.resource.data));
     }
 
-    // Practitioner profile, KYC and saved cases: owner + admin only
+    // Practitioner profile and KYC.
     match /profiles/{userId} {
       allow read:   if isOwner(userId) || isAdmin();
       allow create: if (isOwner(userId) && ownerCreateOk(request.resource.data)) || isAdmin();
@@ -48,31 +45,41 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
     }
 
-    // Mirror user record: same protections
+    // Mirror user record: same protections.
     match /users/{userId} {
       allow read:   if isOwner(userId) || isAdmin();
       allow create: if (isOwner(userId) && ownerCreateOk(request.resource.data)) || isAdmin();
       allow update: if (isOwner(userId) && ownerUpdateOk()) || isAdmin();
       allow delete: if isOwner(userId) || isAdmin();
+
+      // Canonical case storage. Cases are isolated by authenticated UID.
+      match /cases/{caseId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId)
+          && request.resource.data.userId == request.auth.uid;
+        allow update: if isOwner(userId)
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.userId == request.auth.uid;
+        allow delete: if isOwner(userId) || isAdmin();
+      }
     }
 
-    // Case records: only the clinician who saved them, plus admin
+    // Legacy/global case records retained for backward compatibility while
+    // existing installations migrate to users/{uid}/cases/{caseId}.
     match /cases/{caseId} {
-      allow read:   if isAdmin()
-                    || (signedIn() && resource.data.userId == request.auth.uid);
-      allow create: if signedIn() && (request.resource.data.userId == request.auth.uid || isAdmin());
+      allow read: if isAdmin()
+                  || (signedIn() && resource.data.userId == request.auth.uid);
+      allow create: if signedIn()
+                    && (request.resource.data.userId == request.auth.uid || isAdmin());
       allow update: if signedIn()
                     && ((resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid) || isAdmin());
       allow delete: if isAdmin()
                     || (signedIn() && resource.data.userId == request.auth.uid);
     }
 
-    // Connection check only; nobody can write here
     match /test/{docId} {
-      allow read:  if docId == 'connection';
+      allow read: if docId == 'connection';
       allow write: if false;
     }
-
-    // Everything else is denied by default.
   }
 }

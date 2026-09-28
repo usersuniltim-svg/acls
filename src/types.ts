@@ -13,9 +13,9 @@ export type PatientRhythm = 'SHOCKABLE' | 'NON_SHOCKABLE' | 'UNKNOWN';
 
 export interface AclsState {
   isTimerRunning: boolean;
-  cprTimeLeft: number; // seconds
-  epiTimeLeft: number; // seconds
-  totalTime: number; // seconds
+  cprTimeLeft: number;
+  epiTimeLeft: number;
+  totalTime: number;
   shocksCount: number;
   epiCount: number;
   currentRhythm: PatientRhythm;
@@ -28,27 +28,16 @@ export interface AclsState {
   selectedEnergy: number;
   epiDueElapsed?: number;
 
-  // --- Real-clock anchors (epoch ms). All timers above are recalculated from
-  // these, so a locked or dimmed phone can never slow the clock down. ---
-  /** When the current code started; null when no code is running. */
   codeStartedAt?: number | null;
-  /** When ROSC was confirmed; null while the patient is in arrest. */
   roscAt?: number | null;
-  /** Time spent in ROSC before a re-arrest (not counted as arrest time). */
   roscPausedMs?: number;
-  /** When the current 2-minute CPR cycle ends (while compressions are running). */
   cprEndsAt?: number | null;
-  /** Time left in the CPR cycle while it is on hold. */
   cprRemainingMs?: number;
-  /** When the current rhythm-check pause began. */
   rhythmCheckStartedAt?: number | null;
-  /** Last epinephrine dose (or code start): the 3-5 min interval is timed from here. */
   epiAnchorAt?: number | null;
-  /** Rhythm checks completed since the arrest (or re-arrest) began. */
   rhythmCheckCount?: number;
   amioCount?: number;
   lidoCount?: number;
-  /** Sound to play; `seq` changes each time a new alert is raised. */
   alert?: { seq: number; kind: 'cycleEnd' | 'urgent' | 'epi' } | null;
 }
 
@@ -79,6 +68,12 @@ export interface SavedCase {
   certifiedBy: string;
   councilRegistration: string;
   signatureDataUrl?: string;
+
+  // Storage/audit metadata. Optional so existing saved records remain readable.
+  userId?: string;
+  updatedAt?: number;
+  recordVersion?: number;
+  caseStorageVersion?: number;
 }
 
 export interface GroundingChunk {
@@ -97,7 +92,7 @@ export interface ChatMessage {
   isSearching?: boolean;
 }
 
-export type CopilotRole = 
+export type CopilotRole =
   | 'acls_expert'
   | 'toxicology_hs_ts'
   | 'pals_pediatric'
@@ -113,10 +108,10 @@ export interface UserProfile {
   councilRegistration: string;
   email: string;
   phone: string;
-  onboardedAt: any; // Firestore Timestamp
+  onboardedAt: any;
   isAdmin?: boolean;
   kyc?: DoctorKyc;
+
+  /** @deprecated Compatibility cache. Canonical records live in users/{uid}/cases. */
   savedCases?: SavedCase[];
 }
-
-
