@@ -6,7 +6,6 @@ import {
   setDoc,
   onSnapshot,
   collection,
-  getDocs,
   deleteDoc,
   getDocFromServer,
   Unsubscribe,
@@ -48,10 +47,7 @@ export interface FirestoreErrorInfo {
     emailVerified?: boolean | null;
     isAnonymous?: boolean | null;
     tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
+    providerInfo?: { providerId?: string | null; email?: string | null }[];
   };
 }
 
@@ -64,10 +60,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       emailVerified: auth.currentUser?.emailVerified,
       isAnonymous: auth.currentUser?.isAnonymous,
       tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || [],
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({ providerId: provider.providerId, email: provider.email })) || [],
     },
     operationType,
     path,
@@ -88,105 +81,78 @@ export async function testFirestoreConnection(): Promise<boolean> {
   }
 }
 
-/**
- * Synchronizes practitioner profile data only.
- * Case records are maintained separately under users/{uid}/cases.
- */
 export async function syncUserProfileToFirestore(userId: string, data: Partial<UserProfile>): Promise<boolean> {
   if (!userId) return false;
   const path = `profiles/${userId}`;
   try {
     const profileData = { ...data } as Record<string, unknown>;
-    // Case records are synchronized by syncSavedCasesToFirestore().
-    // Keeping this guard prevents accidental case writes during profile edits.
     delete profileData.savedCases;
-
-    await setDoc(doc(db, 'profiles', userId), {
-      ...profileData,
-      updatedAt: Date.now(),
-    }, { merge: true });
-
-    await setDoc(doc(db, 'users', userId), {
-      ...profileData,
-      updatedAt: Date.now(),
-    }, { merge: true }).catch(() => {});
-
+    await setDoc(doc(db, 'profiles', userId), { ...profileData, updatedAt: Date.now() }, { merge: true });
+    await setDoc(doc(db, 'users', userId), { ...profileData, updatedAt: Date.now() }, { merge: true }).catch(() => {});
     return true;
   } catch (error) {
     console.error('Failed to sync user profile to Firestore:', error);
-    try {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    } catch (e) {}
+    try { handleFirestoreError(error, OperationType.WRITE, path); } catch (e) {}
     return false;
   }
 }
 
-/**
- * Synchronizes cases into a dedicated per-user collection.
- *
- * Canonical record:
- *   users/{uid}/cases/{caseId}
- *
- * A temporary `profiles/{uid}.savedCases` cache is also maintained for
- * backward compatibility with the current App.tsx loader. It is not the
- * authoritative case store and will be removed after the UI is migrated to
- * subscribeToUserCases().
- */
+/** Write exactly one canonical case. */
+export async function saveUserCaseToFirestore(userId: string, caseRecord: SavedCase): Promise<boolean> {
+  if (!userId || !caseRecord?.id) return false;
+  const path = `users/${userId}/cases/${caseRecord.id}`;
+  try {
+    await setDoc(doc(db, 'users', userId, 'cases', caseRecord.id), {
+      ...caseRecord,
+      userId,
+      updatedAt: Date.now(),
+      storageVersion: 2,
+    }, { merge: true });
+    return true;
+  } catch (error) {
+    console.error('Failed to save case to Firestore:', error);
+    try { handleFirestoreError(error, OperationType.WRITE, path); } catch (e) {}
+    return false;
+  }
+}
+
+/** Delete exactly one canonical case. */
+export async function deleteUserCaseFromFirestore(userId: string, caseId: string): Promise<boolean> {
+  if (!userId || !caseId) return false;
+  const path = `users/${userId}/cases/${caseId}`;
+  try {
+    await deleteDoc(doc(db, 'users', userId, 'cases', caseId));
+    return true;
+  } catch (error) {
+    console.error('Failed to delete case from Firestore:', error);
+    try { handleFirestoreError(error, OperationType.DELETE, path); } catch (e) {}
+    return false;
+  }
+}
+
+/** Legacy bulk synchronizer retained for migration/backward compatibility. */
 export async function syncSavedCasesToFirestore(userId: string, cases: SavedCase[]): Promise<boolean> {
   if (!userId) return false;
-  const basePath = `users/${userId}/cases`;
-
   try {
-    const casesCollection = collection(db, 'users', userId, 'cases');
-    const existingSnapshot = await getDocs(casesCollection);
-    const nextIds = new Set(cases.map(c => c.id));
-
-    // Delete cloud records removed from the current case list.
-    for (const existingDoc of existingSnapshot.docs) {
-      if (!nextIds.has(existingDoc.id)) {
-        await deleteDoc(existingDoc.ref);
-      }
-    }
-
     for (const c of cases) {
-      await setDoc(doc(db, 'users', userId, 'cases', c.id), {
-        ...c,
-        userId,
-        updatedAt: Date.now(),
-      }, { merge: true });
+      const ok = await saveUserCaseToFirestore(userId, c);
+      if (!ok) return false;
     }
-
-    // Compatibility cache for the current UI. This is intentionally not used
-    // as the canonical store and can be removed once App.tsx reads the case
-    // subcollection directly.
-    await setDoc(doc(db, 'profiles', userId), {
-      savedCases: cases,
-      lastCasesSyncAt: Date.now(),
-      caseStorageVersion: 2,
-    }, { merge: true });
-
+    await setDoc(doc(db, 'profiles', userId), { lastCasesSyncAt: Date.now(), caseStorageVersion: 2 }, { merge: true });
     return true;
   } catch (error) {
     console.error('Failed to sync saved cases to Firestore:', error);
-    try {
-      handleFirestoreError(error, OperationType.WRITE, basePath);
-    } catch (e) {}
+    try { handleFirestoreError(error, OperationType.WRITE, `users/${userId}/cases`); } catch (e) {}
     return false;
   }
 }
 
-/** Migrates any legacy profile.savedCases into the new case collection. */
 export async function migrateLegacySavedCasesToFirestore(userId: string, legacyCases?: SavedCase[]): Promise<boolean> {
   if (!userId || !Array.isArray(legacyCases) || legacyCases.length === 0) return true;
-
   try {
     for (const c of legacyCases) {
-      await setDoc(doc(db, 'users', userId, 'cases', c.id), {
-        ...c,
-        userId,
-        migratedFromProfileAt: Date.now(),
-        updatedAt: Date.now(),
-      }, { merge: true });
+      const ok = await saveUserCaseToFirestore(userId, c);
+      if (!ok) return false;
     }
     return true;
   } catch (error) {
@@ -195,14 +161,8 @@ export async function migrateLegacySavedCasesToFirestore(userId: string, legacyC
   }
 }
 
-/** Subscribes to the authenticated practitioner's dedicated case collection. */
-export function subscribeToUserCases(
-  userId: string,
-  onData: (cases: SavedCase[]) => void,
-  onError?: (error: any) => void,
-): Unsubscribe {
+export function subscribeToUserCases(userId: string, onData: (cases: SavedCase[]) => void, onError?: (error: any) => void): Unsubscribe {
   const casesRef = collection(db, 'users', userId, 'cases');
-
   return onSnapshot(casesRef, (snapshot) => {
     const cases = snapshot.docs
       .map(snapshotDoc => snapshotDoc.data() as SavedCase)
@@ -211,27 +171,17 @@ export function subscribeToUserCases(
   }, (err) => {
     console.error('Error subscribing to user cases in Firestore:', err);
     if (onError) onError(err);
-    try {
-      handleFirestoreError(err, OperationType.LIST, `users/${userId}/cases`);
-    } catch (e) {}
+    try { handleFirestoreError(err, OperationType.LIST, `users/${userId}/cases`); } catch (e) {}
   });
 }
 
-export function subscribeToUserProfile(
-  userId: string,
-  onData: (profile: UserProfile) => void,
-  onError?: (error: any) => void,
-): Unsubscribe {
+export function subscribeToUserProfile(userId: string, onData: (profile: UserProfile) => void, onError?: (error: any) => void): Unsubscribe {
   const profileRef = doc(db, 'profiles', userId);
   return onSnapshot(profileRef, (snapshot) => {
-    if (snapshot.exists()) {
-      onData(snapshot.data() as UserProfile);
-    }
+    if (snapshot.exists()) onData(snapshot.data() as UserProfile);
   }, (err) => {
     console.error('Error subscribing to profile in Firestore:', err);
     if (onError) onError(err);
-    try {
-      handleFirestoreError(err, OperationType.GET, `profiles/${userId}`);
-    } catch (e) {}
+    try { handleFirestoreError(err, OperationType.GET, `profiles/${userId}`); } catch (e) {}
   });
 }
