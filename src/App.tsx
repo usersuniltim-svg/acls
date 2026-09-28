@@ -410,10 +410,10 @@ export default function App() {
               if (Array.isArray(pData.savedCases)) {
                 pData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));
               }
-              const merged = Array.from(map.values()).slice(0, 3);
-              setSavedCases(merged);
+              const cachedCases = Array.from(map.values());
+              setSavedCases(cachedCases);
               try {
-                localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
+                localStorage.setItem('acls_saved_cases', JSON.stringify(cachedCases));
               } catch (e) {}
             } catch (e) {}
             setSyncStatus('synced');
@@ -777,9 +777,6 @@ export default function App() {
   };
 
   const handleSaveCurrentCase = (patientCode: string, signatureDataUrl?: string): boolean => {
-    if (savedCases.length >= 3) {
-      return false; // Limit of 3 cases reached
-    }
 
     const newCase: SavedCase = {
       id: `case_${Date.now()}`,
