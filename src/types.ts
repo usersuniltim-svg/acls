@@ -9,6 +9,46 @@ export interface LogEvent {
   description: string;
 }
 
+export type ClinicalEventKind =
+  | 'CODE_START'
+  | 'CPR_START'
+  | 'CPR_PAUSE'
+  | 'CPR_RESUME'
+  | 'RHYTHM_CHECK'
+  | 'SHOCK'
+  | 'EPINEPHRINE'
+  | 'AMIODARONE'
+  | 'LIDOCAINE'
+  | 'ROSC'
+  | 'RE_ARREST'
+  | 'PROCEDURE'
+  | 'INFO';
+
+export type ClinicalEventSource = 'user' | 'system' | 'import';
+
+export interface ClinicalEvent {
+  id: string;
+  timestamp: number;
+  sequence: number;
+  kind: ClinicalEventKind;
+  actorId?: string;
+  actorName?: string;
+  source: ClinicalEventSource;
+  payload: Record<string, unknown>;
+  /** Human-readable description retained for PDF/UI/backward compatibility. */
+  description?: string;
+}
+
+export interface ClinicalEventInput {
+  kind: ClinicalEventKind;
+  timestamp?: number;
+  actorId?: string;
+  actorName?: string;
+  source?: ClinicalEventSource;
+  payload?: Record<string, unknown>;
+  description?: string;
+}
+
 export type PatientRhythm = 'SHOCKABLE' | 'NON_SHOCKABLE' | 'UNKNOWN';
 
 export interface AclsState {
@@ -21,6 +61,7 @@ export interface AclsState {
   currentRhythm: PatientRhythm;
   cprCycleCount: number;
   logs: LogEvent[];
+  clinicalEvents: ClinicalEvent[];
   showHsAndTs: boolean;
   activePrompt: 'RHYTHM_CHECK' | 'SHOCK_ADVISED' | 'EPI_ADVISED' | 'EPI_DUE' | null;
   rhythmCheckTimeLeft: number;
@@ -65,6 +106,7 @@ export interface SavedCase {
   shocksCount: number;
   epiCount: number;
   logs: LogEvent[];
+  clinicalEvents?: ClinicalEvent[];
   certifiedBy: string;
   councilRegistration: string;
   signatureDataUrl?: string;
