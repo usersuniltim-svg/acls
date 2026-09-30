@@ -790,7 +790,7 @@ export default function App() {
     const dose = (state.amioCount ?? 0) + 1;
     if (dose > AMIODARONE_MAX_DOSES) return;
     vibrateDevice([150, 80, 150]);
-    addLog('DRUG_AMIO', `Amiodarone ${amiodaroneDoseLabel(dose)} IV/IO (dose ${dose} of ${AMIODARONE_MAX_DOSES})`, { kind: 'AMIODARONE', payload: { doseLabel: amiodaroneDoseLabel(dose), route: 'IV/IO', doseNumber: dose, maxDoses: AMIODARONE_MAX_DOSES } });
+    addLog('DRUG_AMIO', `Amiodarone ${amiodaroneDoseLabel(dose)} IV/IO (dose ${dose} of ${AMIODARONE_MAX_DOSES})`, { kind: 'AMIODARONE', payload: { doseMg: dose <= 1 ? 300 : 150, doseLabel: amiodaroneDoseLabel(dose), route: 'IV/IO', doseNumber: dose, maxDoses: AMIODARONE_MAX_DOSES } });
     setState(prev => giveAmiodarone(prev));
   };
 
