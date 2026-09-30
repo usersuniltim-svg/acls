@@ -31,10 +31,17 @@ export interface CodeStartPayload {
   initialRhythmAssessment?: boolean;
 }
 
-export interface CprPayload {
+export interface CprStartPayload {
   cycleNumber?: number;
+}
+
+export interface CprPausePayload {
+  cprCycle?: number;
   remainingSeconds?: number;
-  priorArrestSeconds?: number;
+}
+
+export interface CprResumePayload {
+  cprCycle?: number;
 }
 
 export interface RhythmCheckPayload {
@@ -61,35 +68,56 @@ export interface RoscPayload {
   rhythmCheckNumber?: number;
 }
 
-export type ClinicalEventPayload =
-  | CodeStartPayload
-  | CprPayload
-  | RhythmCheckPayload
-  | ShockPayload
-  | MedicationPayload
-  | RoscPayload
-  | Record<string, unknown>;
-
-export interface ClinicalEvent {
-  id: string;
-  timestamp: number;
-  sequence: number;
-  kind: ClinicalEventKind;
-  actorId?: string;
-  actorName?: string;
-  source: ClinicalEventSource;
-  payload: Record<string, unknown>;
-  /** Human-readable description retained for PDF/UI/backward compatibility. */
-  description?: string;
+export interface ReArrestPayload {
+  priorArrestSeconds: number;
 }
 
-export interface ClinicalEventInput {
-  kind: ClinicalEventKind;
+export interface ProcedurePayload {
+  procedure?: string;
+  site?: string;
+}
+
+export interface ClinicalEventPayloadMap {
+  CODE_START: CodeStartPayload;
+  CPR_START: CprStartPayload;
+  CPR_PAUSE: CprPausePayload;
+  CPR_RESUME: CprResumePayload;
+  RHYTHM_CHECK: RhythmCheckPayload;
+  SHOCK: ShockPayload;
+  EPINEPHRINE: MedicationPayload;
+  AMIODARONE: MedicationPayload;
+  LIDOCAINE: MedicationPayload;
+  ROSC: RoscPayload;
+  RE_ARREST: ReArrestPayload;
+  PROCEDURE: ProcedurePayload;
+  INFO: Record<string, unknown>;
+}
+
+export type ClinicalEventPayload =
+  ClinicalEventPayloadMap[ClinicalEventKind];
+
+export type ClinicalEvent = {
+  [K in ClinicalEventKind]: {
+    id: string;
+    timestamp: number;
+    sequence: number;
+    kind: K;
+    actorId?: string;
+    actorName?: string;
+    source: ClinicalEventSource;
+    payload: ClinicalEventPayloadMap[K];
+    /** Human-readable description retained for PDF/UI/backward compatibility. */
+    description?: string;
+  }
+}[ClinicalEventKind];
+
+export type ClinicalEventInput<K extends ClinicalEventKind = ClinicalEventKind> = {
+  kind: K;
   timestamp?: number;
   actorId?: string;
   actorName?: string;
   source?: ClinicalEventSource;
-  payload?: Record<string, unknown>;
+  payload?: ClinicalEventPayloadMap[K];
   description?: string;
 }
 
