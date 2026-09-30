@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { LogEvent } from '../types';
+import { ClinicalEvent, LogEvent } from '../types';
+import { normalizeCaseClinicalEvents } from '../lib/clinicalEvents';
 
 interface PrintableReportProps {
   /** Identifies this report so printReport() can print it on its own. */
@@ -12,6 +13,7 @@ interface PrintableReportProps {
   shocksCount: number;
   epiCount: number;
   logs: LogEvent[];
+  clinicalEvents?: ClinicalEvent[];
   certifiedBy: string;
   councilRegistration: string;
   signatureDataUrl?: string;
@@ -81,7 +83,22 @@ export default function PrintableReport({
   signatureDataUrl,
   currentRhythm,
 }: PrintableReportProps) {
-  const chronologicalLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
+  const normalizedEvents = normalizeCaseClinicalEvents(clinicalEvents, logs);
+  const chronologicalLogs: LogEvent[] = normalizedEvents.map((event) => ({
+    id: event.id,
+    timestamp: event.timestamp,
+    type:
+      event.kind === 'EPINEPHRINE' ? 'DRUG_EPI' :
+      event.kind === 'AMIODARONE' ? 'DRUG_AMIO' :
+      event.kind === 'LIDOCAINE' ? 'DRUG_LIDO' :
+      event.kind === 'SHOCK' ? 'SHOCK' :
+      event.kind === 'ROSC' ? 'ROSC' :
+      event.kind === 'RHYTHM_CHECK' ? 'RHYTHM_CHECK' :
+      event.kind === 'PROCEDURE' ? 'ADVANCED_AIRWAY' :
+      event.kind === 'CPR_START' || event.kind === 'CODE_START' || event.kind === 'CPR_RESUME' || event.kind === 'RE_ARREST' ? 'CPR_START' :
+      'INFO',
+    description: event.description || event.kind,
+  }));
 
   const drugLogs = chronologicalLogs.filter((l) =>
     l.type === 'DRUG_EPI' ||
