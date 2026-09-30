@@ -78,6 +78,7 @@ export default function PrintableReport({
   shocksCount,
   epiCount,
   logs = [],
+  clinicalEvents,
   certifiedBy,
   councilRegistration,
   signatureDataUrl,
