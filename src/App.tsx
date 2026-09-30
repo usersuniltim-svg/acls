@@ -63,6 +63,10 @@ import {
   db, 
   testFirestoreConnection, 
   syncUserProfileToFirestore, 
+  subscribeToUserCases,
+  saveUserCaseToFirestore,
+  deleteUserCaseFromFirestore,
+  migrateLegacySavedCasesToFirestore,
 } from './lib/firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -142,6 +146,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const profileUnsubscribeRef = useRef<(() => void) | null>(null);
   const caseUnsubscribeRef = useRef<(() => void) | null>(null);
+  const migratedLegacyCasesForUidRef = useRef<string | null>(null);
   const [hasSessionStarted, setHasSessionStarted] = useState(false);
 
   // Modal Dialog States
@@ -153,7 +158,8 @@ export default function App() {
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const hasAutoPromptedKycRef = useRef<boolean>(false);
 
-  // Saved Cases State (Max 3 Cases)
+  // Saved Cases State. Firestore users/{uid}/cases is the canonical source of truth;
+  // localStorage is retained only as an offline/bootstrap cache.
   const [savedCases, setSavedCases] = useState<SavedCase[]>(() => {
     try {
       const raw = localStorage.getItem('acls_saved_cases');
@@ -424,18 +430,36 @@ export default function App() {
             }
 
             try {
-              localStorage.setItem('acls_user_profile', JSON.stringify(pData));
-              const map = new Map<string, SavedCase>();
-              if (Array.isArray(pData.savedCases)) {
-                pData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));
-              }
-              const cachedCases = Array.from(map.values());
-              setSavedCases(cachedCases);
-              try {
-                localStorage.setItem('acls_saved_cases', JSON.stringify(cachedCases));
-              } catch (e) {}
+              // Profile is no longer allowed to overwrite the canonical case repository.
+              // Keep only practitioner/profile data here.
+              const profileForCache = { ...pData };
+              delete profileForCache.savedCases;
+              localStorage.setItem('acls_user_profile', JSON.stringify(profileForCache));
             } catch (e) {}
-            setSyncStatus('synced');
+
+            // One-time migration for users who still have legacy cases embedded in
+            // profiles/{uid}. The canonical listener remains the only case UI source.
+            if (
+              currentUser.uid &&
+              migratedLegacyCasesForUidRef.current !== currentUser.uid &&
+              Array.isArray(pData.savedCases) &&
+              pData.savedCases.length > 0
+            ) {
+              migratedLegacyCasesForUidRef.current = currentUser.uid;
+              void migrateLegacySavedCasesToFirestore(currentUser.uid, pData.savedCases)
+                .then((ok) => {
+                  if (!ok) {
+                    migratedLegacyCasesForUidRef.current = null;
+                    setSyncStatus('offline');
+                  }
+                })
+                .catch(() => {
+                  migratedLegacyCasesForUidRef.current = null;
+                  setSyncStatus('offline');
+                });
+            }
+
+            setLoading(false);
             setLastSyncedAt(Date.now());
             setLoading(false);
           } else {
@@ -495,6 +519,7 @@ export default function App() {
           setLoading(false);
         });
       } else {
+        migratedLegacyCasesForUidRef.current = null;
         MedicalAudio.stopAll();
         setState(prev => ({
           ...prev,
@@ -526,6 +551,7 @@ export default function App() {
       if (caseUnsubscribeRef.current) {
         caseUnsubscribeRef.current();
       }
+      migratedLegacyCasesForUidRef.current = null;
     };
   }, []);
 
@@ -813,9 +839,10 @@ export default function App() {
       signatureDataUrl: signatureDataUrl || '',
     };
 
-    const updated = [newCase, ...savedCases];
+    // Update local state/cache immediately for offline-first UX. The Firestore
+    // subscription will reconcile the authoritative list after the write.
+    const updated = [newCase, ...savedCases.filter(c => c.id !== newCase.id)];
     setSavedCases(updated);
-
     try {
       localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
     } catch (e) {}
@@ -838,9 +865,10 @@ export default function App() {
   };
 
   const handleDeleteCase = (caseId: string) => {
+    // Optimistic local removal. The canonical Firestore listener will reconcile
+    // the final state once deleteDoc completes.
     const updated = savedCases.filter(c => c.id !== caseId);
     setSavedCases(updated);
-
     try {
       localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
     } catch (e) {}
