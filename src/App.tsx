@@ -34,6 +34,7 @@ import {
   SavedCase
 } from './types';
 import { createClinicalEvent } from './lib/clinicalEvents';
+import { calculateResuscitationMetrics } from './lib/resuscitationMetrics';
 import { 
   CPR_CYCLE_DURATION, 
   EPI_INTERVAL, 
@@ -874,6 +875,8 @@ export default function App() {
       epiCount: state.epiCount,
       logs: state.logs,
       clinicalEvents: state.clinicalEvents,
+      // Snapshot objective metrics at save time; narrative interpretation remains separate.
+      metrics: calculateResuscitationMetrics(state.clinicalEvents, state.logs),
       certifiedBy: effectiveProfile.fullName,
       councilRegistration: effectiveProfile.councilRegistration,
       signatureDataUrl: signatureDataUrl || '',
