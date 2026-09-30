@@ -683,7 +683,7 @@ export default function App() {
     description: string,
     structured?: {
       kind?: ClinicalEventKind;
-      payload?: Record<string, unknown>;
+      payload?: ClinicalEvent['payload'];
       source?: 'user' | 'system' | 'import';
     }
   ) => {
