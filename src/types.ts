@@ -26,6 +26,50 @@ export type ClinicalEventKind =
 
 export type ClinicalEventSource = 'user' | 'system' | 'import';
 
+export interface CodeStartPayload {
+  reason?: string;
+  initialRhythmAssessment?: boolean;
+}
+
+export interface CprPayload {
+  cycleNumber?: number;
+  remainingSeconds?: number;
+  priorArrestSeconds?: number;
+}
+
+export interface RhythmCheckPayload {
+  checkNumber: number;
+  rhythm: PatientRhythm | 'ORGANIZED_WITH_PULSE';
+}
+
+export interface ShockPayload {
+  energyJ: number;
+  defibType: 'BIPHASIC' | 'MONOPHASIC';
+  shockNumber: number;
+}
+
+export interface MedicationPayload {
+  route: 'IV/IO';
+  doseNumber: number;
+  doseMg?: number;
+  doseLabel?: string;
+  maxDoses?: number;
+}
+
+export interface RoscPayload {
+  arrestDurationSeconds: number;
+  rhythmCheckNumber?: number;
+}
+
+export type ClinicalEventPayload =
+  | CodeStartPayload
+  | CprPayload
+  | RhythmCheckPayload
+  | ShockPayload
+  | MedicationPayload
+  | RoscPayload
+  | Record<string, unknown>;
+
 export interface ClinicalEvent {
   id: string;
   timestamp: number;
