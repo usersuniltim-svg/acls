@@ -460,8 +460,6 @@ export default function App() {
             }
 
             setLoading(false);
-            setLastSyncedAt(Date.now());
-            setLoading(false);
           } else {
             // Document doesn't exist in 'profiles' yet - check local cache or create default profile in Firestore
             let cachedProf: UserProfile | null = null;
