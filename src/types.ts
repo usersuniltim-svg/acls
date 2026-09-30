@@ -151,6 +151,7 @@ export interface SavedCase {
   epiCount: number;
   logs: LogEvent[];
   clinicalEvents?: ClinicalEvent[];
+  metrics?: ResuscitationMetrics;
   certifiedBy: string;
   councilRegistration: string;
   signatureDataUrl?: string;
@@ -183,6 +184,31 @@ export type CopilotRole =
   | 'toxicology_hs_ts'
   | 'pals_pediatric'
   | 'post_rosc_care';
+
+export interface ResuscitationMetrics {
+  codeStartAt: number | null;
+  firstCprAt: number | null;
+  firstRhythmCheckAt: number | null;
+  firstShockAt: number | null;
+  firstEpinephrineAt: number | null;
+  roscAt: number | null;
+  arrestDurationSeconds: number | null;
+  timeToFirstCprSeconds: number | null;
+  timeToFirstRhythmCheckSeconds: number | null;
+  timeToFirstShockSeconds: number | null;
+  timeToFirstEpinephrineSeconds: number | null;
+  shockCount: number;
+  epinephrineCount: number;
+  amiodaroneCount: number;
+  lidocaineCount: number;
+  rhythmCheckCount: number;
+  cprCycleCount: number;
+  cprPauseCount: number;
+  reArrestCount: number;
+  shockableRhythmChecks: number;
+  nonShockableRhythmChecks: number;
+  medicationIntervalsSeconds: number[];
+}
 
 export interface UserProfile {
   uid?: string;
