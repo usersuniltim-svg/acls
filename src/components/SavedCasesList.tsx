@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { SavedCase, LogEvent } from '../types';
+import { calculateResuscitationMetrics } from '../lib/resuscitationMetrics';
 import { FileText, Trash2, Calendar, Clock, Zap, Syringe, Eye, AlertCircle, PlusCircle, CheckCircle2, X, PenTool, RotateCcw, Printer, ShieldCheck, AlertTriangle, Download, FileDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PrintableReport from './PrintableReport';
@@ -91,6 +92,8 @@ export default function SavedCasesList({
     }
     setHasDrawnSignature(false);
   };
+
+  const formatMetric = (seconds: number | null) => seconds == null ? '—' : formatDuration(seconds);
 
   const formatDuration = (totalSec: number) => {
     const mins = Math.floor(totalSec / 60);
@@ -544,6 +547,45 @@ export default function SavedCasesList({
                 </div>
               </div>
 
+              {/* Objective Resuscitation Metrics */}
+              {(() => {
+                const metrics = viewingCase.metrics ?? calculateResuscitationMetrics(viewingCase.clinicalEvents, viewingCase.logs);
+                return (
+                  <div className="space-y-2 shrink-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[8.5px] uppercase tracking-wider text-black font-bold">Objective Timeline Metrics</span>
+                      <span className="text-[7.5px] uppercase tracking-wider text-gray-500 font-mono">Event-derived</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+                      <div className="bg-gray-50 p-2 rounded-lg border border-gray-200">
+                        <span className="text-[7px] text-gray-500 uppercase block font-bold">1st CPR</span>
+                        <span className="text-[10px] font-bold">{formatMetric(metrics.timeToFirstCprSeconds)}</span>
+                      </div>
+                      <div className="bg-gray-50 p-2 rounded-lg border border-gray-200">
+                        <span className="text-[7px] text-gray-500 uppercase block font-bold">1st Rhythm</span>
+                        <span className="text-[10px] font-bold">{formatMetric(metrics.timeToFirstRhythmCheckSeconds)}</span>
+                      </div>
+                      <div className="bg-gray-50 p-2 rounded-lg border border-gray-200">
+                        <span className="text-[7px] text-gray-500 uppercase block font-bold">1st Shock</span>
+                        <span className="text-[10px] font-bold">{formatMetric(metrics.timeToFirstShockSeconds)}</span>
+                      </div>
+                      <div className="bg-gray-50 p-2 rounded-lg border border-gray-200">
+                        <span className="text-[7px] text-gray-500 uppercase block font-bold">1st Epi</span>
+                        <span className="text-[10px] font-bold">{formatMetric(metrics.timeToFirstEpinephrineSeconds)}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 md:grid-cols-6 gap-1.5">
+                      <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">Rhythm</span><strong className="text-[9px]">{metrics.rhythmCheckCount}</strong></div>
+                      <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">Pauses</span><strong className="text-[9px]">{metrics.cprPauseCount}</strong></div>
+                      <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">Re-arrest</span><strong className="text-[9px]">{metrics.reArrestCount}</strong></div>
+                      <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">Amio</span><strong className="text-[9px]">{metrics.amiodaroneCount}</strong></div>
+                      <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">Lido</span><strong className="text-[9px]">{metrics.lidocaineCount}</strong></div>
+                      <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">ROSC</span><strong className="text-[9px]">{formatMetric(metrics.arrestDurationSeconds)}</strong></div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Event Logs Stream */}
               <div className="flex-1 overflow-y-auto space-y-2 p-3 bg-gray-50 rounded-xl border border-gray-200 custom-scrollbar min-h-[180px]">
                 <span className="text-[8.5px] uppercase tracking-wider text-black font-bold block border-b border-gray-200 pb-1">
@@ -604,6 +646,7 @@ export default function SavedCasesList({
           shocksCount={viewingCase.shocksCount}
           epiCount={viewingCase.epiCount}
           logs={viewingCase.logs}
+          clinicalEvents={viewingCase.clinicalEvents}
           certifiedBy={viewingCase.certifiedBy}
           councilRegistration={viewingCase.councilRegistration}
           signatureDataUrl={viewingCase.signatureDataUrl}
