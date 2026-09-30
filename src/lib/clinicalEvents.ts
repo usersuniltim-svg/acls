@@ -1,7 +1,7 @@
 import { ClinicalEvent, ClinicalEventInput, LogEvent } from '../types';
 
 /** Creates an append-only structured event. */
-export function createClinicalEvent(input: ClinicalEventInput, sequence: number): ClinicalEvent {
+export function createClinicalEvent<K extends ClinicalEvent['kind']>(input: ClinicalEventInput<K>, sequence: number): Extract<ClinicalEvent, { kind: K }> {
   return {
     id: 'evt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
     timestamp: input.timestamp ?? Date.now(),
