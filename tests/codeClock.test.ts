@@ -73,3 +73,16 @@ test('ROSC stops the active CPR cycle', () => {
   assert.equal(rosc.cprEndsAt, null);
   assert.equal(rosc.activePrompt, null);
 });
+
+
+test('epinephrine interval pauses during ROSC and resumes after re-arrest', () => {
+  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const afterEpi = { ...started, epiAnchorAt: 11000, epiCount: 1 };
+  const rosc = confirmRosc(afterEpi, 70000);
+  const duringRosc = rosc;
+  const atThreeMinutesOfArrest = { ...duringRosc, roscAt: null, roscPausedMs: 120000 };
+
+  assert.equal(duringRosc.epiTimeLeft, 121);
+  const resumed = (await import('../src/lib/codeClock')).advanceClock(atThreeMinutesOfArrest, 251000);
+  assert.equal(resumed.epiTimeLeft, 0);
+});
