@@ -222,6 +222,11 @@ export interface ResuscitationMetrics {
   firstShockAt: number | null;
   firstEpinephrineAt: number | null;
   roscAt: number | null;
+  finalRoscAt: number | null;
+  roscCount: number;
+  arrestEpisodeDurationsSeconds: number[];
+  totalArrestDurationSeconds: number | null;
+  /** Backward-compatible alias for totalArrestDurationSeconds. */
   arrestDurationSeconds: number | null;
   timeToFirstCprSeconds: number | null;
   timeToFirstRhythmCheckSeconds: number | null;
