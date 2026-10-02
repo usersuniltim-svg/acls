@@ -732,7 +732,7 @@ export default function App() {
 
   const logReArrestIfNeeded = () => {
     if (state.roscAt) {
-      addLog('CPR_START', `Re-arrest after ROSC - CPR restarted (arrest time so far ${formatClock(arrestSeconds(state, state.roscAt))})`, { kind: 'RE_ARREST', payload: { priorArrestSeconds: arrestSeconds(state, state.roscAt) } });
+      addLog('CPR_START', `Re-arrest after ROSC - CPR restarted (arrest time so far ${formatClock(arrestSeconds(state, state.roscAt))})`, { kind: 'RE_ARREST', payload: { priorArrestSeconds: arrestSeconds(state, state.roscAt), cprCycleNumber: state.cprCycleCount + 1 } });
     }
   };
 
@@ -765,7 +765,7 @@ export default function App() {
 
   const handleBeginCpr = () => {
     vibrateDevice(75);
-    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`);
+    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`, { kind: 'CPR_START', payload: { cycleNumber: state.cprCycleCount + 1 } });
     setState(prev => startCprCycle(prev, Date.now()));
   };
 
@@ -773,7 +773,7 @@ export default function App() {
     vibrateDevice([300, 100, 300, 100, 450]);
     MedicalAudio.playUrgent();
     logReArrestIfNeeded();
-    addLog('SHOCK', `Defibrillation administered: ${state.selectedEnergy}J (Shock #${state.shocksCount + 1}) - Resuming CPR Cycle immediately`, { kind: 'SHOCK', payload: { energyJ: state.selectedEnergy, defibType: state.defibType, shockNumber: state.shocksCount + 1 } });
+    addLog('SHOCK', `Defibrillation administered: ${state.selectedEnergy}J (Shock #${state.shocksCount + 1}) - Resuming CPR Cycle immediately`, { kind: 'SHOCK', payload: { energyJ: state.selectedEnergy, defibType: state.defibType, shockNumber: state.shocksCount + 1, cprCycleNumber: state.cprCycleCount + 1 } });
     setState(prev => deliverShock(prev, Date.now()));
   };
 
