@@ -809,7 +809,7 @@ export default function App() {
     }
     const checkNumber = (state.rhythmCheckCount ?? 0) + 1;
     const label = rhythm === 'SHOCKABLE' ? 'VF / pulseless VT (shockable)' : rhythm === 'NON_SHOCKABLE' ? 'Asystole / PEA (non-shockable)' : rhythm;
-    addLog('RHYTHM_CHECK', `Rhythm check #${checkNumber}: ${label}`, { kind: 'RHYTHM_CHECK', payload: { checkNumber, rhythm } });
+    addLog('RHYTHM_CHECK', `Rhythm check #${checkNumber}: ${label}`, { kind: 'RHYTHM_CHECK', payload: { checkNumber, rhythm, startedAt: state.rhythmCheckStartedAt ?? Date.now() } });
     setState(prev => selectRhythm(prev, rhythm, Date.now()));
   };
 
@@ -826,7 +826,7 @@ export default function App() {
     vibrateDevice([60, 60, 60, 60, 400]);
     const now = Date.now();
     const checkNumber = (state.rhythmCheckCount ?? 0) + 1;
-    addLog('RHYTHM_CHECK', `Rhythm check #${checkNumber}: organized rhythm with pulse`, { kind: 'RHYTHM_CHECK', payload: { checkNumber, rhythm: 'ORGANIZED_WITH_PULSE' } });
+    addLog('RHYTHM_CHECK', `Rhythm check #${checkNumber}: organized rhythm with pulse`, { kind: 'RHYTHM_CHECK', payload: { checkNumber, rhythm: 'ORGANIZED_WITH_PULSE', startedAt: state.rhythmCheckStartedAt ?? Date.now() } });
     addLog('ROSC', `ROSC confirmed at rhythm check #${checkNumber} after ${formatClock(arrestSeconds(state, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`, { kind: 'ROSC', payload: { arrestDurationSeconds: arrestSeconds(state, now), rhythmCheckNumber: checkNumber } });
     setState(prev => confirmRosc({ ...prev, rhythmCheckCount: (prev.rhythmCheckCount ?? 0) + 1 }, now));
   };
@@ -1543,4 +1543,3 @@ export default function App() {
                   <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto text-red-600 border border-red-300 shadow">
                     <Zap className="w-7 h-7 fill-current animate-bounce" />
                   </div>
-
