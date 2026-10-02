@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { startCode, startCprCycle, deliverShock, confirmRosc } from '../src/lib/codeClock';
+import { startCode, startCprCycle, deliverShock, confirmRosc, advanceClock } from '../src/lib/codeClock';
 import type { AclsState } from '../src/types';
 
 function baseState(): AclsState {
@@ -83,6 +83,6 @@ test('epinephrine interval pauses during ROSC and resumes after re-arrest', () =
   const atThreeMinutesOfArrest = { ...duringRosc, roscAt: null, roscPausedMs: 120000 };
 
   assert.equal(duringRosc.epiTimeLeft, 121);
-  const resumed = (await import('../src/lib/codeClock')).advanceClock(atThreeMinutesOfArrest, 251000);
+  const resumed = advanceClock(atThreeMinutesOfArrest, 251000);
   assert.equal(resumed.epiTimeLeft, 0);
 });
