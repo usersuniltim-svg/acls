@@ -18,7 +18,7 @@ test('metrics derive objective first-event times, counts, and medication interva
     event('CODE_START', 0, { reason: 'arrest' }, 1),
     event('CPR_START', 2000, { cycleNumber: 1 }, 2),
     event('RHYTHM_CHECK', 125000, { checkNumber: 1, rhythm: 'SHOCKABLE', startedAt: 120000 }, 3),
-    event('SHOCK', 121000, { energyJ: 200, defibType: 'BIPHASIC', shockNumber: 1 }, 4),
+    event('SHOCK', 121000, { energyJ: 200, defibType: 'BIPHASIC', shockNumber: 1, cprCycleNumber: 2 }, 4),
     event('EPINEPHRINE', 181000, { route: 'IV/IO', doseNumber: 1, doseMg: 1 }, 5),
     event('RHYTHM_CHECK', 305000, { checkNumber: 2, rhythm: 'NON_SHOCKABLE', startedAt: 300000 }, 6),
     event('AMIODARONE', 302000, { route: 'IV/IO', doseNumber: 1, doseMg: 300, doseLabel: '300 mg' }, 7),
@@ -49,7 +49,7 @@ test('metrics derive objective first-event times, counts, and medication interva
   assert.equal(metrics.rhythmCheckCount, 2);
   assert.equal(metrics.shockableRhythmChecks, 1);
   assert.equal(metrics.nonShockableRhythmChecks, 1);
-  assert.equal(metrics.cprCycleCount, 1);
+  assert.equal(metrics.cprCycleCount, 2);
   assert.deepEqual(metrics.medicationIntervalsSeconds, [121]);
 });
 
@@ -92,4 +92,19 @@ test('legacy logs remain measurable without inventing clinical payload details',
   assert.equal(metrics.firstEpinephrineAt, 120000);
   assert.equal(metrics.shockCount, 1);
   assert.equal(metrics.epinephrineCount, 1);
+});
+
+
+test('CPR cycles started implicitly by re-arrest are represented in metrics', () => {
+  const events: ClinicalEvent[] = [
+    event('CODE_START', 0, { reason: 'arrest' }, 1),
+    event('CPR_START', 1000, { cycleNumber: 1 }, 2),
+    event('ROSC', 120000, { arrestDurationSeconds: 120 }, 3),
+    event('RE_ARREST', 180000, { priorArrestSeconds: 120, cprCycleNumber: 2 }, 4),
+    event('ROSC', 300000, { arrestDurationSeconds: 120 }, 5),
+  ];
+  const metrics = calculateResuscitationMetrics(events, undefined);
+  assert.equal(metrics.cprCycleCount, 2);
+  assert.equal(metrics.reArrestCount, 1);
+  assert.deepEqual(metrics.arrestEpisodeDurationsSeconds, [120, 120]);
 });
