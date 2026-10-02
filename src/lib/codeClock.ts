@@ -89,7 +89,9 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
     next.cprEndsAt != null
       ? Math.max(0, Math.ceil((next.cprEndsAt - now) / 1000))
       : Math.ceil((next.cprRemainingMs ?? CPR_MS) / 1000);
-  const epiDueAt = (next.epiAnchorAt ?? next.codeStartedAt!) + EPI_MS;
+  // Epinephrine timing advances only during arrest. ROSC time must not consume
+  // the 3-minute interval, so shift the due timestamp by accumulated ROSC time.
+  const epiDueAt = (next.epiAnchorAt ?? next.codeStartedAt!) + EPI_MS + (next.roscPausedMs ?? 0);
   const epiTimeLeft = Math.max(0, Math.ceil((epiDueAt - arrestNow) / 1000));
   const rhythmCheckTimeLeft =
     next.activePrompt === 'RHYTHM_CHECK' && next.rhythmCheckStartedAt != null
