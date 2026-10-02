@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateResuscitationMetrics } from '../src/lib/resuscitationMetrics';
 import { createClinicalEvent } from '../src/lib/clinicalEvents';
-import type { ClinicalEvent, LogEvent } from '../src/types';
+import type { ClinicalEvent, ClinicalEventPayloadMap, LogEvent } from '../src/types';
 
 function event<K extends ClinicalEvent['kind']>(
   kind: K,
   timestamp: number,
-  payload: Extract<ClinicalEvent, { kind: K }>['payload'],
+  payload: ClinicalEventPayloadMap[K],
   sequence: number,
 ) {
   return createClinicalEvent({ kind, timestamp, payload }, sequence);
