@@ -9,7 +9,8 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx --test tests/clinicalEvents.test.ts tests/resuscitationMetrics.test.ts"
   },
   "dependencies": {
     "@firebase/eslint-plugin-security-rules": "^0.0.2",
