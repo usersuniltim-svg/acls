@@ -683,7 +683,7 @@ export default function App() {
     description: string,
     structured?: {
       kind?: ClinicalEventKind;
-      payload?: ClinicalEvent['payload'];
+      payload?: Record<string, unknown>;
       source?: 'user' | 'system' | 'import';
     }
   ) => {
@@ -722,9 +722,7 @@ export default function App() {
 
       return {
         ...prev,
-        // Legacy journal remains intact for old UI/PDF/cases.
         logs: [newLog, ...prev.logs],
-        // Structured events are chronological by sequence.
         clinicalEvents: [...prev.clinicalEvents, event],
       };
     });
@@ -767,7 +765,7 @@ export default function App() {
 
   const handleBeginCpr = () => {
     vibrateDevice(75);
-    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`, { kind: 'CPR_START', payload: { cycleNumber: state.cprCycleCount + 1 } });
+    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`);
     setState(prev => startCprCycle(prev, Date.now()));
   };
 
@@ -790,7 +788,7 @@ export default function App() {
     const dose = (state.amioCount ?? 0) + 1;
     if (dose > AMIODARONE_MAX_DOSES) return;
     vibrateDevice([150, 80, 150]);
-    addLog('DRUG_AMIO', `Amiodarone ${amiodaroneDoseLabel(dose)} IV/IO (dose ${dose} of ${AMIODARONE_MAX_DOSES})`, { kind: 'AMIODARONE', payload: { doseMg: dose <= 1 ? 300 : 150, doseLabel: amiodaroneDoseLabel(dose), route: 'IV/IO', doseNumber: dose, maxDoses: AMIODARONE_MAX_DOSES } });
+    addLog('DRUG_AMIO', `Amiodarone ${amiodaroneDoseLabel(dose)} IV/IO (dose ${dose} of ${AMIODARONE_MAX_DOSES})`, { kind: 'AMIODARONE', payload: { doseLabel: amiodaroneDoseLabel(dose), route: 'IV/IO', doseNumber: dose, maxDoses: AMIODARONE_MAX_DOSES } });
     setState(prev => giveAmiodarone(prev));
   };
 
@@ -875,7 +873,6 @@ export default function App() {
       epiCount: state.epiCount,
       logs: state.logs,
       clinicalEvents: state.clinicalEvents,
-      // Snapshot objective metrics at save time; narrative interpretation remains separate.
       metrics: calculateResuscitationMetrics(state.clinicalEvents, state.logs),
       certifiedBy: effectiveProfile.fullName,
       councilRegistration: effectiveProfile.councilRegistration,
@@ -1543,3 +1540,263 @@ export default function App() {
                   <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto text-red-600 border border-red-300 shadow">
                     <Zap className="w-7 h-7 fill-current animate-bounce" />
                   </div>
+                  <div>
+                    <h3 className="text-xl font-display font-black text-red-600 uppercase tracking-tight">Shock Advised!</h3>
+                    <p className="text-black text-xs font-black uppercase tracking-wider">CLEAR ALL STANDERS</p>
+                  </div>
+                  
+                  <button 
+                    onClick={handleShock}
+                    className="w-full h-12 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase text-[10px] tracking-widest border-none shadow-md cursor-pointer"
+                  >
+                    DELIVER RESCUE SHOCK ({state.selectedEnergy}J)
+                  </button>
+                </div>
+              )}
+
+              {state.activePrompt === 'EPI_ADVISED' && (
+                <div className="space-y-4">
+                  <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto text-red-600 border border-red-300">
+                    <Syringe className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-display font-black text-black uppercase tracking-tight">Non-Shockable protocol</h3>
+                    <p className="text-gray-600 text-[9.5px] uppercase font-bold tracking-widest mt-1">Dispense drug & continue chest loops</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 pt-2">
+                    <button 
+                      onClick={handleEpi}
+                      className="w-full h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase text-[9.5px] tracking-widest border-none flex items-center justify-center gap-1 shadow-md cursor-pointer"
+                    >
+                      <Syringe className="w-3.5 h-3.5" /> Administer 1mg Epi
+                    </button>
+                    
+                    <button 
+                      onClick={handleBeginCpr}
+                      className="w-full h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase text-[9.5px] tracking-widest cursor-pointer border-none"
+                    >
+                      Begin CPR
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  };
+
+  return (
+    <div className={`h-[100dvh] w-full font-sans antialiased flex flex-col overflow-hidden select-none ${
+      theme === 'clinical-dark' ? 'bg-[#0b0f19] text-white' : 'bg-[#f8fafc] text-black'
+    }`} id="acls-app-root">
+      {/* Native Mobile App Bar */}
+      <header className={`h-12 w-full px-3 sm:px-4 flex items-center justify-between z-50 select-none text-[9px] font-bold font-mono shrink-0 border-b pt-[env(safe-area-inset-top,0px)] transition-colors ${
+        theme === 'clinical-dark' ? 'bg-[#0c111d] text-slate-300 border-white/10' : 'bg-white text-gray-800 border-gray-200 shadow-xs'
+      }`}>
+        <div className="flex items-center gap-2">
+          {hasSessionStarted ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm("Return to home screen? Active resuscitation timer will keep tracking in background.")) {
+                  setHasSessionStarted(false);
+                }
+              }}
+              className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider py-1 px-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer border-none bg-transparent"
+              title="Tap to return to Home"
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+              <span className="font-sans font-black tracking-tight text-[11px]">ACLS</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+              <span className="font-sans font-black tracking-tight text-[11px]">ACLS 2025</span>
+            </div>
+          )}
+          <span className="text-[7.5px] bg-red-600 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider">
+            Nepal
+          </span>
+          {isVerifiedDoctor && (
+            <span className="hidden sm:inline-flex items-center gap-1 text-[7.5px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">
+              <CheckCircle2 className="w-2.5 h-2.5" /> Verified
+            </span>
+          )}
+        </div>
+
+        {/* Right Status info */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <button
+            type="button"
+            onClick={handleOpenCopilot}
+            className={`px-2 py-1 rounded-lg border text-[8px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all shadow-xs ${
+              isVerifiedDoctor
+                ? 'border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                : 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300'
+            }`}
+            title={
+              isVerifiedDoctor
+                ? "Open Gemini ACLS Resuscitation AI Co-Pilot (Verified Doctor)"
+                : !user
+                ? "AI Co-Pilot restricted to signed in, KYC-verified doctors. Click to Sign In."
+                : "AI Co-Pilot restricted to KYC-verified doctors. Click to check verification."
+            }
+          >
+            {isVerifiedDoctor ? (
+              <Bot className="w-3.5 h-3.5 text-emerald-500" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            )}
+            <span className="font-bold">AI</span>
+            {!isVerifiedDoctor && (
+              <span className="text-[7px] bg-amber-500/20 text-amber-800 dark:text-amber-200 px-1 py-0.2 rounded font-extrabold">
+                KYC
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={handleForceSync}
+            disabled={syncStatus === 'syncing'}
+            className={`px-1.5 py-1 rounded-lg border text-[7.5px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all ${
+              syncStatus === 'synced'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                : syncStatus === 'syncing'
+                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 animate-pulse'
+                : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 hover:bg-red-500/20'
+            }`}
+            title="Cloud DB Sync"
+          >
+            <Database className="w-3 h-3 text-emerald-500" />
+            <span className="hidden md:inline">
+              {syncStatus === 'synced' ? 'SYNCED' : syncStatus === 'syncing' ? 'SYNC...' : 'OFFLINE'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTheme(theme === 'clinical-dark' ? 'medical-white' : 'clinical-dark')}
+            className="p-1.5 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer text-inherit"
+            title="Toggle theme"
+          >
+            {theme === 'clinical-dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-600" />}
+          </button>
+          <div className="flex items-center gap-1 font-mono text-[8.5px] opacity-75 pl-0.5">
+            <span>🔋{batteryLevel}%</span>
+            <span>{phoneTime}</span>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 w-full h-full flex flex-col overflow-hidden relative">
+        {renderAppContent()}
+      </div>
+
+      {/* Global Modals for alarms, shocks and rhythms check evaluations */}
+      {renderGlobalPromptModals()}
+
+      {/* Auth, Doctor KYC, Admin Board, Admin Password Guard, & Verification Gatekeeper Modals */}
+      <React.Suspense fallback={null}>
+        <AuthModal 
+          isOpen={isAuthModalOpen} 
+          onClose={() => setIsAuthModalOpen(false)} 
+          onSuccess={() => {
+            setIsAuthModalOpen(false);
+            setTimeout(() => {
+              if (!profile?.kyc || profile.kyc.kycStatus === 'unsubmitted') {
+                setIsKycModalOpen(true);
+              } else if (profile.kyc.kycStatus === 'pending') {
+                setIsVerificationGatekeeperOpen(true);
+              }
+            }, 300);
+          }}
+        />
+        <DoctorKycModal 
+          isOpen={isKycModalOpen} 
+          onClose={() => setIsKycModalOpen(false)} 
+          userProfile={profile} 
+          onKycUpdated={(updatedProfile) => {
+            if (updatedProfile) {
+              setProfile(updatedProfile);
+            }
+            setIsKycModalOpen(false);
+            setIsVerificationGatekeeperOpen(true);
+          }}
+        />
+        <AdminKycPanel 
+          isOpen={isAdminPanelOpen && isUserAdmin} 
+          onClose={() => setIsAdminPanelOpen(false)} 
+          currentUserEmail={user?.email || undefined} 
+          onProfileApproved={(docId, updatedKyc) => {
+            if (user?.uid === docId || !user) {
+              setProfile(prev => prev ? ({
+                ...prev,
+                kyc: updatedKyc,
+                councilRegistration: updatedKyc.councilRegistration || prev.councilRegistration
+              }) : ({
+                fullName: 'Dr. Practitioner',
+                profession: 'doctor',
+                councilRegistration: updatedKyc.councilRegistration || '',
+                kyc: updatedKyc
+              }));
+            }
+          }}
+        />
+        <VerificationGatekeeperModal
+          isOpen={isVerificationGatekeeperOpen}
+          onClose={() => setIsVerificationGatekeeperOpen(false)}
+          onOpenAuth={() => {
+            setIsVerificationGatekeeperOpen(false);
+            setIsAuthModalOpen(true);
+          }}
+          onOpenKyc={() => {
+            setIsVerificationGatekeeperOpen(false);
+            setIsKycModalOpen(true);
+          }}
+          onOpenAdmin={() => {
+            setIsVerificationGatekeeperOpen(false);
+            if (isUserAdmin) {
+              setIsAdminPanelOpen(true);
+            } else {
+              setIsAuthModalOpen(true);
+            }
+          }}
+          user={user}
+          userProfile={profile}
+        />
+      </React.Suspense>
+
+      {/* Gemini AI ACLS Resuscitation Co-Pilot & Google Search Grounding */}
+      <GeminiResusCopilot
+        isOpen={isCopilotOpen}
+        onClose={() => setIsCopilotOpen(false)}
+        theme={theme}
+        isVerifiedDoctor={isVerifiedDoctor}
+        isUserSignedIn={Boolean(user)}
+        userEmail={user?.email || undefined}
+        kycStatus={profile?.kyc?.kycStatus}
+        onOpenAuth={() => {
+          setIsCopilotOpen(false);
+          setIsAuthModalOpen(true);
+        }}
+        onOpenKyc={() => {
+          setIsCopilotOpen(false);
+          setIsKycModalOpen(true);
+        }}
+        onOpenVerificationGatekeeper={() => {
+          setIsCopilotOpen(false);
+          setIsVerificationGatekeeperOpen(true);
+        }}
+        currentAclsState={{
+          cprCycleCount: state.cprCycleCount,
+          shocksCount: state.shocksCount,
+          epiCount: state.epiCount,
+          totalTime: state.totalTime,
+          currentRhythm: state.currentRhythm
+        }}
+      />
+    </div>
+  );
+}
