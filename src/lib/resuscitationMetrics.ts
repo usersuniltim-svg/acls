@@ -15,7 +15,8 @@ export function calculateResuscitationMetrics(
 
   const codeStartAt = first('CODE_START');
   const firstCprAt = first('CPR_START');
-  const firstRhythmCheckAt = first('RHYTHM_CHECK');
+  const firstRhythmCheckEvent = sorted.find((e): e is Extract<ClinicalEvent, { kind: 'RHYTHM_CHECK' }> => e.kind === 'RHYTHM_CHECK');
+  const firstRhythmCheckAt = firstRhythmCheckEvent?.payload.startedAt ?? firstRhythmCheckEvent?.timestamp ?? null;
   const firstShockAt = first('SHOCK');
   const firstEpinephrineAt = first('EPINEPHRINE');
   const roscAt = first('ROSC');
