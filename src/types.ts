@@ -47,6 +47,8 @@ export interface CprResumePayload {
 export interface RhythmCheckPayload {
   checkNumber: number;
   rhythm: PatientRhythm | 'ORGANIZED_WITH_PULSE';
+  /** Timestamp when chest-compression interruption/rhythm assessment actually began. */
+  startedAt?: number;
 }
 
 export interface ShockPayload {
