@@ -17,10 +17,10 @@ test('metrics derive objective first-event times, counts, and medication interva
   const events: ClinicalEvent[] = [
     event('CODE_START', 0, { reason: 'arrest' }, 1),
     event('CPR_START', 2000, { cycleNumber: 1 }, 2),
-    event('RHYTHM_CHECK', 120000, { checkNumber: 1, rhythm: 'SHOCKABLE' }, 3),
+    event('RHYTHM_CHECK', 125000, { checkNumber: 1, rhythm: 'SHOCKABLE', startedAt: 120000 }, 3),
     event('SHOCK', 121000, { energyJ: 200, defibType: 'BIPHASIC', shockNumber: 1 }, 4),
     event('EPINEPHRINE', 181000, { route: 'IV/IO', doseNumber: 1, doseMg: 1 }, 5),
-    event('RHYTHM_CHECK', 301000, { checkNumber: 2, rhythm: 'NON_SHOCKABLE' }, 6),
+    event('RHYTHM_CHECK', 305000, { checkNumber: 2, rhythm: 'NON_SHOCKABLE', startedAt: 300000 }, 6),
     event('AMIODARONE', 302000, { route: 'IV/IO', doseNumber: 1, doseMg: 300, doseLabel: '300 mg' }, 7),
     event('ROSC', 360000, { arrestDurationSeconds: 360, rhythmCheckNumber: 2 }, 8),
   ];
