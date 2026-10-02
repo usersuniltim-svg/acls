@@ -55,6 +55,8 @@ export interface ShockPayload {
   energyJ: number;
   defibType: 'BIPHASIC' | 'MONOPHASIC';
   shockNumber: number;
+  /** CPR cycle automatically started by the shock action, if applicable. */
+  cprCycleNumber?: number;
 }
 
 export interface MedicationPayload {
@@ -72,6 +74,8 @@ export interface RoscPayload {
 
 export interface ReArrestPayload {
   priorArrestSeconds: number;
+  /** CPR cycle automatically started by the re-arrest action, if applicable. */
+  cprCycleNumber?: number;
 }
 
 export interface ProcedurePayload {
