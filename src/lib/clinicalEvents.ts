@@ -1,8 +1,8 @@
-import { ClinicalEvent, ClinicalEventInput, LogEvent } from '../types';
+import { ClinicalEvent, ClinicalEventInput, ClinicalEventPayloadMap, LogEvent } from '../types';
 
 /** Creates an append-only structured event. */
 export function createClinicalEvent<K extends ClinicalEvent['kind']>(input: ClinicalEventInput<K>, sequence: number): Extract<ClinicalEvent, { kind: K }> {
-  return {
+  const event = {
     id: 'evt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
     timestamp: input.timestamp ?? Date.now(),
     sequence,
@@ -10,9 +10,10 @@ export function createClinicalEvent<K extends ClinicalEvent['kind']>(input: Clin
     ...(input.actorId ? { actorId: input.actorId } : {}),
     ...(input.actorName ? { actorName: input.actorName } : {}),
     source: input.source ?? 'user',
-    payload: input.payload ?? {},
+    payload: (input.payload ?? {}) as ClinicalEventPayloadMap[K],
     ...(input.description ? { description: input.description } : {}),
   };
+  return event as Extract<ClinicalEvent, { kind: K }>;
 }
 
 /** Convert a structured event to the legacy log shape used by older PDFs/cases. */
