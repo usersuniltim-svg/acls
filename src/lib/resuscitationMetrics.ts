@@ -23,7 +23,7 @@ export function calculateResuscitationMetrics(
   const delta = (eventAt: number | null) =>
     codeStartAt != null && eventAt != null ? Math.max(0, Math.floor((eventAt - codeStartAt) / 1000)) : null;
 
-  const rhythmChecks = sorted.filter(e => e.kind === 'RHYTHM_CHECK');
+  const rhythmChecks = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'RHYTHM_CHECK' }> => e.kind === 'RHYTHM_CHECK');
   const medications = sorted.filter(e =>
     e.kind === 'EPINEPHRINE' || e.kind === 'AMIODARONE' || e.kind === 'LIDOCAINE'
   );
