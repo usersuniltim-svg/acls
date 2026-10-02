@@ -38,6 +38,10 @@ test('metrics derive objective first-event times, counts, and medication interva
   assert.equal(metrics.timeToFirstShockSeconds, 121);
   assert.equal(metrics.timeToFirstEpinephrineSeconds, 181);
   assert.equal(metrics.arrestDurationSeconds, 360);
+  assert.equal(metrics.totalArrestDurationSeconds, 360);
+  assert.equal(metrics.roscCount, 1);
+  assert.equal(metrics.finalRoscAt, 360000);
+  assert.deepEqual(metrics.arrestEpisodeDurationsSeconds, [360]);
   assert.equal(metrics.shockCount, 1);
   assert.equal(metrics.epinephrineCount, 1);
   assert.equal(metrics.amiodaroneCount, 1);
@@ -66,6 +70,11 @@ test('metrics count pauses and re-arrests from the event timeline', () => {
   assert.equal(metrics.reArrestCount, 1);
   assert.equal(metrics.cprCycleCount, 2);
   assert.equal(metrics.roscAt, 61000);
+  assert.equal(metrics.finalRoscAt, 180000);
+  assert.equal(metrics.roscCount, 2);
+  assert.deepEqual(metrics.arrestEpisodeDurationsSeconds, [51, 60]);
+  assert.equal(metrics.totalArrestDurationSeconds, 111);
+  assert.equal(metrics.arrestDurationSeconds, 111);
 });
 
 test('legacy logs remain measurable without inventing clinical payload details', () => {
