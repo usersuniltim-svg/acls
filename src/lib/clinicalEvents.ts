@@ -13,7 +13,7 @@ export function createClinicalEvent<K extends ClinicalEvent['kind']>(input: Clin
     payload: (input.payload ?? {}) as ClinicalEventPayloadMap[K],
     ...(input.description ? { description: input.description } : {}),
   };
-  return event as Extract<ClinicalEvent, { kind: K }>;
+  return event as unknown as Extract<ClinicalEvent, { kind: K }>;
 }
 
 /** Convert a structured event to the legacy log shape used by older PDFs/cases. */
