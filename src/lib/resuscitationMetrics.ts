@@ -1,30 +1,5 @@
-import { ClinicalEvent, ClinicalEventKind, PatientRhythm } from '../types';
+import { ClinicalEvent, ClinicalEventKind, PatientRhythm, ResuscitationMetrics } from '../types';
 import { normalizeCaseClinicalEvents } from './clinicalEvents';
-
-export interface ResuscitationMetrics {
-  codeStartAt: number | null;
-  firstCprAt: number | null;
-  firstRhythmCheckAt: number | null;
-  firstShockAt: number | null;
-  firstEpinephrineAt: number | null;
-  roscAt: number | null;
-  arrestDurationSeconds: number | null;
-  timeToFirstCprSeconds: number | null;
-  timeToFirstRhythmCheckSeconds: number | null;
-  timeToFirstShockSeconds: number | null;
-  timeToFirstEpinephrineSeconds: number | null;
-  shockCount: number;
-  epinephrineCount: number;
-  amiodaroneCount: number;
-  lidocaineCount: number;
-  rhythmCheckCount: number;
-  cprCycleCount: number;
-  cprPauseCount: number;
-  reArrestCount: number;
-  shockableRhythmChecks: number;
-  nonShockableRhythmChecks: number;
-  medicationIntervalsSeconds: number[];
-}
 
 /**
  * Derives objective timeline metrics from recorded events only.
@@ -82,8 +57,8 @@ export function calculateResuscitationMetrics(
     cprCycleCount: sorted.filter(e => e.kind === 'CPR_START').length,
     cprPauseCount: sorted.filter(e => e.kind === 'CPR_PAUSE').length,
     reArrestCount: sorted.filter(e => e.kind === 'RE_ARREST').length,
-    shockableRhythmChecks: rhythmChecks.filter(e => (e.payload as { rhythm?: PatientRhythm }).rhythm === 'SHOCKABLE').length,
-    nonShockableRhythmChecks: rhythmChecks.filter(e => (e.payload as { rhythm?: PatientRhythm }).rhythm === 'NON_SHOCKABLE').length,
+    shockableRhythmChecks: rhythmChecks.filter(e => e.payload.rhythm === 'SHOCKABLE').length,
+    nonShockableRhythmChecks: rhythmChecks.filter(e => e.payload.rhythm === 'NON_SHOCKABLE').length,
     medicationIntervalsSeconds,
   };
 }
