@@ -50,6 +50,10 @@ export function calculateResuscitationMetrics(
     codeStartAt != null && eventAt != null ? Math.max(0, Math.floor((eventAt - codeStartAt) / 1000)) : null;
 
   const rhythmChecks = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'RHYTHM_CHECK' }> => e.kind === 'RHYTHM_CHECK');
+  const explicitCprCycles = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'CPR_START' }> => e.kind === 'CPR_START').map(e => e.payload.cycleNumber ?? 0);
+  const shockStartedCprCycles = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'SHOCK' }> => e.kind === 'SHOCK').map(e => e.payload.cprCycleNumber ?? 0);
+  const reArrestStartedCprCycles = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'RE_ARREST' }> => e.kind === 'RE_ARREST').map(e => e.payload.cprCycleNumber ?? 0);
+  const cprCycleNumbers = [...explicitCprCycles, ...shockStartedCprCycles, ...reArrestStartedCprCycles].filter(n => n > 0);
   const medications = sorted.filter(e =>
     e.kind === 'EPINEPHRINE' || e.kind === 'AMIODARONE' || e.kind === 'LIDOCAINE'
   );
@@ -82,7 +86,7 @@ export function calculateResuscitationMetrics(
     amiodaroneCount: sorted.filter(e => e.kind === 'AMIODARONE').length,
     lidocaineCount: sorted.filter(e => e.kind === 'LIDOCAINE').length,
     rhythmCheckCount: rhythmChecks.length,
-    cprCycleCount: sorted.filter(e => e.kind === 'CPR_START').length,
+    cprCycleCount: cprCycleNumbers.length > 0 ? Math.max(...cprCycleNumbers) : sorted.filter(e => e.kind === 'CPR_START').length,
     cprPauseCount: sorted.filter(e => e.kind === 'CPR_PAUSE').length,
     reArrestCount: sorted.filter(e => e.kind === 'RE_ARREST').length,
     shockableRhythmChecks: rhythmChecks.filter(e => e.payload.rhythm === 'SHOCKABLE').length,
