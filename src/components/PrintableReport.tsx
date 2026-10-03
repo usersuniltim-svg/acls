@@ -124,7 +124,15 @@ export default function PrintableReport({
   const initialRhythm = rhythmLogs[0] ? getRhythmLabel(rhythmLogs[0].description) : 'Not documented';
   const finalRhythm = currentRhythm || (rhythmLogs.length ? getRhythmLabel(rhythmLogs[rhythmLogs.length - 1].description) : 'Not documented');
   const hasRosc = chronologicalLogs.some((l) => l.type === 'ROSC' || /ROSC achieved|ROSC confirmed/i.test(l.description));
-  const outcome = hasRosc ? 'ROSC confirmed' : 'No ROSC documented';
+  // The outcome is how the last arrest episode ended: ROSC, resuscitation
+  // stopped (time of death), or a re-arrest with no documented end.
+  const lastEnding = [...normalizedEvents].reverse().find((e) => e.kind === 'ROSC' || e.kind === 'CODE_END' || e.kind === 'RE_ARREST');
+  const outcome =
+    lastEnding?.kind === 'CODE_END'
+      ? `Resuscitation stopped - time of death ${new Date(lastEnding.payload.timeOfDeath ?? lastEnding.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+      : lastEnding?.kind === 'ROSC' || (!lastEnding && hasRosc)
+        ? 'ROSC confirmed'
+        : 'No ROSC documented';
   const signed = Boolean(signatureDataUrl);
   const recordStatus = signed ? 'SIGNED / ATTESTED' : 'UNSIGNED / DRAFT';
 

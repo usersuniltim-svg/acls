@@ -43,9 +43,15 @@ import { MedicalAudio } from './lib/audio';
 import {
   advanceClock,
   arrestSeconds,
+  checkAntiarrhythmic,
+  checkEpinephrine,
+  checkShock,
   clearedClockFields,
   confirmRosc,
   deliverShock,
+  terminateResuscitation,
+  ActionCheck,
+  ActionOptions,
   giveAmiodarone,
   giveEpinephrine,
   giveLidocaine,
@@ -69,8 +75,16 @@ import {
   subscribeToUserCases,
   saveUserCaseToFirestore,
   deleteUserCaseFromFirestore,
-  migrateLegacySavedCasesToFirestore,
 } from './lib/firebase';
+import {
+  ServerView,
+  addPendingCase,
+  applyServerSnapshot,
+  isPending,
+  mergeCaseLists,
+  readPendingCases,
+  removePendingCase,
+} from './lib/caseStore';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import MobileDashboard from './components/MobileDashboard';
@@ -149,7 +163,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const profileUnsubscribeRef = useRef<(() => void) | null>(null);
   const caseUnsubscribeRef = useRef<(() => void) | null>(null);
-  const migratedLegacyCasesForUidRef = useRef<string | null>(null);
   const [hasSessionStarted, setHasSessionStarted] = useState(false);
 
   // Modal Dialog States
@@ -161,8 +174,12 @@ export default function App() {
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const hasAutoPromptedKycRef = useRef<boolean>(false);
 
-  // Saved Cases State. Firestore users/{uid}/cases is the canonical source of truth;
-  // localStorage is retained only as an offline/bootstrap cache.
+  // Saved cases shown to the doctor: what the server has (users/{uid}/cases),
+  // plus cases saved on this device that have not uploaded yet (see
+  // src/lib/caseStore.ts). localStorage 'acls_saved_cases' is only a display cache.
+  const serverViewRef = useRef<ServerView>({ cases: [], confirmed: false });
+  const flushRef = useRef<{ uid: string; promise: Promise<boolean> } | null>(null);
+  const legacyMigrationRef = useRef<{ uid: string; ids: string[]; done: boolean } | null>(null);
   const [savedCases, setSavedCases] = useState<SavedCase[]>(() => {
     try {
       const raw = localStorage.getItem('acls_saved_cases');
@@ -177,6 +194,88 @@ export default function App() {
   // Cloud Database Sync Status ('synced' | 'syncing' | 'offline')
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline'>('synced');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(Date.now());
+
+  /** Rebuild the visible list from the server view and the upload queue. */
+  const refreshCaseList = (uid: string): number => {
+    const pending = readPendingCases(uid);
+    const pendingIds = new Set(pending.map(c => c.id));
+    const merged = mergeCaseLists(serverViewRef.current.cases, pending)
+      .map(c => (pendingIds.has(c.id) ? { ...c, syncPending: true } : c));
+    setSavedCases(merged);
+    try {
+      localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
+    } catch (e) {}
+    return pending.length;
+  };
+
+  /** Once every old profile-array case has uploaded, mark the move as done. */
+  const finishLegacyMigrationIfUploaded = (uid: string) => {
+    const migration = legacyMigrationRef.current;
+    if (!migration || migration.uid !== uid || migration.done) return;
+    if (migration.ids.some(id => isPending(uid, id))) return;
+    migration.done = true;
+    setDoc(doc(db, 'profiles', uid), { caseStorageVersion: 2 }, { merge: true })
+      .catch(() => { migration.done = false; });
+  };
+
+  /**
+   * Upload one case. It leaves the queue only after Firestore confirms it.
+   * While offline this waits (Firestore sends it when the connection returns).
+   */
+  const uploadCase = async (uid: string, caseRecord: SavedCase): Promise<boolean> => {
+    const ok = await saveUserCaseToFirestore(uid, caseRecord);
+    if (ok) {
+      const stillWanted = isPending(uid, caseRecord.id); // false if deleted meanwhile
+      removePendingCase(uid, caseRecord.id);
+      if (stillWanted && !serverViewRef.current.cases.some(c => c.id === caseRecord.id)) {
+        serverViewRef.current = {
+          ...serverViewRef.current,
+          cases: mergeCaseLists([caseRecord], serverViewRef.current.cases),
+        };
+      }
+      finishLegacyMigrationIfUploaded(uid);
+    }
+    if (auth.currentUser?.uid === uid) refreshCaseList(uid);
+    return ok;
+  };
+
+  /** Upload everything in the queue. Resolves true when the queue is empty. */
+  const flushPendingCases = (uid: string): Promise<boolean> => {
+    if (flushRef.current?.uid === uid) return flushRef.current.promise;
+    const run = { uid, promise: Promise.resolve(false) };
+    flushRef.current = run;
+    run.promise = (async () => {
+      try {
+        const attempted = new Set<string>();
+        while (auth.currentUser?.uid === uid) {
+          // Re-read each time: cases can be saved or deleted while this runs.
+          const next = readPendingCases(uid).find(c => !attempted.has(c.id));
+          if (!next) return true;
+          attempted.add(next.id);
+          if (!(await uploadCase(uid, next))) return false;
+        }
+        return false;
+      } finally {
+        if (flushRef.current === run) flushRef.current = null;
+      }
+    })();
+    return run.promise;
+  };
+
+  /**
+   * Older versions kept cases in an array on the profile document. Move them to
+   * users/{uid}/cases once, through the same upload queue as new cases.
+   */
+  const startLegacyMigration = (uid: string, legacyCases: SavedCase[]) => {
+    if (legacyMigrationRef.current?.uid === uid) return;
+    const valid = legacyCases.filter(c => c && typeof c.id === 'string');
+    legacyMigrationRef.current = { uid, ids: valid.map(c => c.id), done: false };
+    valid.forEach(c => addPendingCase(uid, { ...c, userId: uid }));
+    refreshCaseList(uid);
+    void flushPendingCases(uid);
+    finishLegacyMigrationIfUploaded(uid);
+  };
+
 
   // Android & PWA App Variables
   const [deviceMode, setDeviceMode] = useState<'standalone' | 'phone_demo'>('phone_demo');
@@ -395,20 +494,37 @@ export default function App() {
         const cleanEmail = (currentUser.email || '').toLowerCase().trim();
         const isAdminUser = cleanEmail === 'user.suniltim@gmail.com';
 
-        if (caseUnsubscribeRef.current) {
-          caseUnsubscribeRef.current();
-          caseUnsubscribeRef.current = null;
-        }
-        caseUnsubscribeRef.current = subscribeToUserCases(currentUser.uid, (canonicalCases) => {
-          setSavedCases(canonicalCases);
-          try {
-            localStorage.setItem('acls_saved_cases', JSON.stringify(canonicalCases));
-          } catch (e) {}
-          setSyncStatus('synced');
-          setLastSyncedAt(Date.now());
+        const uid = currentUser.uid;
+
+        // Until the server answers, show the last list this device saw for
+        // this doctor (cleared on sign-out) plus anything waiting to upload.
+        let lastKnown: SavedCase[] = [];
+        try {
+          const raw = localStorage.getItem('acls_saved_cases');
+          const parsed = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(parsed)) {
+            lastKnown = parsed.filter((c: SavedCase) =>
+              c && typeof c.id === 'string' && !c.syncPending && (!c.userId || c.userId === uid));
+          }
+        } catch (e) {}
+        serverViewRef.current = { cases: lastKnown, confirmed: false };
+        legacyMigrationRef.current = null;
+        refreshCaseList(uid);
+
+        // users/{uid}/cases plus the upload queue is the only source for the list.
+        caseUnsubscribeRef.current = subscribeToUserCases(uid, (serverCases, { fromCache }) => {
+          serverViewRef.current = applyServerSnapshot(serverViewRef.current, serverCases, fromCache);
+          const waiting = refreshCaseList(uid);
+          if (!fromCache && waiting === 0) {
+            setSyncStatus('synced');
+            setLastSyncedAt(Date.now());
+          }
         }, () => {
           setSyncStatus('offline');
         });
+
+        // Upload anything saved on this device while offline or signed out.
+        void flushPendingCases(uid);
 
         const profileDocRef = doc(db, 'profiles', currentUser.uid);
         profileUnsubscribeRef.current = onSnapshot(profileDocRef, (docSnap) => {
@@ -441,26 +557,11 @@ export default function App() {
               localStorage.setItem('acls_user_profile', JSON.stringify(profileForCache));
             } catch (e) {}
 
-            // One-time migration for users who still have legacy cases embedded in
-            // profiles/{uid}. The canonical listener remains the only case UI source.
-            if (
-              currentUser.uid &&
-              migratedLegacyCasesForUidRef.current !== currentUser.uid &&
-              Array.isArray(pData.savedCases) &&
-              pData.savedCases.length > 0
-            ) {
-              migratedLegacyCasesForUidRef.current = currentUser.uid;
-              void migrateLegacySavedCasesToFirestore(currentUser.uid, pData.savedCases)
-                .then((ok) => {
-                  if (!ok) {
-                    migratedLegacyCasesForUidRef.current = null;
-                    setSyncStatus('offline');
-                  }
-                })
-                .catch(() => {
-                  migratedLegacyCasesForUidRef.current = null;
-                  setSyncStatus('offline');
-                });
+            // One-time move for doctors who still have cases in the old array on
+            // profiles/{uid}. Marked done (caseStorageVersion 2) only after every
+            // case has uploaded, so it never runs again and deleted cases stay deleted.
+            if (Array.isArray(pData.savedCases) && pData.savedCases.length > 0 && pData.caseStorageVersion !== 2) {
+              startLegacyMigration(uid, pData.savedCases);
             }
 
             setLoading(false);
@@ -521,7 +622,11 @@ export default function App() {
           setLoading(false);
         });
       } else {
-        migratedLegacyCasesForUidRef.current = null;
+        // The upload queue is kept (per doctor) so nothing is lost; it uploads
+        // the next time that doctor signs in on this device.
+        serverViewRef.current = { cases: [], confirmed: false };
+        legacyMigrationRef.current = null;
+        flushRef.current = null;
         MedicalAudio.stopAll();
         setState(prev => ({
           ...prev,
@@ -553,18 +658,29 @@ export default function App() {
       if (caseUnsubscribeRef.current) {
         caseUnsubscribeRef.current();
       }
-      migratedLegacyCasesForUidRef.current = null;
     };
   }, []);
 
   // Force Cloud Database Synchronizer
   const handleForceSync = async () => {
+    const uid = user?.uid;
     setSyncStatus('syncing');
     try {
-      await testFirestoreConnection();
-      if (user?.uid) {
-                if (profile) {
-          await syncUserProfileToFirestore(user.uid, profile);
+      const reachable = await testFirestoreConnection();
+      if (!reachable) {
+        // Queue the uploads anyway; Firestore sends them when the signal returns.
+        if (uid) void flushPendingCases(uid);
+        setSyncStatus('offline');
+        return;
+      }
+      if (uid) {
+        if (profile) {
+          await syncUserProfileToFirestore(uid, profile);
+        }
+        const allUploaded = await flushPendingCases(uid);
+        if (!allUploaded && readPendingCases(uid).length > 0) {
+          setSyncStatus('offline');
+          return;
         }
       }
       setSyncStatus('synced');
@@ -755,8 +871,10 @@ export default function App() {
         type,
         description: logDescription,
       };
-      const sequence = prev.clinicalEvents.length > 0
-        ? Math.max(...prev.clinicalEvents.map(event => event.sequence)) + 1
+      // Append to the transition's result, not to `prev`: starting a new code
+      // clears the previous patient's events, and they must not come back.
+      const sequence = next.clinicalEvents.length > 0
+        ? Math.max(...next.clinicalEvents.map(event => event.sequence)) + 1
         : 1;
       const event = createClinicalEvent({
         kind,
@@ -770,13 +888,36 @@ export default function App() {
 
       return {
         ...next,
-        logs: [newLog, ...prev.logs],
-        clinicalEvents: [...prev.clinicalEvents, event],
+        logs: [newLog, ...next.logs],
+        clinicalEvents: [...next.clinicalEvents, event],
       };
     });
   };
 
   const formatClock = (seconds: number) => `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
+
+  /**
+   * Actions outside the usual AHA sequence are not silently ignored: the
+   * clinician is told why it is unusual and asked whether it really happened.
+   * Returns the options to record it with, or undefined to record nothing.
+   */
+  const confirmAction = (check: ActionCheck, what: string): ActionOptions | undefined => {
+    if (check.ok) return {};
+    if (!check.canRecord) {
+      window.alert(check.reason);
+      return undefined;
+    }
+    const recordIt = window.confirm(
+      `${check.reason}\n\nRecord ${what} anyway? It will be marked in the log as outside the usual AHA sequence.`
+    );
+    return recordIt ? { override: true } : undefined;
+  };
+
+  /** Text appended to a log line for an action recorded outside the usual sequence. */
+  const deviationSuffix = (note?: string) => (note ? ` [Recorded outside usual AHA sequence: ${note}]` : '');
+
+  /** Clinical events recorded since the last save of this code. */
+  const unsavedEventCount = state.clinicalEvents.filter(e => e.sequence > (state.savedEventSequence ?? 0)).length;
 
   const toggleTimer = () => {
     vibrateDevice(40);
@@ -792,6 +933,11 @@ export default function App() {
         now,
         (_prev, next) => next.activePrompt !== 'RHYTHM_CHECK',
       );
+      return;
+    }
+
+    if (state.terminatedAt) {
+      window.alert('Resuscitation was stopped for this case. Save it in the Journal tab, then start a new code from the home screen.');
       return;
     }
 
@@ -861,70 +1007,134 @@ export default function App() {
   };
 
   const handleShock = () => {
+    const now = Date.now(); // the moment it was tapped, even if a question follows
+    const check = checkShock(state, now);
+    const opts = confirmAction(check, 'this shock');
+    if (!opts) return;
+    const note = opts.override ? check.reason : undefined;
     vibrateDevice([300, 100, 300, 100, 450]);
     MedicalAudio.playUrgent();
-    const now = Date.now();
     applyClinicalAction(
       'SHOCK',
       'SHOCK',
-      (prev, at) => deliverShock(prev, at),
-      (prev, next) => `Defibrillation administered: ${prev.selectedEnergy}J (Shock #${next.shocksCount}) - Resuming CPR Cycle immediately`,
+      (prev, at) => deliverShock(prev, at, opts),
+      (prev, next) => `Defibrillation administered: ${prev.selectedEnergy}J (Shock #${next.shocksCount}) - Resuming CPR Cycle immediately${deviationSuffix(note)}`,
       (prev, next) => ({
         energyJ: prev.selectedEnergy,
         defibType: prev.defibType,
         shockNumber: next.shocksCount,
         cprCycleNumber: next.cprCycleCount,
+        ...(note ? { protocolNote: note } : {}),
       }),
       now,
     );
   };
 
   const handleEpi = () => {
+    const now = Date.now();
+    const check = checkEpinephrine(state, now);
+    const opts = confirmAction(check, 'this epinephrine dose');
+    if (!opts) return;
+    const note = opts.override ? check.reason : undefined;
     vibrateDevice([150, 80, 150]);
     MedicalAudio.playAlert();
-    const now = Date.now();
     applyClinicalAction(
       'DRUG_EPI',
       'EPINEPHRINE',
-      (prev, at) => giveEpinephrine(prev, at),
-      (prev, next) => `Administered 1mg Epinephrine IV/IO (Total Dose Count: #${next.epiCount}) - 3-5m countdown running`,
-      (prev, next) => ({ doseMg: 1, route: 'IV/IO', doseNumber: next.epiCount }),
+      (prev, at) => giveEpinephrine(prev, at, opts),
+      (prev, next) => `Administered 1mg Epinephrine IV/IO (Total Dose Count: #${next.epiCount}) - 3-5m countdown running${deviationSuffix(note)}`,
+      (prev, next) => ({
+        doseMg: 1,
+        route: 'IV/IO',
+        doseNumber: next.epiCount,
+        ...(note ? { protocolNote: note } : {}),
+      }),
       now,
     );
   };
 
+  const antiarrhythmicDescription = (name: string, label: string, dose: number, max: number, note?: string) =>
+    (dose > max
+      ? `${name} IV/IO - additional dose #${dose} (beyond the usual ${max}-dose maximum)`
+      : `${name} ${label} IV/IO (dose ${dose} of ${max})`) + deviationSuffix(note);
+
   const handleAmiodarone = () => {
-    vibrateDevice([150, 80, 150]);
     const now = Date.now();
+    const check = checkAntiarrhythmic(state, 'amiodarone');
+    const opts = confirmAction(check, 'this amiodarone dose');
+    if (!opts) return;
+    const note = opts.override ? check.reason : undefined;
+    vibrateDevice([150, 80, 150]);
     applyClinicalAction(
       'DRUG_AMIO',
       'AMIODARONE',
-      (prev) => giveAmiodarone(prev),
-      (prev, next) => `Amiodarone ${amiodaroneDoseLabel(next.amioCount ?? 0)} IV/IO (dose ${next.amioCount} of ${AMIODARONE_MAX_DOSES})`,
+      (prev) => giveAmiodarone(prev, opts),
+      (prev, next) => antiarrhythmicDescription('Amiodarone', amiodaroneDoseLabel(next.amioCount ?? 0), next.amioCount ?? 0, AMIODARONE_MAX_DOSES, note),
       (prev, next) => ({
         doseLabel: amiodaroneDoseLabel(next.amioCount ?? 0),
         route: 'IV/IO',
         doseNumber: next.amioCount ?? 0,
         maxDoses: AMIODARONE_MAX_DOSES,
+        ...(note ? { protocolNote: note } : {}),
       }),
       now,
     );
   };
 
   const handleLidocaine = () => {
-    vibrateDevice([150, 80, 150]);
     const now = Date.now();
+    const check = checkAntiarrhythmic(state, 'lidocaine');
+    const opts = confirmAction(check, 'this lidocaine dose');
+    if (!opts) return;
+    const note = opts.override ? check.reason : undefined;
+    vibrateDevice([150, 80, 150]);
     applyClinicalAction(
       'DRUG_LIDO',
       'LIDOCAINE',
-      (prev) => giveLidocaine(prev),
-      (prev, next) => `Lidocaine ${lidocaineDoseLabel(next.lidoCount ?? 0)} IV/IO (dose ${next.lidoCount}; max total 3 mg/kg)`,
+      (prev) => giveLidocaine(prev, opts),
+      (prev, next) => {
+        const dose = next.lidoCount ?? 0;
+        const base = dose > LIDOCAINE_MAX_DOSES
+          ? `Lidocaine IV/IO - additional dose #${dose} (beyond the usual ${LIDOCAINE_MAX_DOSES}-dose maximum; max total 3 mg/kg)`
+          : `Lidocaine ${lidocaineDoseLabel(dose)} IV/IO (dose ${dose}; max total 3 mg/kg)`;
+        return base + deviationSuffix(note);
+      },
       (prev, next) => ({
         doseLabel: lidocaineDoseLabel(next.lidoCount ?? 0),
         route: 'IV/IO',
         doseNumber: next.lidoCount ?? 0,
         maxDoses: LIDOCAINE_MAX_DOSES,
+        ...(note ? { protocolNote: note } : {}),
       }),
+      now,
+    );
+  };
+
+  /** End the code without ROSC: records the time of death and freezes every timer. */
+  const handleStopResuscitation = () => {
+    const now = Date.now();
+    if (!isCodeActive(state)) {
+      window.alert(
+        state.roscAt
+          ? 'The patient is in ROSC, so there is no resuscitation to stop.'
+          : 'No resuscitation is in progress.'
+      );
+      return;
+    }
+    const timeOfDeath = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const sure = window.confirm(
+      `Stop resuscitation now?\n\nTime of death will be recorded as ${timeOfDeath}, after ${formatClock(arrestSeconds(state, now))} of arrest time. ` +
+      'All timers stop. You can then save and sign the case.'
+    );
+    if (!sure) return;
+    vibrateDevice(200);
+    MedicalAudio.stopAll();
+    applyClinicalAction(
+      'INFO',
+      'CODE_END',
+      (prev, at) => terminateResuscitation(prev, at),
+      (prev, next) => `Resuscitation stopped - time of death ${timeOfDeath} after ${formatClock(next.totalTime)} of arrest time`,
+      (prev, next) => ({ outcome: 'TERMINATED', timeOfDeath: now, arrestDurationSeconds: next.totalTime }),
       now,
     );
   };
@@ -957,6 +1167,10 @@ export default function App() {
   };
 
   const handleRosc = () => {
+    if (state.terminatedAt) {
+      window.alert('Resuscitation was already stopped for this case.');
+      return;
+    }
     vibrateDevice([60, 60, 60, 60, 400]);
     const now = Date.now();
     applyClinicalAction(
@@ -1043,6 +1257,17 @@ export default function App() {
       setHasSessionStarted(true);
       return;
     }
+    // The previous code ended (ROSC or stopped) but was never saved: starting a
+    // new one would wipe its record, so ask first.
+    if (unsavedEventCount > 0) {
+      const discard = window.confirm(
+        "The previous code's record has not been saved. Start a new code and discard it?\n\nChoose Cancel to go back and save it in the Journal tab."
+      );
+      if (!discard) {
+        setHasSessionStarted(true);
+        return;
+      }
+    }
     const now = Date.now();
     applyClinicalAction(
       'CPR_START',
@@ -1058,12 +1283,12 @@ export default function App() {
   const handleSignOut = async () => {
     // A clinical record must not disappear because authentication ended.
     // Require the active case to be saved before signing out.
-    if (state.codeStartedAt && !state.roscAt) {
-      alert("An active resuscitation is in progress. Confirm ROSC and save the case before signing out.");
+    if (isCodeActive(state)) {
+      alert("A resuscitation is in progress. Confirm ROSC or stop resuscitation, then save the case before signing out.");
       return;
     }
-    if (state.clinicalEvents.length > 0) {
-      alert("This session contains an unsaved clinical record. Save the case before signing out.");
+    if (unsavedEventCount > 0) {
+      alert("This session contains a clinical record that has not been saved. Save the case in the Journal tab before signing out.");
       return;
     }
 
@@ -1087,6 +1312,7 @@ export default function App() {
         amioCount: 0,
         lidoCount: 0,
         alert: null,
+        savedEventSequence: 0,
       }));
       setHasSessionStarted(false);
       try {
@@ -1119,19 +1345,66 @@ export default function App() {
       certifiedBy: effectiveProfile.fullName,
       councilRegistration: effectiveProfile.councilRegistration,
       signatureDataUrl: signatureDataUrl || '',
+      ...(user?.uid ? { userId: user.uid } : {}),
     };
 
-    // Update local state/cache immediately for offline-first UX. The Firestore
-    // subscription will reconcile the authoritative list after the write.
+    // Everything recorded so far is now in a saved case.
+    const savedThrough = state.clinicalEvents.reduce((max, e) => Math.max(max, e.sequence), 0);
+    setState(prev => ({ ...prev, savedEventSequence: Math.max(prev.savedEventSequence ?? 0, savedThrough) }));
+
+    if (user?.uid) {
+      const uid = user.uid;
+      // Keep a copy on the device first, so the case survives losing signal,
+      // a reload or a closed app before the upload finishes.
+      let keptOnDevice = addPendingCase(uid, newCase);
+      if (!keptOnDevice) {
+        // Storage full: drop the display copy of the list (it is rebuilt from
+        // the server) to make room for the case itself, then try again.
+        try { localStorage.removeItem('acls_saved_cases'); } catch (e) {}
+        keptOnDevice = addPendingCase(uid, newCase);
+      }
+      if (!keptOnDevice) {
+        console.warn('Could not keep an offline copy of this case on the device; it will upload while the app stays open.');
+      }
+      refreshCaseList(uid);
+
+      setSyncStatus('syncing');
+      uploadCase(uid, newCase)
+        .then((ok) => {
+          if (ok) {
+            setSyncStatus('synced');
+            setLastSyncedAt(Date.now());
+          } else {
+            setSyncStatus('offline');
+          }
+        })
+        .catch(() => setSyncStatus('offline'));
+      return true;
+    }
+
+    // Not signed in: the case stays on this device only.
     const updated = [newCase, ...savedCases.filter(c => c.id !== newCase.id)];
     setSavedCases(updated);
     try {
       localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
     } catch (e) {}
+    return true;
+  };
 
+  const handleDeleteCase = (caseId: string) => {
     if (user?.uid) {
+      const uid = user.uid;
+      // Remove it from the upload queue too, so a case deleted before it
+      // uploaded is never sent.
+      removePendingCase(uid, caseId);
+      serverViewRef.current = {
+        ...serverViewRef.current,
+        cases: serverViewRef.current.cases.filter(c => c.id !== caseId),
+      };
+      refreshCaseList(uid);
+
       setSyncStatus('syncing');
-      saveUserCaseToFirestore(user.uid, newCase)
+      deleteUserCaseFromFirestore(uid, caseId)
         .then((ok) => {
           if (ok) {
             setSyncStatus('synced');
@@ -1141,33 +1414,15 @@ export default function App() {
           }
         })
         .catch(() => setSyncStatus('offline'));
+      return;
     }
 
-    return true;
-  };
-
-  const handleDeleteCase = (caseId: string) => {
-    // Optimistic local removal. The canonical Firestore listener will reconcile
-    // the final state once deleteDoc completes.
+    // Not signed in: device-only list.
     const updated = savedCases.filter(c => c.id !== caseId);
     setSavedCases(updated);
     try {
       localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
     } catch (e) {}
-
-    if (user?.uid) {
-      setSyncStatus('syncing');
-      deleteUserCaseFromFirestore(user.uid, caseId)
-        .then((ok) => {
-          if (ok) {
-            setSyncStatus('synced');
-            setLastSyncedAt(Date.now());
-          } else {
-            setSyncStatus('offline');
-          }
-        })
-        .catch(() => setSyncStatus('offline'));
-    }
   };
 
   const formatTime = (seconds: number) => {
@@ -1681,6 +1936,7 @@ export default function App() {
         handleShock={handleShock}
         handleEpi={handleEpi}
         handleRosc={handleRosc}
+        handleStopResuscitation={handleStopResuscitation}
         handleAmiodarone={handleAmiodarone}
         handleLidocaine={handleLidocaine}
         handleRhythmSelect={handleRhythmSelect}
@@ -1771,6 +2027,14 @@ export default function App() {
                         className="h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-widest transition-transform cursor-pointer border-none shadow-md flex items-center justify-center gap-1.5"
                       >
                         <Heart className="w-3.5 h-3.5 fill-current" /> Confirm ROSC (Pulse Present)
+                      </button>
+                    )}
+                    {(state.rhythmCheckCount ?? 0) >= 1 && (
+                      <button
+                        onClick={handleStopResuscitation}
+                        className="h-10 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-300 text-[9.5px] font-bold uppercase tracking-widest transition-transform cursor-pointer"
+                      >
+                        Stop Resuscitation (Time of Death)
                       </button>
                     )}
                   </div>

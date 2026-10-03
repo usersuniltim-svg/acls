@@ -24,7 +24,7 @@ export function clinicalEventToLegacyLog(event: ClinicalEvent): LogEvent {
     event.kind === 'LIDOCAINE' ? 'DRUG_LIDO' :
     event.kind === 'CODE_START' || event.kind === 'CPR_START' || event.kind === 'CPR_RESUME' || event.kind === 'RE_ARREST' ? 'CPR_START' :
     event.kind === 'PROCEDURE' ? 'ADVANCED_AIRWAY' :
-    event.kind === 'INFO' || event.kind === 'CPR_PAUSE' ? 'INFO' :
+    event.kind === 'INFO' || event.kind === 'CPR_PAUSE' || event.kind === 'CODE_END' ? 'INFO' :
     event.kind as LogEvent['type'];
   return { id: event.id, timestamp: event.timestamp, type: legacyType, description: event.description ?? event.kind };
 }

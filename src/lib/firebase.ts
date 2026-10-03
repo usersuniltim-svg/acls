@@ -102,8 +102,9 @@ export async function saveUserCaseToFirestore(userId: string, caseRecord: SavedC
   if (!userId || !caseRecord?.id) return false;
   const path = `users/${userId}/cases/${caseRecord.id}`;
   try {
+    const { syncPending: _displayOnly, ...record } = caseRecord;
     await setDoc(doc(db, 'users', userId, 'cases', caseRecord.id), {
-      ...caseRecord,
+      ...record,
       userId,
       updatedAt: Date.now(),
       storageVersion: 2,
@@ -161,13 +162,20 @@ export async function migrateLegacySavedCasesToFirestore(userId: string, legacyC
   }
 }
 
-export function subscribeToUserCases(userId: string, onData: (cases: SavedCase[]) => void, onError?: (error: any) => void): Unsubscribe {
+export function subscribeToUserCases(
+  userId: string,
+  onData: (cases: SavedCase[], meta: { fromCache: boolean }) => void,
+  onError?: (error: any) => void,
+): Unsubscribe {
   const casesRef = collection(db, 'users', userId, 'cases');
-  return onSnapshot(casesRef, (snapshot) => {
+  // includeMetadataChanges: also tell us when the server confirms the list,
+  // even if no case changed, so an offline start can be told apart from
+  // "this doctor has no cases".
+  return onSnapshot(casesRef, { includeMetadataChanges: true }, (snapshot) => {
     const cases = snapshot.docs
-      .map(snapshotDoc => snapshotDoc.data() as SavedCase)
+      .map(snapshotDoc => ({ ...(snapshotDoc.data() as SavedCase), id: snapshotDoc.id }))
       .sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
-    onData(cases);
+    onData(cases, { fromCache: snapshot.metadata.fromCache });
   }, (err) => {
     console.error('Error subscribing to user cases in Firestore:', err);
     if (onError) onError(err);

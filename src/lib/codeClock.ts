@@ -34,14 +34,15 @@ function withAlert(state: AclsState, prev: AclsState, kind: AlertKind): AclsStat
   return { ...state, alert: { seq: (prev.alert?.seq ?? 0) + 1, kind } };
 }
 
+/** A patient is in arrest right now: a code was started and has not reached ROSC or been stopped. */
 export function isCodeActive(s: AclsState): boolean {
-  return Boolean(s.codeStartedAt) && !s.roscAt;
+  return Boolean(s.codeStartedAt) && !s.roscAt && !s.terminatedAt;
 }
 
-/** Arrest time in whole seconds (stops at ROSC, excludes time spent in ROSC). */
+/** Arrest time in whole seconds (stops at ROSC or when resuscitation is stopped; excludes time spent in ROSC). */
 export function arrestSeconds(s: AclsState, now: number): number {
   if (!s.codeStartedAt) return s.totalTime;
-  const end = s.roscAt ?? now;
+  const end = s.roscAt ?? s.terminatedAt ?? now;
   return Math.max(0, Math.floor((end - s.codeStartedAt - (s.roscPausedMs ?? 0)) / 1000));
 }
 
@@ -50,6 +51,7 @@ export function clearedClockFields(): Partial<AclsState> {
   return {
     codeStartedAt: null,
     roscAt: null,
+    terminatedAt: null,
     roscPausedMs: 0,
     cprEndsAt: null,
     cprRemainingMs: CPR_MS,
@@ -66,7 +68,8 @@ export function clearedClockFields(): Partial<AclsState> {
  * Returns the same object when nothing visible changed, so React skips a render.
  */
 export function advanceClock(prev: AclsState, now: number): AclsState {
-  if (!prev.codeStartedAt) return prev;
+  // Nothing moves once resuscitation has been stopped: the record is final.
+  if (!prev.codeStartedAt || prev.terminatedAt) return prev;
   let next: AclsState = { ...prev };
 
   // 1. The 2-minute CPR cycle has run out -> rhythm check.
@@ -83,16 +86,16 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
   }
 
   // 2. Recalculate every displayed timer.
-  const arrestNow = next.roscAt ?? now;
   const totalTime = arrestSeconds(next, now);
   const cprTimeLeft =
     next.cprEndsAt != null
       ? Math.max(0, Math.ceil((next.cprEndsAt - now) / 1000))
       : Math.ceil((next.cprRemainingMs ?? CPR_MS) / 1000);
-  // Epinephrine timing advances only during arrest. ROSC time must not consume
-  // the 3-minute interval, so shift the due timestamp by accumulated ROSC time.
-  const epiDueAt = (next.epiAnchorAt ?? next.codeStartedAt!) + EPI_MS + (next.roscPausedMs ?? 0);
-  const epiTimeLeft = Math.max(0, Math.ceil((epiDueAt - arrestNow) / 1000));
+  // Epinephrine is timed on the real clock from the last dose. The drug wears
+  // off whether or not the patient is in ROSC, so time in ROSC counts: after a
+  // long ROSC, a re-arrest finds the next dose already due.
+  const epiDueAt = (next.epiAnchorAt ?? next.codeStartedAt!) + EPI_MS;
+  const epiTimeLeft = Math.max(0, Math.ceil((epiDueAt - now) / 1000));
   const rhythmCheckTimeLeft =
     next.activePrompt === 'RHYTHM_CHECK' && next.rhythmCheckStartedAt != null
       ? Math.max(0, Math.ceil((next.rhythmCheckStartedAt + RHYTHM_CHECK_MS - now) / 1000))
@@ -114,7 +117,7 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
 
   let epiDueElapsed = 0;
   if (next.activePrompt === 'EPI_DUE') {
-    epiDueElapsed = Math.max(0, Math.floor((arrestNow - epiDueAt) / 1000));
+    epiDueElapsed = Math.max(0, Math.floor((now - epiDueAt) / 1000));
     if (
       prev.activePrompt === 'EPI_DUE' &&
       Math.floor(epiDueElapsed / EPI_REALERT_SECONDS) > Math.floor((prev.epiDueElapsed ?? 0) / EPI_REALERT_SECONDS)
@@ -163,6 +166,7 @@ export function startCode(prev: AclsState, now: number): AclsState {
       cprCycleCount: 0,
       logs: [],
       clinicalEvents: [],
+      savedEventSequence: 0,
       showHsAndTs: false,
       amioCount: 0,
       lidoCount: 0,
@@ -193,7 +197,7 @@ export function startCprCycle(prev: AclsState, now: number): AclsState {
   // CPR is a child transition of an established arrest episode. Never create
   // an arrest implicitly from a CPR/shock action because that would produce
   // clinical events without a CODE_START boundary.
-  if (!prev.codeStartedAt || prev.isTimerRunning) return prev;
+  if (!prev.codeStartedAt || prev.terminatedAt || prev.isTimerRunning) return prev;
 
   const base = reArrestIfInRosc(prev, now);
   return advanceClock(
@@ -274,45 +278,43 @@ export function selectRhythm(prev: AclsState, rhythm: PatientRhythm, now: number
   );
 }
 
-/** Shock delivered: count it and start a new CPR cycle immediately. */
-export function deliverShock(prev: AclsState, now: number): AclsState {
-  // A shock must belong to an active arrest and a documented shockable rhythm.
-  // The prompt is advisory UI state; the rhythm is the durable clinical fact.
-  if (
-    !isCodeActive(prev) ||
-    prev.currentRhythm !== 'SHOCKABLE' ||
-    prev.activePrompt !== 'SHOCK_ADVISED' ||
-    prev.isTimerRunning
-  ) return prev;
+/**
+ * Shock delivered: count it and start a new CPR cycle immediately.
+ *
+ * Normally only valid right after a rhythm check showed VF/pVT. With
+ * `override` (the clinician confirmed a shock outside that sequence, see
+ * checkShock) it is still recorded: it interrupts whatever was running and
+ * starts a fresh 2-minute cycle, because that is what happened at the bedside.
+ */
+export function deliverShock(prev: AclsState, now: number, opts: ActionOptions = {}): AclsState {
+  if (!isCodeActive(prev)) return prev;
+  if (!opts.override && checkShock(prev, now).ok === false) return prev;
 
-  return startCprCycle({ ...prev, shocksCount: prev.shocksCount + 1, currentRhythm: 'SHOCKABLE' }, now);
+  return startCprCycle(
+    {
+      ...prev,
+      isTimerRunning: false,
+      cprEndsAt: null,
+      shocksCount: prev.shocksCount + 1,
+      currentRhythm: 'SHOCKABLE',
+      activePrompt: prev.activePrompt === 'EPI_DUE' ? 'EPI_DUE' : null,
+    },
+    now
+  );
 }
 
-/** Epinephrine given: the next 3-5 minute interval is timed from now. */
-export function giveEpinephrine(prev: AclsState, now: number): AclsState {
+/**
+ * Epinephrine given: the next 3-5 minute interval is timed from now.
+ * Outside the usual sequence (see checkEpinephrine) it is only recorded with
+ * `override`, i.e. after the clinician confirmed it really was given.
+ */
+export function giveEpinephrine(prev: AclsState, now: number, opts: ActionOptions = {}): AclsState {
   // Medication administration must always belong to an active arrest episode.
   if (!isCodeActive(prev)) return prev;
+  if (!opts.override && checkEpinephrine(prev, now).ok === false) return prev;
 
-  // Resolve timestamp-driven due state before validating the medication action.
+  // Resolve timestamp-driven due state before recording the dose.
   const current = advanceClock(prev, now);
-
-  // For a shockable arrest, the 2025 AHA algorithm places epinephrine after
-  // initial defibrillation attempts have failed. For a nonshockable rhythm,
-  // epinephrine is given as soon as feasible.
-  if (
-    current.currentRhythm === 'SHOCKABLE' &&
-    current.shocksCount < 2 &&
-    current.epiCount === 0
-  ) {
-    return prev;
-  }
-
-  // After the first dose, reject early duplicate taps until the 3-5 minute
-  // interval is due. The UI reminder remains the guide; this is the safety
-  // backstop against duplicate administration events.
-  if (current.epiCount > 0 && current.epiTimeLeft > 0) {
-    return prev;
-  }
 
   return advanceClock(
     {
@@ -326,25 +328,24 @@ export function giveEpinephrine(prev: AclsState, now: number): AclsState {
   );
 }
 
-export function giveAmiodarone(prev: AclsState): AclsState {
-  // Antiarrhythmics are arrest interventions for refractory shockable rhythms,
-  // not free-standing medication counters.
-  if (!isCodeActive(prev) || prev.currentRhythm !== 'SHOCKABLE' || prev.shocksCount < 3) return prev;
-  if ((prev.amioCount ?? 0) >= AMIODARONE_MAX_DOSES) return prev;
+/** Antiarrhythmics are for shock-refractory VF/pVT; outside that they need `override`. */
+export function giveAmiodarone(prev: AclsState, opts: ActionOptions = {}): AclsState {
+  if (!isCodeActive(prev)) return prev;
+  if (!opts.override && checkAntiarrhythmic(prev, 'amiodarone').ok === false) return prev;
 
   return { ...prev, amioCount: (prev.amioCount ?? 0) + 1 };
 }
 
-export function giveLidocaine(prev: AclsState): AclsState {
-  if (!isCodeActive(prev) || prev.currentRhythm !== 'SHOCKABLE' || prev.shocksCount < 3) return prev;
-  if ((prev.lidoCount ?? 0) >= LIDOCAINE_MAX_DOSES) return prev;
+export function giveLidocaine(prev: AclsState, opts: ActionOptions = {}): AclsState {
+  if (!isCodeActive(prev)) return prev;
+  if (!opts.override && checkAntiarrhythmic(prev, 'lidocaine').ok === false) return prev;
 
   return { ...prev, lidoCount: (prev.lidoCount ?? 0) + 1 };
 }
 
 /** ROSC confirmed: the arrest clock stops, CPR and drug reminders stop. */
 export function confirmRosc(prev: AclsState, now: number): AclsState {
-  if (!prev.codeStartedAt || prev.roscAt) return prev;
+  if (!prev.codeStartedAt || prev.roscAt || prev.terminatedAt) return prev;
   return advanceClock(
     {
       ...prev,
@@ -358,6 +359,30 @@ export function confirmRosc(prev: AclsState, now: number): AclsState {
     },
     now
   );
+}
+
+/**
+ * Stop resuscitation without ROSC: the code is closed and `now` is the time of
+ * death. Every timer freezes; the case can then be saved and a new code
+ * started. Only possible while the patient is in arrest.
+ */
+export function terminateResuscitation(prev: AclsState, now: number): AclsState {
+  if (!isCodeActive(prev)) return prev;
+  const current = advanceClock(prev, now);
+  return {
+    ...current,
+    terminatedAt: now,
+    totalTime: arrestSeconds(current, now),
+    isTimerRunning: false,
+    cprEndsAt: null,
+    cprRemainingMs: 0,
+    cprTimeLeft: 0,
+    activePrompt: null,
+    rhythmCheckStartedAt: null,
+    rhythmCheckTimeLeft: 0,
+    epiDueElapsed: 0,
+    alert: prev.alert ?? null, // no alarm sound at the moment of stopping
+  };
 }
 
 /** Stop the clock without starting anything (used on sign-out). Values on screen freeze. */
@@ -376,9 +401,96 @@ export function stopClock(prev: AclsState): AclsState {
 }
 
 export function amiodaroneDoseLabel(doseNumber: number): string {
-  return doseNumber <= 1 ? '300 mg' : '150 mg';
+  if (doseNumber <= 1) return '300 mg';
+  return doseNumber === 2 ? '150 mg' : 'additional dose';
 }
 
 export function lidocaineDoseLabel(doseNumber: number): string {
-  return doseNumber <= 1 ? '1-1.5 mg/kg' : '0.5-0.75 mg/kg';
+  if (doseNumber <= 1) return '1-1.5 mg/kg';
+  return doseNumber === 2 ? '0.5-0.75 mg/kg' : 'additional dose';
+}
+
+// ---------------------------------------------------------------------------
+// Sequence checks.
+//
+// The app records what the team actually did. When an action falls outside
+// the usual AHA sequence, these say why, so the screen can ask "record it
+// anyway?" instead of silently refusing. A confirmed action is recorded with
+// the reason attached (protocolNote), so the record is complete and honest.
+// ---------------------------------------------------------------------------
+
+export interface ActionOptions {
+  /** The clinician confirmed the action really happened despite the check. */
+  override?: boolean;
+}
+
+export interface ActionCheck {
+  /** True when the action fits the usual sequence. */
+  ok: boolean;
+  /** Plain-language reason it was flagged. */
+  reason?: string;
+  /** False when it cannot be recorded at all right now (e.g. no code running). */
+  canRecord: boolean;
+}
+
+const FITS: ActionCheck = { ok: true, canRecord: true };
+const flagged = (reason: string): ActionCheck => ({ ok: false, reason, canRecord: true });
+const notNow = (reason: string): ActionCheck => ({ ok: false, reason, canRecord: false });
+
+function mmss(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+}
+
+/** Why nothing can be recorded against the patient's arrest right now. */
+function noArrestReason(s: AclsState): string {
+  if (!s.codeStartedAt) return 'No code is running. Start the code first.';
+  if (s.terminatedAt) return 'Resuscitation has already been stopped for this case.';
+  return 'The patient is in ROSC. If they have re-arrested, tap "Re-Arrest: Restart CPR" first.';
+}
+
+export function checkShock(prev: AclsState, now: number): ActionCheck {
+  if (!isCodeActive(prev)) return notNow(noArrestReason(prev));
+  const s = advanceClock(prev, now);
+  if (s.activePrompt === 'SHOCK_ADVISED' && s.currentRhythm === 'SHOCKABLE' && !s.isTimerRunning) return FITS;
+  if (s.activePrompt === 'RHYTHM_CHECK') {
+    return flagged('The rhythm for this rhythm check has not been recorded yet.');
+  }
+  if (s.isTimerRunning) {
+    return flagged(`A CPR cycle is running (${mmss(s.cprTimeLeft)} left). Shocks are usually given right after a rhythm check shows VF/pVT.`);
+  }
+  if (s.currentRhythm !== 'SHOCKABLE') {
+    return flagged('No shockable rhythm (VF/pVT) is recorded at the last rhythm check.');
+  }
+  return flagged('No rhythm check is in progress. Shocks are usually given right after a rhythm check shows VF/pVT.');
+}
+
+export function checkEpinephrine(prev: AclsState, now: number): ActionCheck {
+  if (!isCodeActive(prev)) return notNow(noArrestReason(prev));
+  const s = advanceClock(prev, now);
+  if (s.currentRhythm === 'SHOCKABLE' && s.shocksCount < 2 && s.epiCount === 0) {
+    return flagged(`In VF/pVT, AHA gives the first epinephrine after the 2nd shock (shocks so far: ${s.shocksCount}).`);
+  }
+  if (s.epiCount > 0 && s.epiTimeLeft > 0) {
+    const sinceLast = (now - (s.epiAnchorAt ?? now)) / 1000;
+    return flagged(`The last epinephrine dose was ${mmss(sinceLast)} ago. AHA interval is every 3-5 minutes (next due in ${mmss(s.epiTimeLeft)}).`);
+  }
+  return FITS;
+}
+
+export function checkAntiarrhythmic(prev: AclsState, drug: 'amiodarone' | 'lidocaine'): ActionCheck {
+  if (!isCodeActive(prev)) return notNow(noArrestReason(prev));
+  const name = drug === 'amiodarone' ? 'Amiodarone' : 'Lidocaine';
+  const given = (drug === 'amiodarone' ? prev.amioCount : prev.lidoCount) ?? 0;
+  const max = drug === 'amiodarone' ? AMIODARONE_MAX_DOSES : LIDOCAINE_MAX_DOSES;
+  if (given >= max) {
+    return flagged(`${name} has already been given ${given} times. The AHA cardiac-arrest algorithm uses at most ${max} doses.`);
+  }
+  if (prev.currentRhythm !== 'SHOCKABLE') {
+    return flagged(`${name} is for VF/pVT that persists after shocks, and the current rhythm is not recorded as shockable.`);
+  }
+  if (prev.shocksCount < 3) {
+    return flagged(`AHA gives the first antiarrhythmic dose after the 3rd shock (shocks so far: ${prev.shocksCount}).`);
+  }
+  return FITS;
 }
