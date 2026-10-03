@@ -728,76 +728,202 @@ export default function App() {
     });
   };
 
-  const formatClock = (seconds: number) => `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
+  /**
+   * Apply a clinical transition and append its audit event in the same
+   * functional state update. This prevents rapid/double taps from creating
+   * an event for an action that the state machine rejected.
+   */
+  const applyClinicalAction = (
+    type: EventType,
+    kind: ClinicalEventKind,
+    transition: (prev: AclsState, now: number) => AclsState,
+    description: (prev: AclsState, next: AclsState) => string,
+    payload: (prev: AclsState, next: AclsState, now: number) => Record<string, unknown>,
+    now = Date.now(),
+  ) => {
+    setState(prev => {
+      const next = transition(prev, now);
+      if (next === prev) return prev;
 
-  const logReArrestIfNeeded = () => {
-    if (state.roscAt) {
-      addLog('CPR_START', `Re-arrest after ROSC - CPR restarted (arrest time so far ${formatClock(arrestSeconds(state, state.roscAt))})`, { kind: 'RE_ARREST', payload: { priorArrestSeconds: arrestSeconds(state, state.roscAt), cprCycleNumber: state.cprCycleCount + 1 } });
-    }
+      const timestamp = now;
+      const logDescription = description(prev, next);
+      const newLog: LogEvent = {
+        id: Math.random().toString(36).substring(2, 11),
+        timestamp,
+        type,
+        description: logDescription,
+      };
+      const sequence = prev.clinicalEvents.length > 0
+        ? Math.max(...prev.clinicalEvents.map(event => event.sequence)) + 1
+        : 1;
+      const event = createClinicalEvent({
+        kind,
+        timestamp,
+        source: 'user',
+        actorId: user?.uid,
+        actorName: effectiveProfile.fullName,
+        payload: payload(prev, next, now),
+        description: logDescription,
+      }, sequence);
+
+      return {
+        ...next,
+        logs: [newLog, ...prev.logs],
+        clinicalEvents: [...prev.clinicalEvents, event],
+      };
+    });
   };
+
+  const formatClock = (seconds: number) => `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
 
   const toggleTimer = () => {
     vibrateDevice(40);
     const now = Date.now();
+
     if (state.isTimerRunning) {
-      addLog('INFO', `Compressions paused - CPR cycle held at ${formatClock(state.cprTimeLeft)}`, { kind: 'CPR_PAUSE', payload: { cprCycle: state.cprCycleCount, remainingSeconds: state.cprTimeLeft } });
-      setState(prev => pauseCpr(prev, now));
+      applyClinicalAction(
+        'INFO',
+        'CPR_PAUSE',
+        (prev, at) => pauseCpr(prev, at),
+        (prev) => `Compressions paused - CPR cycle held at ${formatClock(prev.cprTimeLeft)}`,
+        (prev) => ({ cprCycle: prev.cprCycleCount, remainingSeconds: prev.cprTimeLeft }),
+        now,
+      );
       return;
     }
-    if (state.roscAt) {
-      logReArrestIfNeeded();
+
+    if (!state.codeStartedAt) {
       MedicalAudio.playAlert();
-    } else if (!state.codeStartedAt) {
-      addLog('CPR_START', 'Resuscitation started', { kind: 'CODE_START', payload: { reason: 'user_started_resuscitation' } });
-      MedicalAudio.playAlert();
-    } else {
-      addLog('INFO', 'Compressions resumed', { kind: 'CPR_RESUME', payload: { cprCycle: state.cprCycleCount } });
+      applyClinicalAction(
+        'CPR_START',
+        'CODE_START',
+        (prev, at) => startCode(prev, at),
+        () => 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.',
+        () => ({ reason: 'user_started_resuscitation', initialRhythmAssessment: true }),
+        now,
+      );
+      return;
     }
-    setState(prev => resumeCpr(prev, now));
+
+    if (state.roscAt) {
+      MedicalAudio.playAlert();
+      applyClinicalAction(
+        'CPR_START',
+        'RE_ARREST',
+        (prev, at) => resumeCpr(prev, at),
+        (prev) => `Re-arrest after ROSC - CPR restarted (arrest time so far ${formatClock(arrestSeconds(prev, prev.roscAt ?? at))})`,
+        (prev, next) => ({
+          priorArrestSeconds: arrestSeconds(prev, prev.roscAt ?? now),
+          cprCycleNumber: next.cprCycleCount,
+        }),
+        now,
+      );
+      return;
+    }
+
+    applyClinicalAction(
+      'INFO',
+      'CPR_RESUME',
+      (prev, at) => resumeCpr(prev, at),
+      () => 'Compressions resumed',
+      (prev) => ({ cprCycle: prev.cprCycleCount }),
+      now,
+    );
   };
 
   const resetCprTimer = () => {
     vibrateDevice(75);
-    logReArrestIfNeeded();
-    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`, { kind: 'CPR_START', payload: { cycleNumber: state.cprCycleCount + 1 } });
-    setState(prev => startCprCycle(prev, Date.now()));
+    const now = Date.now();
+    applyClinicalAction(
+      'CPR_START',
+      'CPR_START',
+      (prev, at) => startCprCycle(prev, at),
+      (prev, next) => `CPR Cycle #${next.cprCycleCount} started`,
+      (prev, next) => ({ cycleNumber: next.cprCycleCount }),
+      now,
+    );
   };
 
   const handleBeginCpr = () => {
     vibrateDevice(75);
-    addLog('CPR_START', `CPR Cycle #${state.cprCycleCount + 1} started`, { kind: 'CPR_START', payload: { cycleNumber: state.cprCycleCount + 1 } });
-    setState(prev => startCprCycle(prev, Date.now()));
+    const now = Date.now();
+    applyClinicalAction(
+      'CPR_START',
+      'CPR_START',
+      (prev, at) => startCprCycle(prev, at),
+      (prev, next) => `CPR Cycle #${next.cprCycleCount} started`,
+      (prev, next) => ({ cycleNumber: next.cprCycleCount }),
+      now,
+    );
   };
 
   const handleShock = () => {
     vibrateDevice([300, 100, 300, 100, 450]);
     MedicalAudio.playUrgent();
-    logReArrestIfNeeded();
-    addLog('SHOCK', `Defibrillation administered: ${state.selectedEnergy}J (Shock #${state.shocksCount + 1}) - Resuming CPR Cycle immediately`, { kind: 'SHOCK', payload: { energyJ: state.selectedEnergy, defibType: state.defibType, shockNumber: state.shocksCount + 1, cprCycleNumber: state.cprCycleCount + 1 } });
-    setState(prev => deliverShock(prev, Date.now()));
+    const now = Date.now();
+    applyClinicalAction(
+      'SHOCK',
+      'SHOCK',
+      (prev, at) => deliverShock(prev, at),
+      (prev, next) => `Defibrillation administered: ${prev.selectedEnergy}J (Shock #${next.shocksCount}) - Resuming CPR Cycle immediately`,
+      (prev, next) => ({
+        energyJ: prev.selectedEnergy,
+        defibType: prev.defibType,
+        shockNumber: next.shocksCount,
+        cprCycleNumber: next.cprCycleCount,
+      }),
+      now,
+    );
   };
 
   const handleEpi = () => {
     vibrateDevice([150, 80, 150]);
     MedicalAudio.playAlert();
-    addLog('DRUG_EPI', `Administered 1mg Epinephrine IV/IO (Total Dose Count: #${state.epiCount + 1}) - 3m countdown running`, { kind: 'EPINEPHRINE', payload: { doseMg: 1, route: 'IV/IO', doseNumber: state.epiCount + 1 } });
-    setState(prev => giveEpinephrine(prev, Date.now()));
+    const now = Date.now();
+    applyClinicalAction(
+      'DRUG_EPI',
+      'EPINEPHRINE',
+      (prev, at) => giveEpinephrine(prev, at),
+      (prev, next) => `Administered 1mg Epinephrine IV/IO (Total Dose Count: #${next.epiCount}) - 3-5m countdown running`,
+      (prev, next) => ({ doseMg: 1, route: 'IV/IO', doseNumber: next.epiCount }),
+      now,
+    );
   };
 
   const handleAmiodarone = () => {
-    const dose = (state.amioCount ?? 0) + 1;
-    if (dose > AMIODARONE_MAX_DOSES) return;
     vibrateDevice([150, 80, 150]);
-    addLog('DRUG_AMIO', `Amiodarone ${amiodaroneDoseLabel(dose)} IV/IO (dose ${dose} of ${AMIODARONE_MAX_DOSES})`, { kind: 'AMIODARONE', payload: { doseLabel: amiodaroneDoseLabel(dose), route: 'IV/IO', doseNumber: dose, maxDoses: AMIODARONE_MAX_DOSES } });
-    setState(prev => giveAmiodarone(prev));
+    const now = Date.now();
+    applyClinicalAction(
+      'DRUG_AMIO',
+      'AMIODARONE',
+      (prev) => giveAmiodarone(prev),
+      (prev, next) => `Amiodarone ${amiodaroneDoseLabel(next.amioCount ?? 0)} IV/IO (dose ${next.amioCount} of ${AMIODARONE_MAX_DOSES})`,
+      (prev, next) => ({
+        doseLabel: amiodaroneDoseLabel(next.amioCount ?? 0),
+        route: 'IV/IO',
+        doseNumber: next.amioCount ?? 0,
+        maxDoses: AMIODARONE_MAX_DOSES,
+      }),
+      now,
+    );
   };
 
   const handleLidocaine = () => {
-    const dose = (state.lidoCount ?? 0) + 1;
-    if (dose > LIDOCAINE_MAX_DOSES) return;
     vibrateDevice([150, 80, 150]);
-    addLog('DRUG_LIDO', `Lidocaine ${lidocaineDoseLabel(dose)} IV/IO (dose ${dose}; max total 3 mg/kg)`, { kind: 'LIDOCAINE', payload: { doseLabel: lidocaineDoseLabel(dose), route: 'IV/IO', doseNumber: dose, maxDoses: LIDOCAINE_MAX_DOSES } });
-    setState(prev => giveLidocaine(prev));
+    const now = Date.now();
+    applyClinicalAction(
+      'DRUG_LIDO',
+      'LIDOCAINE',
+      (prev) => giveLidocaine(prev),
+      (prev, next) => `Lidocaine ${lidocaineDoseLabel(next.lidoCount ?? 0)} IV/IO (dose ${next.lidoCount}; max total 3 mg/kg)`,
+      (prev, next) => ({
+        doseLabel: lidocaineDoseLabel(next.lidoCount ?? 0),
+        route: 'IV/IO',
+        doseNumber: next.lidoCount ?? 0,
+        maxDoses: LIDOCAINE_MAX_DOSES,
+      }),
+      now,
+    );
   };
 
   const handleRhythmSelect = (rhythm: PatientRhythm) => {
@@ -805,28 +931,105 @@ export default function App() {
     if (rhythm === 'NON_SHOCKABLE') {
       MedicalAudio.playAlert();
     }
-    const checkNumber = (state.rhythmCheckCount ?? 0) + 1;
-    const label = rhythm === 'SHOCKABLE' ? 'VF / pulseless VT (shockable)' : rhythm === 'NON_SHOCKABLE' ? 'Asystole / PEA (non-shockable)' : rhythm;
-    addLog('RHYTHM_CHECK', `Rhythm check #${checkNumber}: ${label}`, { kind: 'RHYTHM_CHECK', payload: { checkNumber, rhythm, startedAt: state.rhythmCheckStartedAt ?? Date.now() } });
-    setState(prev => selectRhythm(prev, rhythm, Date.now()));
+    const now = Date.now();
+    applyClinicalAction(
+      'RHYTHM_CHECK',
+      'RHYTHM_CHECK',
+      (prev, at) => selectRhythm(prev, rhythm, at),
+      (prev, next) => {
+        const label = rhythm === 'SHOCKABLE'
+          ? 'VF / pulseless VT (shockable)'
+          : rhythm === 'NON_SHOCKABLE'
+            ? 'Asystole / PEA (non-shockable)'
+            : rhythm;
+        return `Rhythm check #${next.rhythmCheckCount}: ${label}`;
+      },
+      (prev, next) => ({
+        checkNumber: next.rhythmCheckCount ?? 0,
+        rhythm,
+        startedAt: prev.rhythmCheckStartedAt ?? now,
+      }),
+      now,
+    );
   };
 
   const handleRosc = () => {
-    if (!state.codeStartedAt || state.roscAt) return;
     vibrateDevice([60, 60, 60, 60, 400]);
     const now = Date.now();
-    addLog('ROSC', `ROSC achieved after ${formatClock(arrestSeconds(state, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`, { kind: 'ROSC', payload: { arrestDurationSeconds: arrestSeconds(state, now) } });
-    setState(prev => confirmRosc(prev, now));
+    applyClinicalAction(
+      'ROSC',
+      'ROSC',
+      (prev, at) => confirmRosc(prev, at),
+      (prev, next) => `ROSC achieved after ${formatClock(arrestSeconds(prev, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`,
+      (prev) => ({ arrestDurationSeconds: arrestSeconds(prev, now) }),
+      now,
+    );
   };
 
   const handleRoscAtRhythmCheck = () => {
-    if (!state.codeStartedAt || state.roscAt) return;
     vibrateDevice([60, 60, 60, 60, 400]);
     const now = Date.now();
-    const checkNumber = (state.rhythmCheckCount ?? 0) + 1;
-    addLog('RHYTHM_CHECK', `Rhythm check #${checkNumber}: organized rhythm with pulse`, { kind: 'RHYTHM_CHECK', payload: { checkNumber, rhythm: 'ORGANIZED_WITH_PULSE', startedAt: state.rhythmCheckStartedAt ?? Date.now() } });
-    addLog('ROSC', `ROSC confirmed at rhythm check #${checkNumber} after ${formatClock(arrestSeconds(state, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`, { kind: 'ROSC', payload: { arrestDurationSeconds: arrestSeconds(state, now), rhythmCheckNumber: checkNumber } });
-    setState(prev => confirmRosc({ ...prev, rhythmCheckCount: (prev.rhythmCheckCount ?? 0) + 1 }, now));
+    // The rhythm-check event and ROSC transition are committed atomically so
+    // a second tap cannot create a duplicate rhythm/ROSC pair.
+    setState(prev => {
+      if (!prev.codeStartedAt || prev.roscAt || prev.activePrompt !== 'RHYTHM_CHECK') return prev;
+      const next = confirmRosc(
+        { ...prev, rhythmCheckCount: (prev.rhythmCheckCount ?? 0) + 1 },
+        now,
+      );
+      if (next === prev) return prev;
+
+      const checkNumber = (prev.rhythmCheckCount ?? 0) + 1;
+      const rhythmStartedAt = prev.rhythmCheckStartedAt ?? now;
+      const sequenceBase = prev.clinicalEvents.length > 0
+        ? Math.max(...prev.clinicalEvents.map(event => event.sequence))
+        : 0;
+      const rhythmDescription = `Rhythm check #${checkNumber}: organized rhythm with pulse`;
+      const roscDescription = `ROSC confirmed at rhythm check #${checkNumber} after ${formatClock(arrestSeconds(prev, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`;
+      const rhythmLog: LogEvent = {
+        id: Math.random().toString(36).substring(2, 11),
+        timestamp: now,
+        type: 'RHYTHM_CHECK',
+        description: rhythmDescription,
+      };
+      const roscLog: LogEvent = {
+        id: Math.random().toString(36).substring(2, 11),
+        timestamp: now,
+        type: 'ROSC',
+        description: roscDescription,
+      };
+      const rhythmEvent = createClinicalEvent({
+        kind: 'RHYTHM_CHECK',
+        timestamp: now,
+        source: 'user',
+        actorId: user?.uid,
+        actorName: effectiveProfile.fullName,
+        payload: {
+          checkNumber,
+          rhythm: 'ORGANIZED_WITH_PULSE',
+          startedAt: rhythmStartedAt,
+        },
+        description: rhythmDescription,
+      }, sequenceBase + 1);
+      const roscEvent = createClinicalEvent({
+        kind: 'ROSC',
+        timestamp: now,
+        source: 'user',
+        actorId: user?.uid,
+        actorName: effectiveProfile.fullName,
+        payload: {
+          arrestDurationSeconds: arrestSeconds(prev, now),
+          rhythmCheckNumber: checkNumber,
+        },
+        description: roscDescription,
+      }, sequenceBase + 2);
+
+      return {
+        ...next,
+        logs: [roscLog, rhythmLog, ...prev.logs],
+        clinicalEvents: [...prev.clinicalEvents, rhythmEvent, roscEvent],
+      };
+    });
   };
 
   const handleStartCPR = () => {
@@ -837,8 +1040,15 @@ export default function App() {
       setHasSessionStarted(true);
       return;
     }
-    addLog('CPR_START', 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.', { kind: 'CODE_START', payload: { reason: 'user_started_resuscitation', initialRhythmAssessment: true } });
-    setState(prev => startCode(prev, Date.now()));
+    const now = Date.now();
+    applyClinicalAction(
+      'CPR_START',
+      'CODE_START',
+      (prev, at) => startCode(prev, at),
+      () => 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.',
+      () => ({ reason: 'user_started_resuscitation', initialRhythmAssessment: true }),
+      now,
+    );
     setHasSessionStarted(true);
   };
 
