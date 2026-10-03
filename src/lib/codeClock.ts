@@ -205,8 +205,22 @@ export function startCprCycle(prev: AclsState, now: number): AclsState {
 /** "Pause Code": hold the CPR cycle where it is. Arrest time and the epinephrine interval keep running. */
 export function pauseCpr(prev: AclsState, now: number): AclsState {
   if (!prev.isTimerRunning) return prev;
-  const remaining = prev.cprEndsAt != null ? Math.max(0, prev.cprEndsAt - now) : prev.cprRemainingMs ?? CPR_MS;
-  return advanceClock({ ...prev, isTimerRunning: false, cprEndsAt: null, cprRemainingMs: remaining }, now);
+
+  // Resolve timestamp boundaries before freezing the CPR cycle. If the UI
+  // action lands exactly when the cycle expires, the required rhythm-check
+  // transition must win over the pause action.
+  const current = advanceClock(prev, now);
+  if (!current.isTimerRunning) return current;
+
+  const remaining =
+    current.cprEndsAt != null
+      ? Math.max(0, current.cprEndsAt - now)
+      : current.cprRemainingMs ?? CPR_MS;
+
+  return advanceClock(
+    { ...current, isTimerRunning: false, cprEndsAt: null, cprRemainingMs: remaining },
+    now
+  );
 }
 
 /** "Resume Code": continue the held CPR cycle (or restart CPR after a re-arrest). */
