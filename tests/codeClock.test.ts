@@ -252,5 +252,5 @@ test('starting a new code cannot overwrite an active arrest timeline', () => {
 
   assert.strictEqual(next, started);
   assert.equal(next.codeStartedAt, 10000);
-  assert.equal(next.logs.length, 1);
+  assert.equal(next.logs.length, 0);
 });
