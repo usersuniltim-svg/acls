@@ -151,8 +151,8 @@ test('pause action at the exact CPR deadline cannot freeze an expired cycle', ()
 
 
 test('CPR cannot implicitly create an arrest episode', () => {
-  const idle = baseState();
-  const next = startCprCycle({ ...idle, codeStartedAt: null, roscAt: null }, 50000);
+  const idle = { ...baseState(), codeStartedAt: null, roscAt: null };
+  const next = startCprCycle(idle, 50000);
 
   assert.strictEqual(next, idle);
 });
