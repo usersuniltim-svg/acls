@@ -244,3 +244,13 @@ test('shockable epinephrine is not available before two initial shocks', () => {
 
   assert.equal(epi.epiCount, 1);
 });
+
+
+test('starting a new code cannot overwrite an active arrest timeline', () => {
+  const started = startCode(baseState(), 10000);
+  const next = startCode(started, 20000);
+
+  assert.strictEqual(next, started);
+  assert.equal(next.codeStartedAt, 10000);
+  assert.equal(next.logs.length, 1);
+});
