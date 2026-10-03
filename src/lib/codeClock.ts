@@ -295,14 +295,14 @@ export function giveEpinephrine(prev: AclsState, now: number): AclsState {
     current.shocksCount < 2 &&
     current.epiCount === 0
   ) {
-    return current;
+    return prev;
   }
 
   // After the first dose, reject early duplicate taps until the 3-5 minute
   // interval is due. The UI reminder remains the guide; this is the safety
   // backstop against duplicate administration events.
   if (current.epiCount > 0 && current.epiTimeLeft > 0) {
-    return current;
+    return prev;
   }
 
   return advanceClock(
