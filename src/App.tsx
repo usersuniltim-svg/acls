@@ -1056,9 +1056,38 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
+    // A clinical record must not disappear because authentication ended.
+    // Require the active case to be saved before signing out.
+    if (state.codeStartedAt && !state.roscAt) {
+      alert("An active resuscitation is in progress. Confirm ROSC and save the case before signing out.");
+      return;
+    }
+    if (state.clinicalEvents.length > 0) {
+      alert("This session contains an unsaved clinical record. Save the case before signing out.");
+      return;
+    }
+
     try {
       MedicalAudio.stopAll();
-      setState(prev => stopClock(prev));
+      setState(prev => ({
+        ...prev,
+        ...clearedClockFields(),
+        isTimerRunning: false,
+        cprTimeLeft: CPR_CYCLE_DURATION,
+        epiTimeLeft: EPI_INTERVAL,
+        totalTime: 0,
+        shocksCount: 0,
+        epiCount: 0,
+        currentRhythm: 'UNKNOWN',
+        cprCycleCount: 0,
+        logs: [],
+        clinicalEvents: [],
+        activePrompt: null,
+        rhythmCheckTimeLeft: 0,
+        amioCount: 0,
+        lidoCount: 0,
+        alert: null,
+      }));
       setHasSessionStarted(false);
       try {
         localStorage.removeItem('acls_user_profile');
