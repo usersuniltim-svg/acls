@@ -186,7 +186,12 @@ function reArrestIfInRosc(prev: AclsState, now: number): AclsState {
 
 /** Begin a fresh 2-minute CPR cycle (after a shock, "Begin CPR", or "next cycle"). */
 export function startCprCycle(prev: AclsState, now: number): AclsState {
-  const base = prev.codeStartedAt ? reArrestIfInRosc(prev, now) : { ...prev, codeStartedAt: now, epiAnchorAt: now };
+  // CPR is a child transition of an established arrest episode. Never create
+  // an arrest implicitly from a CPR/shock action because that would produce
+  // clinical events without a CODE_START boundary.
+  if (!prev.codeStartedAt) return prev;
+
+  const base = reArrestIfInRosc(prev, now);
   return advanceClock(
     {
       ...base,
@@ -244,6 +249,10 @@ export function resumeCpr(prev: AclsState, now: number): AclsState {
 
 /** Rhythm chosen at a rhythm check. Compressions stay on hold until the shock / "Begin CPR". */
 export function selectRhythm(prev: AclsState, rhythm: PatientRhythm, now: number): AclsState {
+  // A rhythm selection is valid only during the explicit rhythm-check pause.
+  // Reject stale/double taps and background UI actions after the check is closed.
+  if (!isCodeActive(prev) || prev.activePrompt !== 'RHYTHM_CHECK') return prev;
+
   const nextPrompt = rhythm === 'SHOCKABLE' ? 'SHOCK_ADVISED' : rhythm === 'NON_SHOCKABLE' ? 'EPI_ADVISED' : null;
   return advanceClock(
     {
@@ -263,11 +272,18 @@ export function selectRhythm(prev: AclsState, rhythm: PatientRhythm, now: number
 
 /** Shock delivered: count it and start a new CPR cycle immediately. */
 export function deliverShock(prev: AclsState, now: number): AclsState {
+  // A shock must belong to an active arrest and a documented shockable rhythm.
+  // The prompt is advisory UI state; the rhythm is the durable clinical fact.
+  if (!isCodeActive(prev) || prev.currentRhythm !== 'SHOCKABLE') return prev;
+
   return startCprCycle({ ...prev, shocksCount: prev.shocksCount + 1, currentRhythm: 'SHOCKABLE' }, now);
 }
 
 /** Epinephrine given: the next 3-5 minute interval is timed from now. */
 export function giveEpinephrine(prev: AclsState, now: number): AclsState {
+  // Medication administration must always belong to an active arrest episode.
+  if (!isCodeActive(prev)) return prev;
+
   return advanceClock(
     {
       ...prev,
@@ -281,11 +297,19 @@ export function giveEpinephrine(prev: AclsState, now: number): AclsState {
 }
 
 export function giveAmiodarone(prev: AclsState): AclsState {
-  return { ...prev, amioCount: Math.min(AMIODARONE_MAX_DOSES, (prev.amioCount ?? 0) + 1) };
+  // Antiarrhythmics are arrest interventions for refractory shockable rhythms,
+  // not free-standing medication counters.
+  if (!isCodeActive(prev) || prev.currentRhythm !== 'SHOCKABLE' || prev.shocksCount < 3) return prev;
+  if ((prev.amioCount ?? 0) >= AMIODARONE_MAX_DOSES) return prev;
+
+  return { ...prev, amioCount: (prev.amioCount ?? 0) + 1 };
 }
 
 export function giveLidocaine(prev: AclsState): AclsState {
-  return { ...prev, lidoCount: Math.min(LIDOCAINE_MAX_DOSES, (prev.lidoCount ?? 0) + 1) };
+  if (!isCodeActive(prev) || prev.currentRhythm !== 'SHOCKABLE' || prev.shocksCount < 3) return prev;
+  if ((prev.lidoCount ?? 0) >= LIDOCAINE_MAX_DOSES) return prev;
+
+  return { ...prev, lidoCount: (prev.lidoCount ?? 0) + 1 };
 }
 
 /** ROSC confirmed: the arrest clock stops, CPR and drug reminders stop. */
@@ -308,6 +332,8 @@ export function confirmRosc(prev: AclsState, now: number): AclsState {
 
 /** Stop the clock without starting anything (used on sign-out). Values on screen freeze. */
 export function stopClock(prev: AclsState): AclsState {
+  // Session termination is intentionally not a clinical transition. It clears
+  // live timing only; the saved event history remains untouched.
   return {
     ...prev,
     codeStartedAt: null,
