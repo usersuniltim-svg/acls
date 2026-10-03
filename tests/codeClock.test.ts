@@ -254,3 +254,22 @@ test('starting a new code cannot overwrite an active arrest timeline', () => {
   assert.equal(next.codeStartedAt, 10000);
   assert.equal(next.logs.length, 0);
 });
+
+
+test('lidocaine cannot be administered beyond the second AHA-specified dose', () => {
+  let state = selectRhythm(
+    startCode(baseState(), 10000),
+    'SHOCKABLE',
+    10001
+  );
+  state = deliverShock(state, 20000);
+  state = selectRhythm(advanceClock(state, 140000), 'SHOCKABLE', 140001);
+  state = deliverShock(state, 140002);
+  state = selectRhythm(advanceClock(state, 260002), 'SHOCKABLE', 260003);
+  state = deliverShock(state, 260004);
+
+  state = giveLidocaine(state);
+  state = giveLidocaine(state);
+  assert.equal(state.lidoCount, 2);
+  assert.strictEqual(giveLidocaine(state), state);
+});
