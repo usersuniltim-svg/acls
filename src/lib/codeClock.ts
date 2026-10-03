@@ -144,6 +144,10 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
 
 /** Start a new code: arrest clock starts, first rhythm check begins. */
 export function startCode(prev: AclsState, now: number): AclsState {
+  // Starting a new case while an arrest is active would erase the live
+  // clinical timeline. Require the current arrest to be closed first.
+  if (isCodeActive(prev)) return prev;
+
   return advanceClock(
     {
       ...prev,
