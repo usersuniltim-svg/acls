@@ -66,7 +66,7 @@ test('startCode creates a clean case boundary while preserving device preference
 });
 
 test('shock starts the next CPR cycle and increments the state cycle count once', () => {
-  const started = startCode(baseState(), 10000);
+  const started = selectRhythm(startCode(baseState(), 10000), 'SHOCKABLE', 10001);
   const shock = deliverShock({ ...started, cprCycleCount: 1 }, 20000);
 
   assert.equal(shock.shocksCount, 1);
@@ -188,20 +188,20 @@ test('medication actions cannot create or continue a non-existent arrest', () =>
 });
 
 test('antiarrhythmics are gated until a shockable rhythm has received three shocks', () => {
-  let state = startCprCycle(startCode(baseState(), 10000), 11000);
-  state = selectRhythm(
+  let state = selectRhythm(
     startCode(baseState(), 10000),
     'SHOCKABLE',
     10001
   );
-  state = startCprCycle(state, 10002);
 
   assert.strictEqual(giveAmiodarone(state), state);
   assert.strictEqual(giveLidocaine(state), state);
 
   state = deliverShock(state, 20000);
-  state = deliverShock(state, 140000);
-  state = deliverShock(state, 260000);
+  state = selectRhythm(advanceClock(state, 140000), 'SHOCKABLE', 140001);
+  state = deliverShock(state, 140002);
+  state = selectRhythm(advanceClock(state, 260002), 'SHOCKABLE', 260003);
+  state = deliverShock(state, 260004);
 
   const amio = giveAmiodarone(state);
   const lido = giveLidocaine(state);
@@ -234,11 +234,13 @@ test('shockable epinephrine is not available before two initial shocks', () => {
 
   assert.strictEqual(giveEpinephrine(state, 20000), state);
 
-  state = deliverShock(state, 30000);
-  assert.strictEqual(giveEpinephrine(state, 40000), state);
+  state = selectRhythm(advanceClock(state, 130002), 'SHOCKABLE', 130003);
+  state = deliverShock(state, 130004);
+  assert.strictEqual(giveEpinephrine(state, 140000), state);
 
-  state = deliverShock(state, 150000);
-  const epi = giveEpinephrine(state, 151000);
+  state = selectRhythm(advanceClock(state, 250004), 'SHOCKABLE', 250005);
+  state = deliverShock(state, 250006);
+  const epi = giveEpinephrine(state, 250007);
 
   assert.equal(epi.epiCount, 1);
 });
