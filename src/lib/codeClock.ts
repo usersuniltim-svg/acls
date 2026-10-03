@@ -284,13 +284,34 @@ export function giveEpinephrine(prev: AclsState, now: number): AclsState {
   // Medication administration must always belong to an active arrest episode.
   if (!isCodeActive(prev)) return prev;
 
+  // Resolve timestamp-driven due state before validating the medication action.
+  const current = advanceClock(prev, now);
+
+  // For a shockable arrest, the 2025 AHA algorithm places epinephrine after
+  // initial defibrillation attempts have failed. For a nonshockable rhythm,
+  // epinephrine is given as soon as feasible.
+  if (
+    current.currentRhythm === 'SHOCKABLE' &&
+    current.shocksCount < 2 &&
+    current.epiCount === 0
+  ) {
+    return current;
+  }
+
+  // After the first dose, reject early duplicate taps until the 3-5 minute
+  // interval is due. The UI reminder remains the guide; this is the safety
+  // backstop against duplicate administration events.
+  if (current.epiCount > 0 && current.epiTimeLeft > 0) {
+    return current;
+  }
+
   return advanceClock(
     {
-      ...prev,
-      epiCount: prev.epiCount + 1,
+      ...current,
+      epiCount: current.epiCount + 1,
       epiAnchorAt: now,
       epiDueElapsed: 0,
-      activePrompt: prev.activePrompt === 'EPI_DUE' ? null : prev.activePrompt,
+      activePrompt: current.activePrompt === 'EPI_DUE' ? null : current.activePrompt,
     },
     now
   );
