@@ -74,6 +74,9 @@ export interface SavedCase {
   updatedAt?: number;
   recordVersion?: number;
   caseStorageVersion?: number;
+
+  /** Display only, never stored in Firestore: saved on this device, not uploaded yet. */
+  syncPending?: boolean;
 }
 
 export interface GroundingChunk {

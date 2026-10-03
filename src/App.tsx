@@ -61,9 +61,21 @@ import {
 import { 
   auth, 
   db, 
-  testFirestoreConnection, 
-  syncUserProfileToFirestore, 
+  testFirestoreConnection,
+  syncUserProfileToFirestore,
+  subscribeToUserCases,
+  saveUserCaseToFirestore,
+  deleteUserCaseFromFirestore,
 } from './lib/firebase';
+import {
+  ServerView,
+  addPendingCase,
+  applyServerSnapshot,
+  isPending,
+  mergeCaseLists,
+  readPendingCases,
+  removePendingCase,
+} from './lib/caseStore';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import MobileDashboard from './components/MobileDashboard';
@@ -153,7 +165,11 @@ export default function App() {
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const hasAutoPromptedKycRef = useRef<boolean>(false);
 
-  // Saved Cases State (Max 3 Cases)
+  // Saved cases shown to the doctor: what the server has, plus cases saved on
+  // this device that have not uploaded yet (see src/lib/caseStore.ts).
+  const serverViewRef = useRef<ServerView>({ cases: [], confirmed: false });
+  const flushRef = useRef<{ uid: string; promise: Promise<boolean> } | null>(null);
+  const legacyMigrationRef = useRef<{ uid: string; ids: string[]; done: boolean } | null>(null);
   const [savedCases, setSavedCases] = useState<SavedCase[]>(() => {
     try {
       const raw = localStorage.getItem('acls_saved_cases');
@@ -168,6 +184,87 @@ export default function App() {
   // Cloud Database Sync Status ('synced' | 'syncing' | 'offline')
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline'>('synced');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(Date.now());
+
+  /** Rebuild the visible list from the server view and the upload queue. */
+  const refreshCaseList = (uid: string): number => {
+    const pending = readPendingCases(uid);
+    const pendingIds = new Set(pending.map(c => c.id));
+    const merged = mergeCaseLists(serverViewRef.current.cases, pending)
+      .map(c => (pendingIds.has(c.id) ? { ...c, syncPending: true } : c));
+    setSavedCases(merged);
+    try {
+      localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
+    } catch (e) {}
+    return pending.length;
+  };
+
+  /** Once every old profile-array case has uploaded, mark the move as done. */
+  const finishLegacyMigrationIfUploaded = (uid: string) => {
+    const migration = legacyMigrationRef.current;
+    if (!migration || migration.uid !== uid || migration.done) return;
+    if (migration.ids.some(id => isPending(uid, id))) return;
+    migration.done = true;
+    setDoc(doc(db, 'profiles', uid), { caseStorageVersion: 2 }, { merge: true })
+      .catch(() => { migration.done = false; });
+  };
+
+  /**
+   * Upload one case. It leaves the queue only after Firestore confirms it.
+   * While offline this waits (Firestore sends it when the connection returns).
+   */
+  const uploadCase = async (uid: string, caseRecord: SavedCase): Promise<boolean> => {
+    const ok = await saveUserCaseToFirestore(uid, caseRecord);
+    if (ok) {
+      const stillWanted = isPending(uid, caseRecord.id); // false if deleted meanwhile
+      removePendingCase(uid, caseRecord.id);
+      if (stillWanted && !serverViewRef.current.cases.some(c => c.id === caseRecord.id)) {
+        serverViewRef.current = {
+          ...serverViewRef.current,
+          cases: mergeCaseLists([caseRecord], serverViewRef.current.cases),
+        };
+      }
+      finishLegacyMigrationIfUploaded(uid);
+    }
+    if (auth.currentUser?.uid === uid) refreshCaseList(uid);
+    return ok;
+  };
+
+  /** Upload everything in the queue. Resolves true when the queue is empty. */
+  const flushPendingCases = (uid: string): Promise<boolean> => {
+    if (flushRef.current?.uid === uid) return flushRef.current.promise;
+    const run = { uid, promise: Promise.resolve(false) };
+    flushRef.current = run;
+    run.promise = (async () => {
+      try {
+        const attempted = new Set<string>();
+        while (auth.currentUser?.uid === uid) {
+          // Re-read each time: cases can be saved or deleted while this runs.
+          const next = readPendingCases(uid).find(c => !attempted.has(c.id));
+          if (!next) return true;
+          attempted.add(next.id);
+          if (!(await uploadCase(uid, next))) return false;
+        }
+        return false;
+      } finally {
+        if (flushRef.current === run) flushRef.current = null;
+      }
+    })();
+    return run.promise;
+  };
+
+  /**
+   * Older versions kept cases in an array on the profile document. Move them to
+   * users/{uid}/cases once, through the same upload queue as new cases.
+   */
+  const startLegacyMigration = (uid: string, legacyCases: SavedCase[]) => {
+    if (legacyMigrationRef.current?.uid === uid) return;
+    const valid = legacyCases.filter(c => c && typeof c.id === 'string');
+    legacyMigrationRef.current = { uid, ids: valid.map(c => c.id), done: false };
+    valid.forEach(c => addPendingCase(uid, { ...c, userId: uid }));
+    refreshCaseList(uid);
+    void flushPendingCases(uid);
+    finishLegacyMigrationIfUploaded(uid);
+  };
 
   // Android & PWA App Variables
   const [deviceMode, setDeviceMode] = useState<'standalone' | 'phone_demo'>('phone_demo');
@@ -385,20 +482,37 @@ export default function App() {
         const cleanEmail = (currentUser.email || '').toLowerCase().trim();
         const isAdminUser = cleanEmail === 'user.suniltim@gmail.com';
 
-        if (caseUnsubscribeRef.current) {
-          caseUnsubscribeRef.current();
-          caseUnsubscribeRef.current = null;
-        }
-        caseUnsubscribeRef.current = subscribeToUserCases(currentUser.uid, (canonicalCases) => {
-          setSavedCases(canonicalCases);
-          try {
-            localStorage.setItem('acls_saved_cases', JSON.stringify(canonicalCases));
-          } catch (e) {}
-          setSyncStatus('synced');
-          setLastSyncedAt(Date.now());
+        const uid = currentUser.uid;
+
+        // Until the server answers, show the last list this device saw for
+        // this doctor (cleared on sign-out) plus anything waiting to upload.
+        let lastKnown: SavedCase[] = [];
+        try {
+          const raw = localStorage.getItem('acls_saved_cases');
+          const parsed = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(parsed)) {
+            lastKnown = parsed.filter((c: SavedCase) =>
+              c && typeof c.id === 'string' && !c.syncPending && (!c.userId || c.userId === uid));
+          }
+        } catch (e) {}
+        serverViewRef.current = { cases: lastKnown, confirmed: false };
+        legacyMigrationRef.current = null;
+        refreshCaseList(uid);
+
+        // users/{uid}/cases is the only source for the saved-case list.
+        caseUnsubscribeRef.current = subscribeToUserCases(uid, (serverCases, { fromCache }) => {
+          serverViewRef.current = applyServerSnapshot(serverViewRef.current, serverCases, fromCache);
+          const waiting = refreshCaseList(uid);
+          if (!fromCache && waiting === 0) {
+            setSyncStatus('synced');
+            setLastSyncedAt(Date.now());
+          }
         }, () => {
           setSyncStatus('offline');
         });
+
+        // Upload anything saved on this device while offline or signed out.
+        void flushPendingCases(uid);
 
         const profileDocRef = doc(db, 'profiles', currentUser.uid);
         profileUnsubscribeRef.current = onSnapshot(profileDocRef, (docSnap) => {
@@ -425,16 +539,13 @@ export default function App() {
 
             try {
               localStorage.setItem('acls_user_profile', JSON.stringify(pData));
-              const map = new Map<string, SavedCase>();
-              if (Array.isArray(pData.savedCases)) {
-                pData.savedCases.forEach((c: SavedCase) => map.set(c.id, c));
-              }
-              const cachedCases = Array.from(map.values());
-              setSavedCases(cachedCases);
-              try {
-                localStorage.setItem('acls_saved_cases', JSON.stringify(cachedCases));
-              } catch (e) {}
             } catch (e) {}
+
+            // The profile no longer feeds the case list. If it still holds
+            // cases from the old storage format, move them across once.
+            if (Array.isArray(pData.savedCases) && pData.savedCases.length > 0 && pData.caseStorageVersion !== 2) {
+              startLegacyMigration(uid, pData.savedCases);
+            }
             setSyncStatus('synced');
             setLastSyncedAt(Date.now());
             setLoading(false);
@@ -504,6 +615,11 @@ export default function App() {
         }));
         setProfile(null);
         setSavedCases([]);
+        // The upload queue is kept (per doctor) so nothing is lost; it uploads
+        // the next time that doctor signs in on this device.
+        serverViewRef.current = { cases: [], confirmed: false };
+        legacyMigrationRef.current = null;
+        flushRef.current = null;
         try {
           localStorage.removeItem('acls_user_profile');
           localStorage.removeItem('acls_saved_cases');
@@ -531,12 +647,24 @@ export default function App() {
 
   // Force Cloud Database Synchronizer
   const handleForceSync = async () => {
+    const uid = user?.uid;
     setSyncStatus('syncing');
     try {
-      await testFirestoreConnection();
-      if (user?.uid) {
-                if (profile) {
-          await syncUserProfileToFirestore(user.uid, profile);
+      const reachable = await testFirestoreConnection();
+      if (!reachable) {
+        // Queue the uploads anyway; Firestore sends them when the signal returns.
+        if (uid) void flushPendingCases(uid);
+        setSyncStatus('offline');
+        return;
+      }
+      if (uid) {
+        if (profile) {
+          await syncUserProfileToFirestore(uid, profile);
+        }
+        const allUploaded = await flushPendingCases(uid);
+        if (!allUploaded && readPendingCases(uid).length > 0) {
+          setSyncStatus('offline');
+          return;
         }
       }
       setSyncStatus('synced');
@@ -811,18 +939,27 @@ export default function App() {
       certifiedBy: effectiveProfile.fullName,
       councilRegistration: effectiveProfile.councilRegistration,
       signatureDataUrl: signatureDataUrl || '',
+      ...(user?.uid ? { userId: user.uid } : {}),
     };
 
-    const updated = [newCase, ...savedCases];
-    setSavedCases(updated);
-
-    try {
-      localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
-    } catch (e) {}
-
     if (user?.uid) {
+      const uid = user.uid;
+      // Keep a copy on the device first, so the case survives losing signal,
+      // a reload or a closed app before the upload finishes.
+      let keptOnDevice = addPendingCase(uid, newCase);
+      if (!keptOnDevice) {
+        // Storage full: drop the display copy of the list (it is rebuilt from
+        // the server) to make room for the case itself, then try again.
+        try { localStorage.removeItem('acls_saved_cases'); } catch (e) {}
+        keptOnDevice = addPendingCase(uid, newCase);
+      }
+      if (!keptOnDevice) {
+        console.warn('Could not keep an offline copy of this case on the device; it will upload while the app stays open.');
+      }
+      refreshCaseList(uid);
+
       setSyncStatus('syncing');
-      saveUserCaseToFirestore(user.uid, newCase)
+      uploadCase(uid, newCase)
         .then((ok) => {
           if (ok) {
             setSyncStatus('synced');
@@ -832,22 +969,30 @@ export default function App() {
           }
         })
         .catch(() => setSyncStatus('offline'));
+      return true;
     }
 
+    // Not signed in: the case stays on this device only.
+    const updated = [newCase, ...savedCases];
+    setSavedCases(updated);
+    try {
+      localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
+    } catch (e) {}
     return true;
   };
 
   const handleDeleteCase = (caseId: string) => {
-    const updated = savedCases.filter(c => c.id !== caseId);
-    setSavedCases(updated);
-
-    try {
-      localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
-    } catch (e) {}
-
     if (user?.uid) {
+      const uid = user.uid;
+      removePendingCase(uid, caseId);
+      serverViewRef.current = {
+        ...serverViewRef.current,
+        cases: serverViewRef.current.cases.filter(c => c.id !== caseId),
+      };
+      refreshCaseList(uid);
+
       setSyncStatus('syncing');
-      deleteUserCaseFromFirestore(user.uid, caseId)
+      deleteUserCaseFromFirestore(uid, caseId)
         .then((ok) => {
           if (ok) {
             setSyncStatus('synced');
@@ -857,7 +1002,15 @@ export default function App() {
           }
         })
         .catch(() => setSyncStatus('offline'));
+      return;
     }
+
+    // Not signed in: device-only list.
+    const updated = savedCases.filter(c => c.id !== caseId);
+    setSavedCases(updated);
+    try {
+      localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
+    } catch (e) {}
   };
 
   const formatTime = (seconds: number) => {

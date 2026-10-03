@@ -77,6 +77,13 @@ service cloud.firestore {
                     || (signedIn() && resource.data.userId == request.auth.uid);
     }
 
+    // Admin-only: lets the admin panel read every doctor's cases in one
+    // collection-group query (users/*/cases and the old top-level /cases).
+    // Doctors still only reach their own cases through the rules above.
+    match /{path=**}/cases/{caseId} {
+      allow read: if isAdmin();
+    }
+
     match /test/{docId} {
       allow read: if docId == 'connection';
       allow write: if false;
