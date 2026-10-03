@@ -25,8 +25,8 @@ export function calculateResuscitationMetrics(
 
   // Reconstruct closed arrest episodes from the append-only timeline.
   // CODE_START begins the first episode; RE_ARREST begins each subsequent episode;
-  // ROSC closes the currently open episode. ROSC time is therefore excluded from
-  // subsequent arrest-duration calculations.
+  // ROSC or CODE_END (resuscitation stopped) closes the currently open episode.
+  // ROSC time is therefore excluded from subsequent arrest-duration calculations.
   const arrestEpisodeDurationsSeconds: number[] = [];
   let episodeStartAt: number | null = null;
   for (const event of sorted) {
@@ -34,7 +34,7 @@ export function calculateResuscitationMetrics(
       episodeStartAt = event.timestamp;
     } else if (event.kind === 'RE_ARREST' && episodeStartAt == null) {
       episodeStartAt = event.timestamp;
-    } else if (event.kind === 'ROSC' && episodeStartAt != null) {
+    } else if ((event.kind === 'ROSC' || event.kind === 'CODE_END') && episodeStartAt != null) {
       arrestEpisodeDurationsSeconds.push(
         Math.max(0, Math.floor((event.timestamp - episodeStartAt) / 1000))
       );
@@ -57,6 +57,18 @@ export function calculateResuscitationMetrics(
   const medications = sorted.filter(e =>
     e.kind === 'EPINEPHRINE' || e.kind === 'AMIODARONE' || e.kind === 'LIDOCAINE'
   );
+
+  // Outcome = how the last arrest episode closed.
+  const lastClosing = [...sorted].reverse().find(e => e.kind === 'ROSC' || e.kind === 'CODE_END' || e.kind === 'RE_ARREST');
+  const outcome: ResuscitationMetrics['outcome'] =
+    lastClosing?.kind === 'ROSC' ? 'ROSC' :
+    lastClosing?.kind === 'CODE_END' ? 'TERMINATED' :
+    'NOT_DOCUMENTED';
+  const codeEndAt = sorted.filter(e => e.kind === 'CODE_END').at(-1)?.timestamp ?? null;
+  const protocolDeviationCount = sorted.filter(e =>
+    (e.kind === 'SHOCK' || e.kind === 'EPINEPHRINE' || e.kind === 'AMIODARONE' || e.kind === 'LIDOCAINE') &&
+    Boolean(e.payload.protocolNote)
+  ).length;
 
   const medicationIntervalsSeconds: number[] = [];
   for (let i = 1; i < medications.length; i++) {
@@ -92,5 +104,8 @@ export function calculateResuscitationMetrics(
     shockableRhythmChecks: rhythmChecks.filter(e => e.payload.rhythm === 'SHOCKABLE').length,
     nonShockableRhythmChecks: rhythmChecks.filter(e => e.payload.rhythm === 'NON_SHOCKABLE').length,
     medicationIntervalsSeconds,
+    outcome,
+    codeEndAt,
+    protocolDeviationCount,
   };
 }

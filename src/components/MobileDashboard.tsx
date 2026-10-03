@@ -38,6 +38,7 @@ import {
 import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
 import {
   clearedClockFields,
+  isCodeActive,
   amiodaroneDoseLabel,
   lidocaineDoseLabel,
   AMIODARONE_MAX_DOSES,
@@ -71,6 +72,7 @@ interface MobileDashboardProps {
   handleShock: () => void;
   handleEpi: () => void;
   handleRosc: () => void;
+  handleStopResuscitation: () => void;
   handleAmiodarone: () => void;
   handleLidocaine: () => void;
   handleRhythmSelect: (rhythm: PatientRhythm) => void;
@@ -121,6 +123,7 @@ export default function MobileDashboard({
   handleShock,
   handleEpi,
   handleRosc,
+  handleStopResuscitation,
   handleAmiodarone,
   handleLidocaine,
   handleRhythmSelect,
@@ -345,9 +348,11 @@ export default function MobileDashboard({
         <div className={`w-full rounded-2xl p-3 border space-y-2.5 ${cardClass}`}>
           <div className="flex justify-between items-center gap-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <div className={`w-2.5 h-2.5 rounded-full ${state.roscAt ? 'bg-emerald-500' : state.isTimerRunning ? 'bg-red-600 animate-pulse ring-4 ring-red-500/20' : 'bg-slate-400'}`} />
-              <span className={`text-[9.5px] font-bold tracking-wider uppercase ${state.roscAt ? 'text-emerald-600 font-black' : state.isTimerRunning ? 'text-red-600 font-black' : textMuted}`}>
-                {state.roscAt ? 'ROSC - POST-ARREST CARE' : state.isTimerRunning ? 'CPR IN PROGRESS' : 'CPR ON HOLD'}
+              <div className={`w-2.5 h-2.5 rounded-full ${state.terminatedAt ? 'bg-slate-600' : state.roscAt ? 'bg-emerald-500' : state.isTimerRunning ? 'bg-red-600 animate-pulse ring-4 ring-red-500/20' : 'bg-slate-400'}`} />
+              <span className={`text-[9.5px] font-bold tracking-wider uppercase ${state.terminatedAt ? (isDark ? 'text-slate-200 font-black' : 'text-slate-800 font-black') : state.roscAt ? 'text-emerald-600 font-black' : state.isTimerRunning ? 'text-red-600 font-black' : textMuted}`}>
+                {state.terminatedAt
+                  ? `RESUSCITATION STOPPED ${new Date(state.terminatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : state.roscAt ? 'ROSC - POST-ARREST CARE' : state.isTimerRunning ? 'CPR IN PROGRESS' : 'CPR ON HOLD'}
               </span>
               <button 
                 type="button"
@@ -369,7 +374,7 @@ export default function MobileDashboard({
               </button>
             </div>
             <div className="text-right shrink-0">
-              <span className={`text-[8px] uppercase font-black block ${textMuted}`}>{state.roscAt ? 'Arrest Time' : 'Total Elapsed'}</span>
+              <span className={`text-[8px] uppercase font-black block ${textMuted}`}>{state.roscAt || state.terminatedAt ? 'Arrest Time' : 'Total Elapsed'}</span>
               <span className={`font-mono text-sm font-bold tabular-nums ${isDark ? 'text-white' : 'text-slate-900'}`}>
                 {formatTime(state.totalTime)}
               </span>
@@ -430,13 +435,18 @@ export default function MobileDashboard({
           <button 
             type="button"
             onClick={toggleTimer} 
-            className={`flex-1 h-12 rounded-2xl font-bold uppercase tracking-wider text-[10px] flex items-center justify-center gap-2 transition-all active:scale-95 border-none shadow-md cursor-pointer ${
-              state.isTimerRunning 
+            disabled={Boolean(state.terminatedAt)}
+            className={`flex-1 h-12 rounded-2xl font-bold uppercase tracking-wider text-[10px] flex items-center justify-center gap-2 transition-all active:scale-95 border-none shadow-md cursor-pointer disabled:cursor-not-allowed ${
+              state.terminatedAt
+                ? 'bg-slate-500 text-white'
+                : state.isTimerRunning 
                 ? 'bg-amber-500 hover:bg-amber-600 text-white' 
                 : 'bg-red-600 hover:bg-red-700 text-white'
             }`}
           >
-            {state.isTimerRunning ? (
+            {state.terminatedAt ? (
+              <>Stopped - save the case in Journal</>
+            ) : state.isTimerRunning ? (
               <>
                 <Pause className="w-4 h-4 fill-current animate-pulse" /> Pause Code
               </>
@@ -449,7 +459,8 @@ export default function MobileDashboard({
           <button 
             type="button"
             onClick={resetCprTimer} 
-            className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all active:scale-95 shrink-0 cursor-pointer ${
+            disabled={Boolean(state.terminatedAt)}
+            className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all active:scale-95 shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
               isDark ? 'bg-slate-800 border-white/10 text-slate-300 hover:text-white' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'
             }`}
             title="Next CPR Cycle"
@@ -540,18 +551,18 @@ export default function MobileDashboard({
             : isDark
               ? 'bg-violet-500/20 text-violet-200 border-violet-500/30 hover:bg-violet-500/30 cursor-pointer active:scale-95'
               : 'bg-violet-100 text-violet-900 border-violet-300 hover:bg-violet-200 cursor-pointer active:scale-95';
-          const doneCard = isDark ? 'bg-slate-800 text-slate-500 border-white/10 cursor-not-allowed' : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed';
+          const doneCard = isDark ? 'bg-slate-800 text-slate-500 border-white/10 cursor-pointer' : 'bg-gray-100 text-gray-400 border-gray-200 cursor-pointer';
           return (
             <div className="space-y-1.5">
               <div className="grid grid-cols-2 gap-2.5">
-                <button type="button" onClick={handleAmiodarone} disabled={amioDone} className={`${cardBase} ${amioDone ? doneCard : activeCard}`}>
+                <button type="button" onClick={handleAmiodarone} className={`${cardBase} ${amioDone ? doneCard : activeCard}`}>
                   <Syringe className="w-4 h-4" />
                   <span className="text-[10px] uppercase tracking-wider font-black">Amiodarone ({amioGiven})</span>
                   <span className="text-[8.5px] font-bold uppercase tracking-wide opacity-90">
                     {amioDone ? 'Max 2 doses given' : `Next: ${amiodaroneDoseLabel(amioGiven + 1)} IV/IO`}
                   </span>
                 </button>
-                <button type="button" onClick={handleLidocaine} disabled={lidoDone} className={`${cardBase} ${lidoDone ? doneCard : activeCard}`}>
+                <button type="button" onClick={handleLidocaine} className={`${cardBase} ${lidoDone ? doneCard : activeCard}`}>
                   <Syringe className="w-4 h-4" />
                   <span className="text-[10px] uppercase tracking-wider font-black">Lidocaine ({lidoGiven})</span>
                   <span className="text-[8.5px] font-bold uppercase tracking-wide opacity-90">
@@ -580,6 +591,21 @@ export default function MobileDashboard({
         >
           <Heart className="w-4 h-4 fill-current text-emerald-600" /> Confirm ROSC Achievement
         </button>
+
+        {/* Termination of resuscitation: closes the code without ROSC */}
+        {isCodeActive(state) && (
+          <button
+            type="button"
+            onClick={handleStopResuscitation}
+            className={`w-full h-11 rounded-2xl border font-bold uppercase text-[9.5px] tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm ${
+              isDark
+                ? 'bg-slate-800 border-white/15 text-slate-200 hover:bg-slate-700'
+                : 'bg-gray-100 border-gray-300 text-gray-800 hover:bg-gray-200'
+            }`}
+          >
+            <Clock className="w-4 h-4" /> Stop Resuscitation (Time of Death)
+          </button>
+        )}
 
         {/* Reversible Causes Checklist (H's and T's) */}
         <div className={`p-3.5 rounded-2xl border space-y-2.5 ${cardClass}`}>
@@ -1132,8 +1158,8 @@ export default function MobileDashboard({
             // Never allow an active arrest to be wiped from the live code screen.
             // The case must first reach ROSC and be saved/closed so its audit trail
             // cannot disappear through an accidental reset.
-            if (state.codeStartedAt && !state.roscAt) {
-              alert("Active resuscitation cannot be wiped. Confirm ROSC, save the case, then start a new session.");
+            if (isCodeActive(state)) {
+              alert("Active resuscitation cannot be wiped. Confirm ROSC or stop resuscitation, save the case, then start a new session.");
               return;
             }
 
@@ -1156,6 +1182,7 @@ export default function MobileDashboard({
                 amioCount: 0,
                 lidoCount: 0,
                 alert: null,
+                savedEventSequence: 0,
               }));
               setHasSessionStarted(false);
             }
