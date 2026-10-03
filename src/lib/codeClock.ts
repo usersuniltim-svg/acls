@@ -21,7 +21,7 @@ const RHYTHM_CHECK_MS = RHYTHM_CHECK_SECONDS * 1000;
 const EPI_REALERT_SECONDS = 7;
 
 export const AMIODARONE_MAX_DOSES = 2; // 300 mg, then 150 mg
-export const LIDOCAINE_MAX_DOSES = 3; // 1-1.5 mg/kg, then 0.5-0.75 mg/kg; max total 3 mg/kg
+export const LIDOCAINE_MAX_DOSES = 2; // 1-1.5 mg/kg, then 0.5-0.75 mg/kg per 2025 AHA cardiac-arrest algorithm
 
 type AlertKind = NonNullable<AclsState['alert']>['kind'];
 const ALERT_PRIORITY: Record<AlertKind, number> = { urgent: 3, cycleEnd: 2, epi: 1 };
