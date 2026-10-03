@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { startCode, startCprCycle, deliverShock, confirmRosc, advanceClock } from '../src/lib/codeClock';
+import {
+  startCode,
+  startCprCycle,
+  deliverShock,
+  confirmRosc,
+  advanceClock,
+  pauseCpr,
+  selectRhythm,
+  giveEpinephrine,
+  giveAmiodarone,
+  giveLidocaine,
+} from '../src/lib/codeClock';
 import type { AclsState } from '../src/types';
 
 function baseState(): AclsState {
@@ -136,4 +147,65 @@ test('pause action at the exact CPR deadline cannot freeze an expired cycle', ()
   assert.equal(pausedAtDeadline.cprEndsAt, null);
   assert.equal(pausedAtDeadline.cprRemainingMs, 0);
   assert.equal(pausedAtDeadline.isTimerRunning, false);
+});
+
+
+test('CPR cannot implicitly create an arrest episode', () => {
+  const idle = baseState();
+  const next = startCprCycle({ ...idle, codeStartedAt: null, roscAt: null }, 50000);
+
+  assert.strictEqual(next, idle);
+});
+
+test('shock cannot occur without an active shockable arrest', () => {
+  const idle = { ...baseState(), codeStartedAt: null, roscAt: null };
+  assert.strictEqual(deliverShock(idle, 50000), idle);
+
+  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const nonShockable = selectRhythm(
+    startCode(baseState(), 10000),
+    'NON_SHOCKABLE',
+    10001
+  );
+  assert.equal(nonShockable.currentRhythm, 'NON_SHOCKABLE');
+  assert.strictEqual(deliverShock(nonShockable, 20000), nonShockable);
+  assert.equal(started.shocksCount, 0);
+});
+
+test('rhythm selection is rejected outside the rhythm-check transition', () => {
+  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const next = selectRhythm(started, 'SHOCKABLE', 20000);
+
+  assert.strictEqual(next, started);
+});
+
+test('medication actions cannot create or continue a non-existent arrest', () => {
+  const idle = { ...baseState(), codeStartedAt: null, roscAt: null };
+
+  assert.strictEqual(giveEpinephrine(idle, 50000), idle);
+  assert.strictEqual(giveAmiodarone(idle), idle);
+  assert.strictEqual(giveLidocaine(idle), idle);
+});
+
+test('antiarrhythmics are gated until a shockable rhythm has received three shocks', () => {
+  let state = startCprCycle(startCode(baseState(), 10000), 11000);
+  state = selectRhythm(
+    startCode(baseState(), 10000),
+    'SHOCKABLE',
+    10001
+  );
+  state = startCprCycle(state, 10002);
+
+  assert.strictEqual(giveAmiodarone(state), state);
+  assert.strictEqual(giveLidocaine(state), state);
+
+  state = deliverShock(state, 20000);
+  state = deliverShock(state, 140000);
+  state = deliverShock(state, 260000);
+
+  const amio = giveAmiodarone(state);
+  const lido = giveLidocaine(state);
+
+  assert.equal(amio.amioCount, 1);
+  assert.equal(lido.lidoCount, 1);
 });
