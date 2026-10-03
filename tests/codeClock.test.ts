@@ -86,3 +86,54 @@ test('epinephrine interval pauses during ROSC and resumes after re-arrest', () =
   const resumed = advanceClock(atThreeMinutesOfArrest, 251000);
   assert.equal(resumed.epiTimeLeft, 0);
 });
+
+
+test('CPR deadline is resolved exactly at the timestamp boundary', () => {
+  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const atDeadline = advanceClock(started, 131000);
+
+  assert.equal(atDeadline.activePrompt, 'RHYTHM_CHECK');
+  assert.equal(atDeadline.cprEndsAt, null);
+  assert.equal(atDeadline.cprRemainingMs, 0);
+  assert.equal(atDeadline.isTimerRunning, false);
+  assert.equal(atDeadline.rhythmCheckStartedAt, 131000);
+});
+
+test('CPR deadline is resolved after background/sleep time is skipped', () => {
+  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const afterSleep = advanceClock(started, 250000);
+
+  assert.equal(afterSleep.activePrompt, 'RHYTHM_CHECK');
+  assert.equal(afterSleep.cprEndsAt, null);
+  assert.equal(afterSleep.rhythmCheckStartedAt, 131000);
+  assert.equal(afterSleep.isTimerRunning, false);
+});
+
+test('rhythm-check timeout fires at exactly 10 seconds', () => {
+  const started = startCode(baseState(), 10000);
+  const timedOut = advanceClock(started, 20000);
+
+  assert.equal(timedOut.activePrompt, 'RHYTHM_CHECK');
+  assert.equal(timedOut.rhythmCheckTimeLeft, 0);
+  assert.equal(timedOut.alert?.kind, 'urgent');
+});
+
+test('epinephrine becomes due exactly at the interval boundary', () => {
+  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const running = { ...started, epiAnchorAt: 1000, cprEndsAt: 500000 };
+  const due = advanceClock(running, 181000);
+
+  assert.equal(due.epiTimeLeft, 0);
+  assert.equal(due.activePrompt, 'EPI_DUE');
+  assert.equal(due.alert?.kind, 'epi');
+});
+
+test('pause action at the exact CPR deadline cannot freeze an expired cycle', () => {
+  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const pausedAtDeadline = pauseCpr(started, 131000);
+
+  assert.equal(pausedAtDeadline.activePrompt, 'RHYTHM_CHECK');
+  assert.equal(pausedAtDeadline.cprEndsAt, null);
+  assert.equal(pausedAtDeadline.cprRemainingMs, 0);
+  assert.equal(pausedAtDeadline.isTimerRunning, false);
+});
