@@ -740,10 +740,12 @@ export default function App() {
     description: (prev: AclsState, next: AclsState) => string,
     payload: (prev: AclsState, next: AclsState, now: number) => Record<string, unknown>,
     now = Date.now(),
+    shouldRecord: (prev: AclsState, next: AclsState) => boolean = () => true,
   ) => {
     setState(prev => {
       const next = transition(prev, now);
       if (next === prev) return prev;
+      if (!shouldRecord(prev, next)) return next;
 
       const timestamp = now;
       const logDescription = description(prev, next);
@@ -788,6 +790,7 @@ export default function App() {
         (prev) => `Compressions paused - CPR cycle held at ${formatClock(prev.cprTimeLeft)}`,
         (prev) => ({ cprCycle: prev.cprCycleCount, remainingSeconds: prev.cprTimeLeft }),
         now,
+        (_prev, next) => next.activePrompt !== 'RHYTHM_CHECK',
       );
       return;
     }
