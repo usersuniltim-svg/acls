@@ -811,7 +811,7 @@ export default function App() {
         'CPR_START',
         'RE_ARREST',
         (prev, at) => resumeCpr(prev, at),
-        (prev) => `Re-arrest after ROSC - CPR restarted (arrest time so far ${formatClock(arrestSeconds(prev, prev.roscAt ?? at))})`,
+        (prev) => `Re-arrest after ROSC - CPR restarted (arrest time so far ${formatClock(arrestSeconds(prev, prev.roscAt ?? now))})`,
         (prev, next) => ({
           priorArrestSeconds: arrestSeconds(prev, prev.roscAt ?? now),
           cprCycleNumber: next.cprCycleCount,
