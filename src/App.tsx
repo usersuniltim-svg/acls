@@ -762,7 +762,7 @@ export default function App() {
         source: 'user',
         actorId: user?.uid,
         actorName: effectiveProfile.fullName,
-        payload: payload(prev, next, now),
+        payload: payload(prev, next, now) as any,
         description: logDescription,
       }, sequence);
 
