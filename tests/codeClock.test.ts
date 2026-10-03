@@ -209,3 +209,36 @@ test('antiarrhythmics are gated until a shockable rhythm has received three shoc
   assert.equal(amio.amioCount, 1);
   assert.equal(lido.lidoCount, 1);
 });
+
+
+test('epinephrine rejects an early duplicate administration', () => {
+  let state = startCprCycle(startCode(baseState(), 10000), 11000);
+  state = selectRhythm(
+    startCode(baseState(), 10000),
+    'NON_SHOCKABLE',
+    10001
+  );
+  state = giveEpinephrine(state, 10002);
+
+  assert.equal(state.epiCount, 1);
+  assert.strictEqual(giveEpinephrine(state, 10003), state);
+});
+
+test('shockable epinephrine is not available before two initial shocks', () => {
+  let state = selectRhythm(
+    startCode(baseState(), 10000),
+    'SHOCKABLE',
+    10001
+  );
+  state = startCprCycle(state, 10002);
+
+  assert.strictEqual(giveEpinephrine(state, 20000), state);
+
+  state = deliverShock(state, 30000);
+  assert.strictEqual(giveEpinephrine(state, 40000), state);
+
+  state = deliverShock(state, 150000);
+  const epi = giveEpinephrine(state, 151000);
+
+  assert.equal(epi.epiCount, 1);
+});
