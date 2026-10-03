@@ -1129,7 +1129,15 @@ export default function MobileDashboard({
         <button 
           type="button"
           onClick={() => {
-            if (confirm("Reset current resuscitation timers and delete recent code logs?")) {
+            // Never allow an active arrest to be wiped from the live code screen.
+            // The case must first reach ROSC and be saved/closed so its audit trail
+            // cannot disappear through an accidental reset.
+            if (state.codeStartedAt && !state.roscAt) {
+              alert("Active resuscitation cannot be wiped. Confirm ROSC, save the case, then start a new session.");
+              return;
+            }
+
+            if (confirm("Reset current resuscitation timers and delete recent code logs? This clears the unsaved audit trail.")) {
               setState(prev => ({
                 ...prev,
                 isTimerRunning: false,
@@ -1141,11 +1149,13 @@ export default function MobileDashboard({
                 currentRhythm: 'UNKNOWN',
                 cprCycleCount: 0,
                 logs: [],
+                clinicalEvents: [],
                 activePrompt: null,
                 rhythmCheckTimeLeft: 0,
                 ...clearedClockFields(),
                 amioCount: 0,
                 lidoCount: 0,
+                alert: null,
               }));
               setHasSessionStarted(false);
             }
