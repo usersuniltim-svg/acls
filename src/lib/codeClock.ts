@@ -189,7 +189,7 @@ export function startCprCycle(prev: AclsState, now: number): AclsState {
   // CPR is a child transition of an established arrest episode. Never create
   // an arrest implicitly from a CPR/shock action because that would produce
   // clinical events without a CODE_START boundary.
-  if (!prev.codeStartedAt) return prev;
+  if (!prev.codeStartedAt || prev.isTimerRunning) return prev;
 
   const base = reArrestIfInRosc(prev, now);
   return advanceClock(
@@ -274,7 +274,12 @@ export function selectRhythm(prev: AclsState, rhythm: PatientRhythm, now: number
 export function deliverShock(prev: AclsState, now: number): AclsState {
   // A shock must belong to an active arrest and a documented shockable rhythm.
   // The prompt is advisory UI state; the rhythm is the durable clinical fact.
-  if (!isCodeActive(prev) || prev.currentRhythm !== 'SHOCKABLE') return prev;
+  if (
+    !isCodeActive(prev) ||
+    prev.currentRhythm !== 'SHOCKABLE' ||
+    prev.activePrompt !== 'SHOCK_ADVISED' ||
+    prev.isTimerRunning
+  ) return prev;
 
   return startCprCycle({ ...prev, shocksCount: prev.shocksCount + 1, currentRhythm: 'SHOCKABLE' }, now);
 }
