@@ -32,7 +32,12 @@ export interface CodeStartPayload {
   initialRhythmAssessment?: boolean;
 }
 
-export interface EpisodeScopedPayload {\n  /** Arrest episode this event belongs to. Episode 1 starts at CODE_START; each RE_ARREST increments it. */\n  arrestEpisodeNumber?: number;\n}\n\nexport interface CprStartPayload extends EpisodeScopedPayload {
+export interface EpisodeScopedPayload {
+  /** Arrest episode this event belongs to. Episode 1 starts at CODE_START; each RE_ARREST increments it. */
+  arrestEpisodeNumber?: number;
+}
+
+export interface CprStartPayload extends EpisodeScopedPayload {
   cycleNumber?: number;
 }
 
@@ -77,7 +82,9 @@ export interface RoscPayload extends EpisodeScopedPayload {
   rhythmCheckNumber?: number;
 }
 
-export interface ReArrestPayload {\n  /** Episode being opened by this re-arrest. */\n  arrestEpisodeNumber?: number;
+export interface ReArrestPayload {
+  /** Episode being opened by this re-arrest. */
+  arrestEpisodeNumber?: number;
   priorArrestSeconds: number;
   /** CPR cycle automatically started by the re-arrest action, if applicable. */
   cprCycleNumber?: number;
@@ -161,7 +168,9 @@ export interface AclsState {
   selectedEnergy: number;
   epiDueElapsed?: number;
 
-  codeStartedAt?: number | null;\n  /** 1-based arrest episode number for the currently active/last episode. */\n  arrestEpisodeNumber?: number;
+  codeStartedAt?: number | null;
+  /** 1-based arrest episode number for the currently active/last episode. */
+  arrestEpisodeNumber?: number;
   roscAt?: number | null;
   /** Resuscitation stopped without ROSC (time of death). The code is closed. */
   terminatedAt?: number | null;
@@ -249,7 +258,9 @@ export interface ResuscitationMetrics {
   roscAt: number | null;
   finalRoscAt: number | null;
   roscCount: number;
-  arrestEpisodeDurationsSeconds: number[];\n  /** 1-based arrest episode IDs represented in the timeline, in chronological order. */\n  arrestEpisodeNumbers?: number[];
+  arrestEpisodeDurationsSeconds: number[];
+  /** 1-based arrest episode IDs represented in the timeline, in chronological order. */
+  arrestEpisodeNumbers?: number[];
   totalArrestDurationSeconds: number | null;
   /** Backward-compatible alias for totalArrestDurationSeconds. */
   arrestDurationSeconds: number | null;
