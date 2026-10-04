@@ -542,12 +542,12 @@ test('a lower energy than the previous shock is flagged, and recordable when con
   assert.equal(deliverShock(state, 132002, { override: true }).lastShockEnergyJ, 150);
 });
 
-test('monophasic must be 360 J; biphasic below 120 J or anything above 360 J is flagged', () => {
+test('monophasic is fixed at 360 J; biphasic energy follows the device strategy', () => {
   assert.equal(shockEnergyConcern(shockReady(360, 'MONOPHASIC')), null);
   assert.match(shockEnergyConcern(shockReady(200, 'MONOPHASIC')) ?? '', /Monophasic shocks are given at 360 J/);
-  assert.match(shockEnergyConcern(shockReady(100)) ?? '', /below the usual adult biphasic dose/);
-  assert.match(shockEnergyConcern(shockReady(400)) ?? '', /above the 360 J maximum/);
-  assert.equal(shockEnergyConcern(shockReady(360)), null, '360 J biphasic is allowed (some devices escalate to 360)');
+  assert.equal(shockEnergyConcern(shockReady(100)), null, 'AHA does not define a universal biphasic minimum; use the manufacturer dose');
+  assert.equal(shockEnergyConcern(shockReady(400)), null, 'AHA does not define a universal 360 J biphasic maximum');
+  assert.equal(shockEnergyConcern(shockReady(360)), null);
 });
 
 test('switching waveform does not compare energies across waveforms', () => {
