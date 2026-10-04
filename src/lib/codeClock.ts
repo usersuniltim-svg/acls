@@ -188,6 +188,7 @@ function reArrestIfInRosc(prev: AclsState, now: number): AclsState {
     ...prev,
     roscPausedMs: (prev.roscPausedMs ?? 0) + (now - prev.roscAt),
     roscAt: null,
+    arrestEpisodeNumber: (prev.arrestEpisodeNumber ?? 1) + 1,
     rhythmCheckCount: 0,
   };
 }
