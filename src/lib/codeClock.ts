@@ -49,7 +49,7 @@ export function arrestSeconds(s: AclsState, now: number): number {
 /** Fields that describe a code in progress, all cleared. */
 export function clearedClockFields(): Partial<AclsState> {
   return {
-    codeStartedAt: null,
+    codeStartedAt: null,\n    arrestEpisodeNumber: 0,
     roscAt: null,
     terminatedAt: null,
     roscPausedMs: 0,
