@@ -22,9 +22,7 @@ const EPI_REALERT_SECONDS = 7;
 
 export const AMIODARONE_MAX_DOSES = 2; // 300 mg, then 150 mg
 /** 2025 AHA: biphasic per manufacturer (e.g. initial 120-200 J; maximum if unknown); monophasic 360 J. */
-export const BIPHASIC_MIN_J = 120;
 export const MONOPHASIC_J = 360;
-export const MAX_DEFIB_J = 360;
 export const LIDOCAINE_MAX_DOSES = 2; // 1-1.5 mg/kg, then 0.5-0.75 mg/kg per 2025 AHA cardiac-arrest algorithm
 
 type AlertKind = NonNullable<AclsState['alert']>['kind'];
@@ -497,18 +495,12 @@ export function shockEnergyConcern(prev: AclsState): string | null {
   if (prev.defibType === 'MONOPHASIC' && energy !== MONOPHASIC_J) {
     return `Monophasic shocks are given at ${MONOPHASIC_J} J (selected ${energy} J).`;
   }
-  if (energy > MAX_DEFIB_J) {
-    return `${energy} J is above the ${MAX_DEFIB_J} J maximum of adult defibrillators.`;
-  }
-  if (prev.defibType === 'BIPHASIC' && energy < BIPHASIC_MIN_J) {
-    return `${energy} J is below the usual adult biphasic dose (manufacturer's dose, e.g. 120-200 J; use the maximum if unknown).`;
-  }
   if (
     prev.lastShockEnergyJ != null &&
     prev.lastShockDefibType === prev.defibType &&
     energy < prev.lastShockEnergyJ
   ) {
-    return `${energy} J is lower than the previous shock (${prev.lastShockEnergyJ} J). AHA: second and subsequent shocks should be the same or higher.`;
+    return `${energy} J is lower than the previous shock (${prev.lastShockEnergyJ} J). AHA: second and subsequent biphasic shocks should follow the device/manufacturer strategy; equivalent or higher energy may be used.`;
   }
   return null;
 }
