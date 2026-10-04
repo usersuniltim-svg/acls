@@ -36,7 +36,9 @@ import {
   ReversibleCauseStatus,
   PostRoscItemId,
   DispositionDestination,
+  AdvancedAirwayDevice,
 } from './types';
+import { assessEtco2, etco2Context } from './lib/capnography';
 import { createClinicalEvent } from './lib/clinicalEvents';
 import { CAUSE_STATUS_LABEL, causeLabel } from './lib/reversibleCauses';
 import {
@@ -66,6 +68,7 @@ import {
   deliverShock,
   terminateResuscitation,
   recordDisposition,
+  recordAirway,
   ActionCheck,
   ActionOptions,
   giveAmiodarone,
@@ -1246,6 +1249,68 @@ export default function App() {
     );
   };
 
+  // -------------------------------------------------------------------------
+  // Advanced airway and capnography
+  // -------------------------------------------------------------------------
+
+  const airwayName = (d: AdvancedAirwayDevice) => (d === 'ETT' ? 'Endotracheal tube' : 'Supraglottic airway');
+
+  /** Advanced airway placed, or (confirmationOnly) its placement confirmed by waveform capnography. */
+  const handleAirway = (device: AdvancedAirwayDevice, confirmedByCapnography: boolean) => {
+    if (!codeIsOpen) {
+      window.alert(state.codeStartedAt ? 'This case is closed.' : 'Start the code first, then record the airway.');
+      return;
+    }
+    const existing = state.advancedAirway;
+    const confirmationOnly = Boolean(existing && existing.device === device && confirmedByCapnography && !existing.confirmedByCapnography);
+    const ettUnconfirmed = device === 'ETT' && !confirmedByCapnography;
+    const note = ettUnconfirmed
+      ? 'AHA: confirm and monitor endotracheal tube placement with continuous waveform capnography.'
+      : undefined;
+    vibrateDevice(50);
+    applyClinicalAction(
+      'ADVANCED_AIRWAY',
+      'AIRWAY',
+      (prev, t) => recordAirway(prev, t, device, confirmedByCapnography),
+      () => confirmationOnly
+        ? `${airwayName(device)} placement confirmed by waveform capnography`
+        : `Advanced airway placed: ${airwayName(device)} - ${confirmedByCapnography ? 'placement confirmed by waveform capnography' : 'confirmed clinically only'}${note ? ` [${note}]` : ''}`,
+      (prev, next) => ({
+        device,
+        confirmation: confirmedByCapnography ? 'WAVEFORM_CAPNOGRAPHY' : 'CLINICAL_ONLY',
+        ...(confirmationOnly ? { confirmationOnly: true } : {}),
+        arrestEpisodeNumber: next.arrestEpisodeNumber || 1,
+      }),
+    );
+  };
+
+  /** One EtCO2 reading during CPR; returns what it may mean (null if not recorded). */
+  const handleEtco2 = (valueMmHg: number): string[] | null => {
+    if (!isCodeActive(state)) {
+      window.alert(state.roscAt && !state.dispositionAt
+        ? 'The patient is in ROSC: enter EtCO2 with the post-ROSC vitals on the TIMERS tab.'
+        : 'EtCO2 readings here are for an active resuscitation.');
+      return null;
+    }
+    if (!Number.isFinite(valueMmHg) || valueMmHg < 0 || valueMmHg > 150) {
+      window.alert('Enter EtCO2 in mm Hg (0-150).');
+      return null;
+    }
+    const now = Date.now();
+    const airway = state.advancedAirway?.device ?? 'NONE';
+    const flags = assessEtco2(
+      valueMmHg,
+      etco2Context(state.clinicalEvents, state.arrestEpisodeNumber || 1, airway, arrestSeconds(state, now)),
+    );
+    vibrateDevice(30);
+    addLog(
+      'INFO',
+      `EtCO2 ${valueMmHg} mm Hg during CPR (${airway === 'NONE' ? 'no advanced airway' : airway})${flags.length ? ` [${flags.join(' ')}]` : ''}`,
+      { kind: 'ETCO2', payload: { valueMmHg, airway, flags } },
+    );
+    return flags;
+  };
+
   /** End the code without ROSC: records the time of death and freezes every timer. */
   const handleStopResuscitation = () => {
     const now = Date.now();
@@ -2080,6 +2145,8 @@ export default function App() {
         onPostRoscCheck={handlePostRoscCheck}
         onPostRoscVitals={handlePostRoscVitals}
         onDisposition={handleDisposition}
+        onAirway={handleAirway}
+        onEtco2={handleEtco2}
         handleAmiodarone={handleAmiodarone}
         handleLidocaine={handleLidocaine}
         handleRhythmSelect={handleRhythmSelect}
@@ -2192,6 +2259,38 @@ export default function App() {
                   <div>
                     <h3 className="text-xl font-display font-black text-red-600 uppercase tracking-tight">Shock Advised!</h3>
                     <p className="text-black text-xs font-black uppercase tracking-wider">CLEAR ALL STANDERS</p>
+                  </div>
+
+                  {/* Energy for this shock (2025 AHA: biphasic per manufacturer, same or higher for later shocks; monophasic 360 J) */}
+                  <div className="space-y-1.5 text-left">
+                    <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-wider text-gray-600">
+                      <span>{state.defibType === 'MONOPHASIC' ? 'Monophasic' : 'Biphasic'} energy</span>
+                      <span>{state.lastShockEnergyJ ? `Previous shock: ${state.lastShockEnergyJ} J` : 'First shock'}</span>
+                    </div>
+                    <div className={`grid gap-1.5 ${state.defibType === 'MONOPHASIC' ? 'grid-cols-1' : 'grid-cols-5'}`} role="group" aria-label="Shock energy">
+                      {(state.defibType === 'MONOPHASIC' ? [360] : [120, 150, 200, 300, 360]).map(j => (
+                        <button
+                          key={j}
+                          type="button"
+                          aria-pressed={state.selectedEnergy === j}
+                          onClick={() => setState(prev => ({ ...prev, selectedEnergy: j }))}
+                          className={`h-9 rounded-lg border text-[10px] font-mono font-bold cursor-pointer ${
+                            state.selectedEnergy === j
+                              ? 'bg-red-600 border-red-600 text-white'
+                              : state.lastShockEnergyJ && j < state.lastShockEnergyJ && state.lastShockDefibType === state.defibType
+                                ? 'bg-gray-50 border-gray-200 text-gray-400'
+                                : 'bg-white border-gray-300 text-gray-800'
+                          }`}
+                        >
+                          {j}J
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[8.5px] text-gray-500 leading-snug">
+                      {state.defibType === 'MONOPHASIC'
+                        ? 'Monophasic: 360 J.'
+                        : "Follow the device's dose (e.g. 120-200 J first; maximum if unknown). Later shocks: same or higher."}
+                    </p>
                   </div>
                   
                   <button 

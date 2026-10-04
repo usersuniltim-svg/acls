@@ -94,6 +94,16 @@ export function calculateResuscitationMetrics(
   const vitals = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'VITALS' }> => e.kind === 'VITALS');
   const dispositionEvent = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'DISPOSITION' }> => e.kind === 'DISPOSITION').at(-1);
 
+  // Shocks, airway and capnography.
+  const shockEnergiesJ = sorted
+    .filter((e): e is Extract<ClinicalEvent, { kind: 'SHOCK' }> => e.kind === 'SHOCK')
+    .map(e => e.payload.energyJ)
+    .filter(j => j > 0);
+  const airwayEvents = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'AIRWAY' }> => e.kind === 'AIRWAY');
+  const firstAirway = airwayEvents.find(e => !e.payload.confirmationOnly);
+  const lastAirway = airwayEvents.at(-1);
+  const etco2 = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'ETCO2' }> => e.kind === 'ETCO2');
+
   const medicationIntervalsSeconds: number[] = [];
   for (let i = 1; i < medications.length; i++) {
     medicationIntervalsSeconds.push(Math.max(0, Math.floor(
@@ -139,5 +149,13 @@ export function calculateResuscitationMetrics(
     postRoscVitalsOutsideTargetCount: vitals.filter(v => (v.payload.flags ?? []).length > 0).length,
     disposition: dispositionEvent?.payload.destination ?? null,
     dispositionAt: dispositionEvent?.timestamp ?? null,
+    shockEnergiesJ,
+    advancedAirwayDevice: lastAirway?.payload.device ?? null,
+    timeToAdvancedAirwaySeconds: delta(firstAirway?.timestamp ?? null),
+    airwayConfirmedByCapnography: lastAirway
+      ? airwayEvents.some(e => e.payload.device === lastAirway.payload.device && e.payload.confirmation === 'WAVEFORM_CAPNOGRAPHY')
+      : null,
+    etco2ReadingCount: etco2.length,
+    maxEtco2DuringCprMmHg: etco2.length ? Math.max(...etco2.map(e => e.payload.valueMmHg)) : null,
   };
 }

@@ -38,6 +38,7 @@ import {
   ReversibleCauseStatus,
   PostRoscItemId,
   DispositionDestination,
+  AdvancedAirwayDevice,
 } from '../types';
 import { CPR_CYCLE_DURATION, EPI_INTERVAL } from '../constants';
 import {
@@ -51,6 +52,7 @@ import {
 import SavedCasesList from './SavedCasesList';
 import PostRoscPanel from './PostRoscPanel';
 import ReversibleCausesPanel from './ReversibleCausesPanel';
+import AirwayEtco2Panel from './AirwayEtco2Panel';
 import type { VitalsInput } from '../lib/postRosc';
 import { DISPOSITION_LABEL } from '../lib/postRosc';
 import LockedGuestOverlay from './LockedGuestOverlay';
@@ -85,6 +87,8 @@ interface MobileDashboardProps {
   onPostRoscCheck: (item: PostRoscItemId, result?: string) => void;
   onPostRoscVitals: (input: VitalsInput) => string[] | null;
   onDisposition: (destination: DispositionDestination) => void;
+  onAirway: (device: AdvancedAirwayDevice, confirmedByCapnography: boolean) => void;
+  onEtco2: (valueMmHg: number) => string[] | null;
   handleAmiodarone: () => void;
   handleLidocaine: () => void;
   handleRhythmSelect: (rhythm: PatientRhythm) => void;
@@ -140,6 +144,8 @@ export default function MobileDashboard({
   onPostRoscCheck,
   onPostRoscVitals,
   onDisposition,
+  onAirway,
+  onEtco2,
   handleAmiodarone,
   handleLidocaine,
   handleRhythmSelect,
@@ -641,20 +647,14 @@ export default function MobileDashboard({
           </button>
         )}
 
+        {/* Advanced airway and capnography */}
+        <AirwayEtco2Panel state={state} isDark={isDark} onAirway={onAirway} onEtco2={onEtco2} />
+
         {/* Reversible causes, per arrest episode */}
         <ReversibleCausesPanel state={state} isDark={isDark} onSetStatus={onReversibleCause} />
 
         {/* Shortcuts */}
-        <div className="grid grid-cols-2 gap-2">
-          <button 
-            type="button"
-            onClick={() => addLog('ADVANCED_AIRWAY', 'Advanced Airway Intubated established')}
-            className={`h-10 rounded-xl border text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
-              isDark ? 'bg-slate-800 border-white/10 text-slate-300 hover:bg-slate-700' : 'bg-gray-100 border-gray-300 text-gray-800 hover:bg-gray-200'
-            }`}
-          >
-            Log Intubation
-          </button>
+        <div className="grid grid-cols-1 gap-2">
           <button 
             type="button"
             onClick={() => addLog('INFO', 'Intravenous and Intraosseous Access confirmed')}
@@ -1046,14 +1046,14 @@ export default function MobileDashboard({
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button 
                 type="button"
-                onClick={() => setState(prev => ({ ...prev, defibType: 'BIPHASIC', selectedEnergy: Math.min(200, prev.selectedEnergy) }))}
+                onClick={() => setState(prev => ({ ...prev, defibType: 'BIPHASIC', selectedEnergy: prev.defibType === 'BIPHASIC' ? prev.selectedEnergy : 200 }))}
                 className={`py-2 rounded-xl border text-center transition-colors uppercase text-[9.5px] font-bold cursor-pointer ${
                   state.defibType === 'BIPHASIC' 
                     ? 'bg-red-600 text-white border-red-600 shadow-sm' 
                     : subCardClass
                 }`}
               >
-                Biphasic (120-200J)
+                Biphasic (per device)
               </button>
               <button 
                 type="button"
@@ -1074,8 +1074,8 @@ export default function MobileDashboard({
               <span className={`text-[8.5px] uppercase tracking-wider font-bold block ${textMuted}`}>
                 Biphasic Joules Tier
               </span>
-              <div className="grid grid-cols-3 gap-2">
-                {[120, 150, 200].map((joules) => (
+              <div className="grid grid-cols-5 gap-1.5">
+                {[120, 150, 200, 300, 360].map((joules) => (
                   <button 
                     key={joules}
                     type="button"

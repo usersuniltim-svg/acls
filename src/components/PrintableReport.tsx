@@ -98,7 +98,7 @@ export default function PrintableReport({
       event.kind === 'SHOCK' ? 'SHOCK' :
       event.kind === 'ROSC' ? 'ROSC' :
       event.kind === 'RHYTHM_CHECK' ? 'RHYTHM_CHECK' :
-      event.kind === 'PROCEDURE' ? 'ADVANCED_AIRWAY' :
+      event.kind === 'PROCEDURE' || event.kind === 'AIRWAY' ? 'ADVANCED_AIRWAY' :
       event.kind === 'CPR_START' || event.kind === 'CODE_START' || event.kind === 'CPR_RESUME' || event.kind === 'RE_ARREST' ? 'CPR_START' :
       'INFO',
     description: event.description || event.kind,
@@ -149,6 +149,7 @@ export default function PrintableReport({
   };
   const postRoscChecks = normalizedEvents.filter((e): e is Extract<ClinicalEvent, { kind: 'POST_ROSC_CHECK' }> => e.kind === 'POST_ROSC_CHECK');
   const vitalsEntries = normalizedEvents.filter((e): e is Extract<ClinicalEvent, { kind: 'VITALS' }> => e.kind === 'VITALS');
+  const etco2Events = normalizedEvents.filter((e): e is Extract<ClinicalEvent, { kind: 'ETCO2' }> => e.kind === 'ETCO2');
   const dispositionEvent = normalizedEvents.filter((e): e is Extract<ClinicalEvent, { kind: 'DISPOSITION' }> => e.kind === 'DISPOSITION').at(-1);
 
   const signed = Boolean(signatureDataUrl);
@@ -327,6 +328,25 @@ export default function PrintableReport({
               </table>
             )}
           </section>
+
+          {etco2Events.length > 0 && (
+            <section className="acls-print-section">
+              <h2>VI-b. End-Tidal CO2 During CPR</h2>
+              <table className="acls-print-table">
+                <thead><tr><th>Time</th><th>EtCO2</th><th>Airway</th><th>Note</th></tr></thead>
+                <tbody>
+                  {etco2Events.map((e) => (
+                    <tr key={e.id}>
+                      <td className="mono">{formatTime(e.timestamp)}</td>
+                      <td className="mono">{e.payload.valueMmHg} mm Hg</td>
+                      <td>{e.payload.airway === 'NONE' ? 'None' : e.payload.airway}</td>
+                      <td>{(e.payload.flags ?? []).join(' ') || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
 
           <section className="acls-print-section">
             <h2>VII. Rhythm Progression</h2>

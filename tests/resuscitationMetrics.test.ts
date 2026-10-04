@@ -178,3 +178,23 @@ test('post-ROSC care and reversible causes are summarised', () => {
   assert.equal(m.dispositionAt, 1200000);
   assert.equal(m.outcome, 'ROSC');
 });
+
+
+test('shock energies, airway timing and EtCO2 are summarised', () => {
+  const events: ClinicalEvent[] = [
+    event('CODE_START', 0, { reason: 'arrest' }, 1),
+    event('SHOCK', 30000, { energyJ: 150, defibType: 'BIPHASIC', shockNumber: 1 }, 2),
+    event('AIRWAY', 240000, { device: 'ETT', confirmation: 'CLINICAL_ONLY' }, 3),
+    event('ETCO2', 250000, { valueMmHg: 14, airway: 'ETT', flags: [] }, 4),
+    event('SHOCK', 260000, { energyJ: 200, defibType: 'BIPHASIC', shockNumber: 2 }, 5),
+    event('AIRWAY', 300000, { device: 'ETT', confirmation: 'WAVEFORM_CAPNOGRAPHY', confirmationOnly: true }, 6),
+    event('ETCO2', 400000, { valueMmHg: 31, airway: 'ETT', flags: ['Abrupt rise'] }, 7),
+  ];
+  const m = calculateResuscitationMetrics(events, undefined);
+  assert.deepEqual(m.shockEnergiesJ, [150, 200]);
+  assert.equal(m.advancedAirwayDevice, 'ETT');
+  assert.equal(m.timeToAdvancedAirwaySeconds, 240);
+  assert.equal(m.airwayConfirmedByCapnography, true);
+  assert.equal(m.etco2ReadingCount, 2);
+  assert.equal(m.maxEtco2DuringCprMmHg, 31);
+});

@@ -18,6 +18,8 @@ import {
   checkAntiarrhythmic,
   resumeCpr,
   recordDisposition,
+  recordAirway,
+  shockEnergyConcern,
 } from '../src/lib/codeClock';
 import type { AclsState } from '../src/types';
 
@@ -507,4 +509,88 @@ test('disposition is only possible in ROSC, and a new code clears it', () => {
   assert.equal(next.disposition, null);
   assert.equal(next.roscElapsedSeconds, 0);
   assert.equal(isCodeActive(next), true);
+});
+
+
+// ---------------------------------------------------------------------------
+// Defibrillation energy
+// ---------------------------------------------------------------------------
+
+const shockReady = (energy: number, defibType: 'BIPHASIC' | 'MONOPHASIC' = 'BIPHASIC') =>
+  selectRhythm(startCode({ ...baseState(), selectedEnergy: energy, defibType }, 10000), 'SHOCKABLE', 10001);
+
+test('shocks record their energy; same or higher next time is not flagged', () => {
+  let state = deliverShock(shockReady(150), 12000);
+  assert.equal(state.lastShockEnergyJ, 150);
+  assert.equal(state.lastShockDefibType, 'BIPHASIC');
+
+  state = selectRhythm(advanceClock(state, 132000), 'SHOCKABLE', 132001);
+  assert.equal(checkShock({ ...state, selectedEnergy: 150 }, 132002).ok, true);
+  assert.equal(checkShock({ ...state, selectedEnergy: 200 }, 132002).ok, true);
+});
+
+test('a lower energy than the previous shock is flagged, and recordable when confirmed', () => {
+  let state = deliverShock(shockReady(200), 12000);
+  state = selectRhythm(advanceClock(state, 132000), 'SHOCKABLE', 132001);
+  state = { ...state, selectedEnergy: 150 };
+
+  const check = checkShock(state, 132002);
+  assert.equal(check.ok, false);
+  assert.equal(check.canRecord, true);
+  assert.match(check.reason ?? '', /lower than the previous shock \(200 J\)/);
+  assert.strictEqual(deliverShock(state, 132002), state);
+  assert.equal(deliverShock(state, 132002, { override: true }).lastShockEnergyJ, 150);
+});
+
+test('monophasic must be 360 J; biphasic below 120 J or anything above 360 J is flagged', () => {
+  assert.equal(shockEnergyConcern(shockReady(360, 'MONOPHASIC')), null);
+  assert.match(shockEnergyConcern(shockReady(200, 'MONOPHASIC')) ?? '', /Monophasic shocks are given at 360 J/);
+  assert.match(shockEnergyConcern(shockReady(100)) ?? '', /below the usual adult biphasic dose/);
+  assert.match(shockEnergyConcern(shockReady(400)) ?? '', /above the 360 J maximum/);
+  assert.equal(shockEnergyConcern(shockReady(360)), null, '360 J biphasic is allowed (some devices escalate to 360)');
+});
+
+test('switching waveform does not compare energies across waveforms', () => {
+  const afterBiphasic = deliverShock(shockReady(200), 12000);
+  const mono = { ...afterBiphasic, defibType: 'MONOPHASIC' as const, selectedEnergy: 360 };
+  assert.equal(shockEnergyConcern(mono), null);
+});
+
+test('sequence and energy reasons are combined in one question', () => {
+  let state = deliverShock(shockReady(200), 12000);       // CPR now running
+  state = { ...state, selectedEnergy: 120 };
+  const check = checkShock(state, 20000);
+  assert.match(check.reason ?? '', /CPR cycle is running/);
+  assert.match(check.reason ?? '', /lower than the previous shock/);
+});
+
+// ---------------------------------------------------------------------------
+// Advanced airway
+// ---------------------------------------------------------------------------
+
+test('airway placement is kept for the code; confirming later keeps the placement time', () => {
+  let state = startCprCycle(startCode(baseState(), 10000), 11000);
+  state = recordAirway(state, 60000, 'ETT', false);
+  assert.deepEqual(state.advancedAirway, { device: 'ETT', at: 60000, confirmedByCapnography: false });
+
+  state = recordAirway(state, 90000, 'ETT', true);
+  assert.deepEqual(state.advancedAirway, { device: 'ETT', at: 60000, confirmedByCapnography: true });
+
+  // repeating the same thing changes nothing
+  assert.strictEqual(recordAirway(state, 95000, 'ETT', true), state);
+  assert.strictEqual(recordAirway(state, 95000, 'ETT', false), state);
+
+  // survives ROSC and re-arrest
+  state = resumeCpr(confirmRosc(state, 120000), 180000);
+  assert.equal(state.advancedAirway?.device, 'ETT');
+});
+
+test('exchanging the device is a new placement; a new code clears the airway', () => {
+  let state = recordAirway(startCode(baseState(), 10000), 40000, 'SGA', false);
+  state = recordAirway(state, 70000, 'ETT', true);
+  assert.deepEqual(state.advancedAirway, { device: 'ETT', at: 70000, confirmedByCapnography: true });
+
+  const closed = terminateResuscitation(state, 100000);
+  assert.strictEqual(recordAirway(closed, 110000, 'SGA', true), closed);
+  assert.equal(startCode(closed, 200000).advancedAirway, null);
 });
