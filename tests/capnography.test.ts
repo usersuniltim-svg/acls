@@ -37,11 +37,12 @@ test('that stop-decision note never appears without an ETT, before 20 min, or if
   assert.ok(!assessEtco2(8, { airway: 'ETT', arrestSeconds: 30 * 60, maxSoFarMmHg: 14 }).some(f => note.test(f)), 'earlier reading > 10');
 });
 
-test('context: previous reading comes from the same arrest episode; max from the whole code', () => {
+test('context is isolated to the current arrest episode', () => {
   const events = [reading(22, 1000, 1, 1), reading(9, 2000, 2, 1), reading(12, 9000, 3, 2)];
   const ep2 = etco2Context(events, 2, 'ETT', 100);
   assert.equal(ep2.previousMmHg, 12);
-  assert.equal(ep2.maxSoFarMmHg, 22);
+  assert.equal(ep2.maxSoFarMmHg, 12);
   const ep3 = etco2Context(events, 3, 'ETT', 100);
   assert.equal(ep3.previousMmHg, null);
+  assert.equal(ep3.maxSoFarMmHg, null);
 });
