@@ -31,9 +31,24 @@ import {
   PatientRhythm, 
   AclsState,
   UserProfile,
-  SavedCase
+  SavedCase,
+  ReversibleCauseId,
+  ReversibleCauseStatus,
+  PostRoscItemId,
+  DispositionDestination,
 } from './types';
 import { createClinicalEvent } from './lib/clinicalEvents';
+import { CAUSE_STATUS_LABEL, causeLabel } from './lib/reversibleCauses';
+import {
+  DISPOSITION_LABEL,
+  VitalsInput,
+  assessPostRoscVitals,
+  completeVitals,
+  describeVitals,
+  postRoscChecklist,
+  postRoscItemLabel,
+  postRoscResultLabel,
+} from './lib/postRosc';
 import { calculateResuscitationMetrics } from './lib/resuscitationMetrics';
 import { 
   CPR_CYCLE_DURATION, 
@@ -50,6 +65,7 @@ import {
   confirmRosc,
   deliverShock,
   terminateResuscitation,
+  recordDisposition,
   ActionCheck,
   ActionOptions,
   giveAmiodarone,
@@ -832,7 +848,11 @@ export default function App() {
         source: structured?.source ?? 'user',
         actorId: user?.uid,
         actorName: effectiveProfile.fullName,
-        payload: structured?.payload ?? {},
+        // Attribute every event recorded during a code to its arrest episode.
+        payload: {
+          ...(prev.codeStartedAt ? { arrestEpisodeNumber: prev.arrestEpisodeNumber || 1 } : {}),
+          ...(structured?.payload ?? {}),
+        } as any,
         description,
       }, sequence);
 
@@ -938,6 +958,10 @@ export default function App() {
 
     if (state.terminatedAt) {
       window.alert('Resuscitation was stopped for this case. Save it in the Journal tab, then start a new code from the home screen.');
+      return;
+    }
+    if (state.dispositionAt) {
+      window.alert('This case was closed at disposition. Save it in the Journal tab, then start a new code from the home screen.');
       return;
     }
 
@@ -1110,6 +1134,113 @@ export default function App() {
         maxDoses: LIDOCAINE_MAX_DOSES,
         arrestEpisodeNumber: next.arrestEpisodeNumber,
         ...(note ? { protocolNote: note } : {}),
+      }),
+      now,
+    );
+  };
+
+  // -------------------------------------------------------------------------
+  // Reversible causes and post-ROSC care
+  // -------------------------------------------------------------------------
+
+  /** The code is open for documentation: started, not stopped, not handed over. */
+  const codeIsOpen = Boolean(state.codeStartedAt) && !state.terminatedAt && !state.dispositionAt;
+  const inPostRosc = Boolean(state.roscAt) && codeIsOpen;
+
+  /** H's and T's: one cause, one status, attributed to the current arrest episode. */
+  const handleReversibleCause = (cause: ReversibleCauseId, status: ReversibleCauseStatus) => {
+    if (!codeIsOpen) {
+      window.alert(state.codeStartedAt
+        ? 'This case is closed. Reversible causes can be recorded while the code is open.'
+        : 'Start the code first, then record reversible causes.');
+      return;
+    }
+    let note: string | undefined;
+    if (status === 'TREATED') {
+      const answer = window.prompt(`What was done for ${causeLabel(cause)}? (optional)`, '');
+      if (answer === null) return;
+      note = answer.trim() || undefined;
+    }
+    vibrateDevice(30);
+    const episode = state.arrestEpisodeNumber || 1;
+    addLog(
+      'INFO',
+      `H's & T's (arrest episode ${episode}): ${causeLabel(cause)} - ${CAUSE_STATUS_LABEL[status]}${note ? ` (${note})` : ''}`,
+      { kind: 'REVERSIBLE_CAUSE', payload: { cause, status, ...(note ? { note } : {}), arrestEpisodeNumber: episode } },
+    );
+  };
+
+  /** Post-ROSC checklist: tap to mark done (tap again to undo); some items record an answer. */
+  const handlePostRoscCheck = (item: PostRoscItemId, result?: string) => {
+    if (!inPostRosc) {
+      window.alert('Post-ROSC items can be recorded while the patient is in ROSC.');
+      return;
+    }
+    const current = postRoscChecklist(state.clinicalEvents, state.roscAt!)[item];
+    const undo = Boolean(current?.done) && (result === undefined || current?.result === result);
+    if (undo && !window.confirm(`Mark "${postRoscItemLabel(item)}" as not done?`)) return;
+    vibrateDevice(30);
+    const done = !undo;
+    const resultLabel = done ? postRoscResultLabel(item, result) : undefined;
+    addLog(
+      'INFO',
+      `Post-ROSC: ${postRoscItemLabel(item)}${resultLabel ? ` - ${resultLabel}` : ''}${done ? '' : ' - marked not done'}`,
+      { kind: 'POST_ROSC_CHECK', payload: { item, done, ...(done && result ? { result } : {}) } },
+    );
+  };
+
+  /** Post-ROSC vitals; returns the values outside the AHA targets (null if nothing recorded). */
+  const handlePostRoscVitals = (input: VitalsInput): string[] | null => {
+    if (!inPostRosc) {
+      window.alert('Post-ROSC vitals can be recorded while the patient is in ROSC.');
+      return null;
+    }
+    const vitals = completeVitals(input);
+    const summary = describeVitals(vitals);
+    if (!summary) {
+      window.alert('Enter at least one value.');
+      return null;
+    }
+    const flags = assessPostRoscVitals(vitals);
+    vibrateDevice(30);
+    addLog(
+      'INFO',
+      `Post-ROSC vitals: ${summary}${flags.length ? ` [Outside target: ${flags.join('; ')}]` : ''}`,
+      { kind: 'VITALS', payload: { phase: 'POST_ROSC', ...vitals, flags } },
+    );
+    return flags;
+  };
+
+  /** Where the patient went after ROSC. Closes the case. */
+  const handleDisposition = (destination: DispositionDestination) => {
+    if (!inPostRosc) {
+      window.alert('Disposition can be recorded while the patient is in ROSC.');
+      return;
+    }
+    const label = DISPOSITION_LABEL[destination];
+    let note: string | undefined;
+    if (destination === 'TRANSFER' || destination === 'OTHER') {
+      const answer = window.prompt(destination === 'TRANSFER' ? 'Transferred to (optional)' : 'Details (optional)', '');
+      if (answer === null) return;
+      note = answer.trim() || undefined;
+    }
+    const now = Date.now();
+    const at = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const sure = window.confirm(
+      `Record "${label}" at ${at}?\n\nThis closes the case: the ROSC timer stops and no re-arrest can be added to it. You can then save and sign the case.`
+    );
+    if (!sure) return;
+    vibrateDevice(100);
+    applyClinicalAction(
+      'INFO',
+      'DISPOSITION',
+      (prev, t) => recordDisposition(prev, t, destination),
+      (prev, next) => `Disposition: ${label}${note ? ` (${note})` : ''} after ${formatClock(next.roscElapsedSeconds ?? 0)} of ROSC`,
+      (prev, next) => ({
+        destination,
+        ...(note ? { note } : {}),
+        roscDurationSeconds: next.roscElapsedSeconds ?? 0,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
       }),
       now,
     );
@@ -1945,6 +2076,10 @@ export default function App() {
         handleEpi={handleEpi}
         handleRosc={handleRosc}
         handleStopResuscitation={handleStopResuscitation}
+        onReversibleCause={handleReversibleCause}
+        onPostRoscCheck={handlePostRoscCheck}
+        onPostRoscVitals={handlePostRoscVitals}
+        onDisposition={handleDisposition}
         handleAmiodarone={handleAmiodarone}
         handleLidocaine={handleLidocaine}
         handleRhythmSelect={handleRhythmSelect}

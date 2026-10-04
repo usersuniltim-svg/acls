@@ -1,4 +1,4 @@
-import { AclsState, PatientRhythm } from '../types';
+import { AclsState, DispositionDestination, PatientRhythm } from '../types';
 import { CPR_CYCLE_DURATION, EPI_INTERVAL } from '../constants';
 
 /**
@@ -53,6 +53,9 @@ export function clearedClockFields(): Partial<AclsState> {
     arrestEpisodeNumber: 0,
     roscAt: null,
     terminatedAt: null,
+    roscElapsedSeconds: 0,
+    dispositionAt: null,
+    disposition: null,
     roscPausedMs: 0,
     cprEndsAt: null,
     cprRemainingMs: CPR_MS,
@@ -69,8 +72,9 @@ export function clearedClockFields(): Partial<AclsState> {
  * Returns the same object when nothing visible changed, so React skips a render.
  */
 export function advanceClock(prev: AclsState, now: number): AclsState {
-  // Nothing moves once resuscitation has been stopped: the record is final.
-  if (!prev.codeStartedAt || prev.terminatedAt) return prev;
+  // Nothing moves once resuscitation has been stopped or the patient has been
+  // handed over after ROSC: the record is final.
+  if (!prev.codeStartedAt || prev.terminatedAt || prev.dispositionAt) return prev;
   let next: AclsState = { ...prev };
 
   // 1. The 2-minute CPR cycle has run out -> rhythm check.
@@ -97,6 +101,7 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
   // long ROSC, a re-arrest finds the next dose already due.
   const epiDueAt = (next.epiAnchorAt ?? next.codeStartedAt!) + EPI_MS;
   const epiTimeLeft = Math.max(0, Math.ceil((epiDueAt - now) / 1000));
+  const roscElapsedSeconds = next.roscAt ? Math.max(0, Math.floor((now - next.roscAt) / 1000)) : 0;
   const rhythmCheckTimeLeft =
     next.activePrompt === 'RHYTHM_CHECK' && next.rhythmCheckStartedAt != null
       ? Math.max(0, Math.ceil((next.rhythmCheckStartedAt + RHYTHM_CHECK_MS - now) / 1000))
@@ -127,7 +132,7 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
     }
   }
 
-  next = { ...next, totalTime, cprTimeLeft, epiTimeLeft, rhythmCheckTimeLeft, epiDueElapsed };
+  next = { ...next, totalTime, cprTimeLeft, epiTimeLeft, rhythmCheckTimeLeft, epiDueElapsed, roscElapsedSeconds };
 
   const unchanged =
     next.totalTime === prev.totalTime &&
@@ -135,6 +140,7 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
     next.epiTimeLeft === prev.epiTimeLeft &&
     next.rhythmCheckTimeLeft === prev.rhythmCheckTimeLeft &&
     next.epiDueElapsed === prev.epiDueElapsed &&
+    next.roscElapsedSeconds === prev.roscElapsedSeconds &&
     next.activePrompt === prev.activePrompt &&
     next.isTimerRunning === prev.isTimerRunning &&
     next.cprEndsAt === prev.cprEndsAt &&
@@ -201,7 +207,7 @@ export function startCprCycle(prev: AclsState, now: number): AclsState {
   // CPR is a child transition of an established arrest episode. Never create
   // an arrest implicitly from a CPR/shock action because that would produce
   // clinical events without a CODE_START boundary.
-  if (!prev.codeStartedAt || prev.terminatedAt || prev.isTimerRunning) return prev;
+  if (!prev.codeStartedAt || prev.terminatedAt || prev.dispositionAt || prev.isTimerRunning) return prev;
 
   const base = reArrestIfInRosc(prev, now);
   return advanceClock(
@@ -386,6 +392,24 @@ export function terminateResuscitation(prev: AclsState, now: number): AclsState 
     rhythmCheckTimeLeft: 0,
     epiDueElapsed: 0,
     alert: prev.alert ?? null, // no alarm sound at the moment of stopping
+  };
+}
+
+/**
+ * Patient handed over / left after ROSC (cath lab, ICU, transfer, or died
+ * after ROSC). Closes the case: the ROSC timer freezes and no re-arrest can be
+ * added to this record. Only possible while the patient is in ROSC.
+ */
+export function recordDisposition(prev: AclsState, now: number, destination: DispositionDestination): AclsState {
+  if (!prev.codeStartedAt || !prev.roscAt || prev.terminatedAt || prev.dispositionAt) return prev;
+  const current = advanceClock(prev, now);
+  return {
+    ...current,
+    dispositionAt: now,
+    disposition: destination,
+    roscElapsedSeconds: Math.max(0, Math.floor((now - prev.roscAt) / 1000)),
+    isTimerRunning: false,
+    activePrompt: null,
   };
 }
 
