@@ -32,27 +32,27 @@ export interface CodeStartPayload {
   initialRhythmAssessment?: boolean;
 }
 
-export interface CprStartPayload {
+export interface EpisodeScopedPayload {\n  /** Arrest episode this event belongs to. Episode 1 starts at CODE_START; each RE_ARREST increments it. */\n  arrestEpisodeNumber?: number;\n}\n\nexport interface CprStartPayload extends EpisodeScopedPayload {
   cycleNumber?: number;
 }
 
-export interface CprPausePayload {
+export interface CprPausePayload extends EpisodeScopedPayload {
   cprCycle?: number;
   remainingSeconds?: number;
 }
 
-export interface CprResumePayload {
+export interface CprResumePayload extends EpisodeScopedPayload {
   cprCycle?: number;
 }
 
-export interface RhythmCheckPayload {
+export interface RhythmCheckPayload extends EpisodeScopedPayload {
   checkNumber: number;
   rhythm: PatientRhythm | 'ORGANIZED_WITH_PULSE';
   /** Timestamp when chest-compression interruption/rhythm assessment actually began. */
   startedAt?: number;
 }
 
-export interface ShockPayload {
+export interface ShockPayload extends EpisodeScopedPayload {
   energyJ: number;
   defibType: 'BIPHASIC' | 'MONOPHASIC';
   shockNumber: number;
@@ -62,7 +62,7 @@ export interface ShockPayload {
   protocolNote?: string;
 }
 
-export interface MedicationPayload {
+export interface MedicationPayload extends EpisodeScopedPayload {
   route: 'IV/IO';
   doseNumber: number;
   doseMg?: number;
@@ -72,26 +72,26 @@ export interface MedicationPayload {
   protocolNote?: string;
 }
 
-export interface RoscPayload {
+export interface RoscPayload extends EpisodeScopedPayload {
   arrestDurationSeconds: number;
   rhythmCheckNumber?: number;
 }
 
-export interface ReArrestPayload {
+export interface ReArrestPayload {\n  /** Episode being opened by this re-arrest. */\n  arrestEpisodeNumber?: number;
   priorArrestSeconds: number;
   /** CPR cycle automatically started by the re-arrest action, if applicable. */
   cprCycleNumber?: number;
 }
 
 /** Resuscitation stopped without ROSC (termination of resuscitation). */
-export interface CodeEndPayload {
+export interface CodeEndPayload extends EpisodeScopedPayload {
   outcome: 'TERMINATED';
   /** Time of death as recorded by the clinician (the moment they stopped). */
   timeOfDeath: number;
   arrestDurationSeconds: number;
 }
 
-export interface ProcedurePayload {
+export interface ProcedurePayload extends EpisodeScopedPayload {
   procedure?: string;
   site?: string;
 }
@@ -161,7 +161,7 @@ export interface AclsState {
   selectedEnergy: number;
   epiDueElapsed?: number;
 
-  codeStartedAt?: number | null;
+  codeStartedAt?: number | null;\n  /** 1-based arrest episode number for the currently active/last episode. */\n  arrestEpisodeNumber?: number;
   roscAt?: number | null;
   /** Resuscitation stopped without ROSC (time of death). The code is closed. */
   terminatedAt?: number | null;
