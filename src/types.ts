@@ -27,7 +27,7 @@ export type ClinicalEventKind =
 
 export type ClinicalEventSource = 'user' | 'system' | 'import';
 
-export interface CodeStartPayload {
+export interface CodeStartPayload extends EpisodeScopedPayload {
   reason?: string;
   initialRhythmAssessment?: boolean;
 }
