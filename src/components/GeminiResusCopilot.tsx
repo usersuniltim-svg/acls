@@ -1,4 +1,28 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { auth } from '../lib/firebase';
+
+/** A refusal from the server (not signed in, not verified, rate-limited, too long): shown as is. */
+class CopilotAccessError extends Error {}
+
+/** JSON headers plus the signed-in user's Firebase ID token, which the server verifies. */
+async function copilotHeaders(): Promise<Record<string, string>> {
+  let token: string | undefined;
+  try {
+    token = await auth.currentUser?.getIdToken();
+  } catch {
+    token = undefined; // the server will answer 401 and the copilot says so
+  }
+  return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
+
+async function throwForResponse(res: Response): Promise<never> {
+  let message = '';
+  try { message = (await res.json())?.error || ''; } catch { /* not JSON */ }
+  if ([400, 401, 403, 413, 429].includes(res.status)) {
+    throw new CopilotAccessError(message || `The AI copilot refused the request (${res.status}).`);
+  }
+  throw new Error(`Server returned ${res.status}`);
+}
 import { 
   Bot, 
   Send, 
@@ -50,55 +74,32 @@ interface GeminiResusCopilotProps {
   onOpenVerificationGatekeeper?: () => void;
 }
 
-const ROLE_PRESETS: Record<CopilotRole, { title: string; subtitle: string; icon: any; instruction: string; color: string }> = {
+// Titles and icons only: each role's instructions are applied on the server
+// (src/lib/copilotRoles.ts), so the browser cannot change them.
+const ROLE_PRESETS: Record<CopilotRole, { title: string; subtitle: string; icon: any; color: string }> = {
   acls_expert: {
     title: 'ACLS Resuscitation Director',
     subtitle: 'AHA 2025/2026 Core Algorithm & Rhythm Titration',
     icon: Activity,
-    color: 'emerald',
-    instruction: `You are the Senior ACLS Resuscitation Director & Emergency Medicine Consultant for Nepal Med.
-Provide precise, rapid, high-yield guidance according to AHA 2025/2026 and ILCOR guidelines:
-- Emphasize High-Quality CPR (100-120 bpm, 5-6 cm depth, complete recoil, chest compression fraction >80%).
-- Shockable: 200J Biphasic, resume CPR immediately, Epi 1mg after shock 2, Amiodarone 300mg then 150mg after shock 3 (or Lidocaine 1-1.5mg/kg then 0.5-0.75mg/kg).
-- Non-shockable (PEA/Asystole): Epi 1mg immediately q3-5min, investigate Hs & Ts.
-- Structure replies with clear bullet points, bold key drug doses, and emergency priority highlights.`
+    color: 'emerald'
   },
   toxicology_hs_ts: {
     title: 'Hs & Ts / Toxicology Detective',
     subtitle: 'Reversible Causes, Overdoses & Electrolytes',
     icon: ShieldAlert,
-    color: 'amber',
-    instruction: `You are the Clinical Resuscitation Toxicologist and Reversible Causes (Hs & Ts) Specialist.
-Focus specifically on identifying and managing the reversible causes of cardiac arrest (especially PEA and Asystole):
-- Hs: Hypovolemia, Hypoxia, Hydrogen ion (acidosis), Hypo/Hyperkalemia, Hypothermia, Hypoglycemia.
-- Ts: Tension pneumothorax, Tamponade (cardiac), Toxins (beta blockers, CCBs, opioids, TCAs, organophosphates), Thrombosis pulmonary (PE), Thrombosis coronary (STEMI).
-- Provide concrete diagnostic clues (e.g., bedside ultrasound/POCUS, blood gas, ECG changes) and specific antidotes/interventions (Calcium gluconate, Insulin+Dextrose, Sodium Bicarbonate, Naloxone, Lipid emulsion, Needle decompression).`
+    color: 'amber'
   },
   pals_pediatric: {
     title: 'PALS Pediatric Resus Specialist',
     subtitle: 'Weight-Based Dosing & Pediatric Protocols',
     icon: Stethoscope,
-    color: 'sky',
-    instruction: `You are a Pediatric Critical Care & PALS Specialist.
-Provide precise weight-based dosing and pediatric resuscitation guidance according to PALS 2025 standards:
-- Compressions: 1.5 inches (4cm) for infants, 2 inches (5cm) for children. Ratio 15:2 with 2 rescuers, 30:2 with single.
-- Defibrillation: Initial shock 2 J/kg, subsequent shocks 4 J/kg (up to 10 J/kg or adult dose).
-- Epinephrine: 0.01 mg/kg (0.1 mL/kg of 1:10,000 solution) IV/IO q3-5min.
-- Amiodarone: 5 mg/kg bolus (max 300mg), repeat up to 2 times.
-- Endotracheal tube size calculation: (Age in years / 4) + 3.5 for cuffed tubes.`
+    color: 'sky'
   },
   post_rosc_care: {
     title: 'Post-ROSC Care & Neuroprotection',
     subtitle: 'Targeted Temperature, MAP Goals & Cath Triage',
     icon: BookOpen,
-    color: 'indigo',
-    instruction: `You are the Post-Cardiac Arrest Care & Neuro-Intensivist Lead.
-Focus on optimizing hemodynamics, oxygenation, targeted temperature management (TTM), and post-resuscitation care:
-- Airway/Breathing: Maintain SpO2 92-98%, PaCO2 35-45 mmHg (avoid hyperventilation).
-- Circulation: Maintain MAP ≥65 mmHg and SBP ≥90 mmHg with fluids and vasopressor infusions (Norepinephrine 0.1-0.5 mcg/kg/min or Epinephrine).
-- Emergent Coronary Angiography: 12-lead ECG immediately; emergent cath lab for STEMI or suspected coronary etiology.
-- Targeted Temperature Management (TTM): Target 32°C–36°C or prevent fever (<37.5°C) for at least 24-72 hours. Avoid active rewarming spikes.
-- Neuro-monitoring and EEG for seizure screening.`
+    color: 'indigo'
   }
 };
 
@@ -201,31 +202,35 @@ export default function GeminiResusCopilot({
     setIsLoading(true);
 
     try {
-      // Include context of current code if available
-      let contextualInstruction = ROLE_PRESETS[selectedRole].instruction;
-      if (currentAclsState?.cprCycleCount) {
-        contextualInstruction += `\n[Live Resuscitation Code Context: Elapsed Time: ${Math.floor((currentAclsState.totalTime || 0) / 60)}m, CPR Cycle: ${currentAclsState.cprCycleCount}, Shocks Delivered: ${currentAclsState.shocksCount || 0}, Epi Doses: ${currentAclsState.epiCount || 0}, Active Rhythm: ${currentAclsState.currentRhythm || 'N/A'}]`;
-      }
+      // Live code numbers (not free text); the server adds them to the role's instructions.
+      const codeContext = currentAclsState?.cprCycleCount
+        ? {
+            elapsedMinutes: Math.floor((currentAclsState.totalTime || 0) / 60),
+            cprCycle: currentAclsState.cprCycleCount,
+            shocks: currentAclsState.shocksCount || 0,
+            epinephrineDoses: currentAclsState.epiCount || 0,
+            rhythm: currentAclsState.currentRhythm,
+          }
+        : undefined;
 
+      // Identity is proven by the Firebase ID token in the headers, not by the body.
       const response = await fetch('/api/gemini/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await copilotHeaders(),
         body: JSON.stringify({
           messages: [...messages, userMsg].map((m) => ({
             role: m.role,
             content: m.content,
           })),
-          systemInstruction: contextualInstruction,
           model: selectedModel,
           useSearchGrounding: useSearchGrounding,
           role: selectedRole,
-          isVerifiedDoctor: true,
-          userEmail: userEmail || undefined
+          codeContext,
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`);
+        await throwForResponse(response);
       }
 
       const data = await response.json();
@@ -242,6 +247,16 @@ export default function GeminiResusCopilot({
 
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
+      if (err instanceof CopilotAccessError) {
+        setMessages((prev) => [...prev, {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: `**${err.message}**`,
+          timestamp: Date.now(),
+          modelUsed: 'not-sent',
+        }]);
+        return;
+      }
       console.warn('Remote chat error, providing instant RAG response:', err);
       // Seamlessly retrieve from local verified RAG protocol engine
       const relevantRagDocs = queryAclsRag(textToSend, 3);
@@ -276,19 +291,21 @@ export default function GeminiResusCopilot({
     try {
       const res = await fetch('/api/gemini/search', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await copilotHeaders(),
         body: JSON.stringify({
           query: query.trim(),
           category: searchCategory,
-          isVerifiedDoctor: true,
-          userEmail: userEmail || undefined
         }),
       });
 
-      if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+      if (!res.ok) await throwForResponse(res);
       const data = await res.json();
       setSearchResults(data);
     } catch (e: any) {
+      if (e instanceof CopilotAccessError) {
+        setSearchResults({ text: `**${e.message}**`, groundingChunks: [], webSearchQueries: [] });
+        return;
+      }
       console.warn('Evidence search remote error, using RAG evidence matrix:', e);
       const relevantDocs = queryAclsRag(query, 4);
       const ragMatrix = relevantDocs.map(d => `### [${d.title}] (${d.category})\n**Summary**: ${d.summary}\n\n${d.protocolContent}`).join('\n\n---\n\n');
