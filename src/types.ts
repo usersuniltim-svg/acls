@@ -249,7 +249,7 @@ export interface ResuscitationMetrics {
   roscAt: number | null;
   finalRoscAt: number | null;
   roscCount: number;
-  arrestEpisodeDurationsSeconds: number[];
+  arrestEpisodeDurationsSeconds: number[];\n  /** 1-based arrest episode IDs represented in the timeline, in chronological order. */\n  arrestEpisodeNumbers?: number[];
   totalArrestDurationSeconds: number | null;
   /** Backward-compatible alias for totalArrestDurationSeconds. */
   arrestDurationSeconds: number | null;
