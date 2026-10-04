@@ -21,6 +21,7 @@ export type ClinicalEventKind =
   | 'LIDOCAINE'
   | 'ROSC'
   | 'RE_ARREST'
+  | 'CODE_END'
   | 'PROCEDURE'
   | 'INFO';
 
@@ -57,6 +58,8 @@ export interface ShockPayload {
   shockNumber: number;
   /** CPR cycle automatically started by the shock action, if applicable. */
   cprCycleNumber?: number;
+  /** Set when the clinician recorded the shock outside the usual AHA sequence; says why it was flagged. */
+  protocolNote?: string;
 }
 
 export interface MedicationPayload {
@@ -65,6 +68,8 @@ export interface MedicationPayload {
   doseMg?: number;
   doseLabel?: string;
   maxDoses?: number;
+  /** Set when the clinician recorded the dose outside the usual AHA sequence; says why it was flagged. */
+  protocolNote?: string;
 }
 
 export interface RoscPayload {
@@ -76,6 +81,14 @@ export interface ReArrestPayload {
   priorArrestSeconds: number;
   /** CPR cycle automatically started by the re-arrest action, if applicable. */
   cprCycleNumber?: number;
+}
+
+/** Resuscitation stopped without ROSC (termination of resuscitation). */
+export interface CodeEndPayload {
+  outcome: 'TERMINATED';
+  /** Time of death as recorded by the clinician (the moment they stopped). */
+  timeOfDeath: number;
+  arrestDurationSeconds: number;
 }
 
 export interface ProcedurePayload {
@@ -95,6 +108,7 @@ export interface ClinicalEventPayloadMap {
   LIDOCAINE: MedicationPayload;
   ROSC: RoscPayload;
   RE_ARREST: ReArrestPayload;
+  CODE_END: CodeEndPayload;
   PROCEDURE: ProcedurePayload;
   INFO: Record<string, unknown>;
 }
@@ -149,6 +163,10 @@ export interface AclsState {
 
   codeStartedAt?: number | null;
   roscAt?: number | null;
+  /** Resuscitation stopped without ROSC (time of death). The code is closed. */
+  terminatedAt?: number | null;
+  /** Highest clinical-event sequence already included in a saved case (0 = nothing saved yet). */
+  savedEventSequence?: number;
   roscPausedMs?: number;
   cprEndsAt?: number | null;
   cprRemainingMs?: number;
@@ -195,6 +213,9 @@ export interface SavedCase {
   updatedAt?: number;
   recordVersion?: number;
   caseStorageVersion?: number;
+
+  /** Display only, never stored in Firestore: saved on this device, not uploaded yet. */
+  syncPending?: boolean;
 }
 
 export interface GroundingChunk {
@@ -247,6 +268,12 @@ export interface ResuscitationMetrics {
   shockableRhythmChecks: number;
   nonShockableRhythmChecks: number;
   medicationIntervalsSeconds: number[];
+  /** How the code ended. Optional so metrics saved by older versions stay valid. */
+  outcome?: 'ROSC' | 'TERMINATED' | 'NOT_DOCUMENTED';
+  /** When resuscitation was stopped without ROSC (time of death), if it was. */
+  codeEndAt?: number | null;
+  /** Actions the clinician recorded outside the usual AHA sequence (each flagged in the log). */
+  protocolDeviationCount?: number;
 }
 
 export interface UserProfile {

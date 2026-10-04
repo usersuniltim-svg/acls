@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, ShieldCheck, CheckCircle2, XCircle, Clock, Search, RefreshCw, 
@@ -7,8 +7,9 @@ import {
   PlusCircle
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
-import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { collection, collectionGroup, onSnapshot, doc, setDoc } from 'firebase/firestore';
 import { DoctorKyc, SavedCase, UserProfile } from '../types';
+import { AdminCase, combineAdminCases } from '../lib/caseStore';
 
 interface AdminKycPanelProps {
   isOpen: boolean;
@@ -20,7 +21,12 @@ interface AdminKycPanelProps {
 export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onProfileApproved }: AdminKycPanelProps) {
   const [activeView, setActiveView] = useState<'kyc' | 'cases'>('kyc');
   const [profiles, setProfiles] = useState<(UserProfile & { id: string })[]>([]);
-  const [allCases, setAllCases] = useState<(SavedCase & { doctorUid?: string; doctorEmail?: string })[]>([]);
+  // Cases in Firestore case collections (users/{uid}/cases and the old top-level /cases).
+  const [storedCases, setStoredCases] = useState<AdminCase[]>([]);
+  // Cases still only in a profile's old savedCases array (doctor not yet migrated).
+  const [legacyProfileCases, setLegacyProfileCases] = useState<AdminCase[]>([]);
+  // Sample cases shown straight away, before Firestore confirms the write.
+  const [localSampleCases, setLocalSampleCases] = useState<AdminCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
@@ -41,14 +47,18 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
     const profilesCol = collection(db, 'profiles');
     const unsubProfiles = onSnapshot(profilesCol, (snapshot) => {
       const list: (UserProfile & { id: string })[] = [];
-      const extractedCases: (SavedCase & { doctorUid?: string; doctorEmail?: string })[] = [];
+      const extractedCases: AdminCase[] = [];
 
       snapshot.forEach((docSnap) => {
-        const data = docSnap.data() as UserProfile;
+        const data = docSnap.data() as UserProfile & { caseStorageVersion?: number };
         list.push({ ...data, id: docSnap.id });
 
-        if (data.savedCases && Array.isArray(data.savedCases)) {
+        // Old format: cases in an array on the profile. Once a doctor's cases
+        // have moved to users/{uid}/cases (caseStorageVersion 2) the array is
+        // ignored, so cases the doctor deletes do not reappear here.
+        if (data.caseStorageVersion !== 2 && Array.isArray(data.savedCases)) {
           data.savedCases.forEach((sc) => {
+            if (!sc || typeof sc.id !== 'string') return;
             extractedCases.push({
               ...sc,
               doctorUid: docSnap.id,
@@ -59,15 +69,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
       });
 
       setProfiles(list);
-      setAllCases(prev => {
-        // combine deduplicated cases
-        const map = new Map<string, SavedCase & { doctorUid?: string; doctorEmail?: string }>();
-        extractedCases.forEach(c => map.set(c.id, c));
-        prev.forEach(c => {
-          if (!map.has(c.id)) map.set(c.id, c);
-        });
-        return Array.from(map.values()).sort((a, b) => b.savedAt - a.savedAt);
-      });
+      setLegacyProfileCases(extractedCases);
       setLoading(false);
     }, (err) => {
       console.error("Admin panel could not load profiles:", err);
@@ -77,23 +79,17 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
       setLoading(false);
     });
 
-    // 2. Also listen to top-level /cases collection
-    const casesCol = collection(db, 'cases');
-    const unsubCases = onSnapshot(casesCol, (snapshot) => {
-      const casesList: (SavedCase & { doctorUid?: string; doctorEmail?: string })[] = [];
+    // 2. Every collection named "cases": each doctor's users/{uid}/cases plus
+    //    the old top-level /cases. Needs the admin collection-group read rule.
+    const unsubCases = onSnapshot(collectionGroup(db, 'cases'), (snapshot) => {
+      const casesList: AdminCase[] = [];
       snapshot.forEach((docSnap) => {
-        casesList.push(docSnap.data() as any);
+        const data = docSnap.data() as AdminCase & { userId?: string };
+        // users/{uid}/cases/{id} -> uid; top-level /cases/{id} -> stored userId
+        const ownerUid = docSnap.ref.parent.parent?.id || data.userId || data.doctorUid;
+        casesList.push({ ...data, id: data.id || docSnap.id, doctorUid: ownerUid });
       });
-      if (casesList.length > 0) {
-        setAllCases(prev => {
-          const map = new Map<string, SavedCase & { doctorUid?: string; doctorEmail?: string }>();
-          casesList.forEach(c => map.set(c.id, c));
-          prev.forEach(c => {
-            if (!map.has(c.id)) map.set(c.id, c);
-          });
-          return Array.from(map.values()).sort((a, b) => b.savedAt - a.savedAt);
-        });
-      }
+      setStoredCases(casesList);
     }, (err) => {
       console.error("Admin panel could not load cases:", err);
       setLoadError(prev => prev || (err?.code ? `${err.code}: ${err.message}` : String(err)));
@@ -105,11 +101,19 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
     };
   }, [isOpen]);
 
+  const allCases = useMemo(
+    () => combineAdminCases(
+      [storedCases, legacyProfileCases, localSampleCases],
+      new Map(profiles.map(p => [p.id, p.email || ''])),
+    ),
+    [storedCases, legacyProfileCases, localSampleCases, profiles],
+  );
+
   const handleCreateSampleCase = async () => {
     setActionStatus("Generating standard ACLS clinical resuscitation case...");
     const sampleId = `sample_${Date.now()}`;
     const t0 = Date.now() - 480 * 1000; // sample code started 8 minutes ago
-    const sampleCase: SavedCase & { doctorUid?: string; doctorEmail?: string } = {
+    const sampleCase: AdminCase = {
       id: sampleId,
       patientCode: `SAMPLE-TEST-${Math.floor(1000 + Math.random() * 9000)}`,
       savedAt: Date.now(),
@@ -135,7 +139,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
       ]
     };
 
-    setAllCases(prev => [sampleCase, ...prev]);
+    setLocalSampleCases(prev => [sampleCase, ...prev]);
 
     try {
       const caseRef = doc(db, 'cases', sampleId);
@@ -452,7 +456,8 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                       specialty: 'Clinical Medicine',
                       institution: 'Hospital Practice'
                     };
-                    const savedCasesCount = prof.savedCases?.length || 0;
+                    const doctorCases = allCases.filter(c => c.doctorUid === prof.id);
+                    const savedCasesCount = doctorCases.length;
                     const isCasesExpanded = expandedCasesDocId === prof.id;
 
                     return (
@@ -538,13 +543,13 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                         </div>
 
                         {/* Inline Resuscitation Cases Drawer */}
-                        {isCasesExpanded && prof.savedCases && (
+                        {isCasesExpanded && doctorCases.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-gray-200 bg-white p-3 rounded-xl border space-y-2">
                             <span className="text-[10px] font-bold text-black uppercase tracking-wider block">
                               Case logs saved by Dr. {prof.fullName}:
                             </span>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {prof.savedCases.map((c) => (
+                              {doctorCases.map((c) => (
                                 <div
                                   key={c.id}
                                   onClick={() => setSelectedCaseModal(c)}
@@ -633,6 +638,9 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                           <p className="text-[10px] text-gray-600 font-mono">
                             NMC Reg: {c.councilRegistration || 'VERIFIED'}
                           </p>
+                          {c.doctorEmail && (
+                            <p className="text-[10px] text-gray-500 break-all">Account: {c.doctorEmail}</p>
+                          )}
                         </div>
                         <button
                           type="button"

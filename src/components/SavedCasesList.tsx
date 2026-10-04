@@ -207,6 +207,14 @@ export default function SavedCasesList({
                       Saved Case #{idx + 1}
                     </span>
                     <h4 className="text-xs font-bold text-black truncate max-w-[160px]">{item.patientCode}</h4>
+                    {item.syncPending && (
+                      <span
+                        className="mt-1 inline-flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded"
+                        title="Saved on this device. It uploads automatically when you are online and signed in."
+                      >
+                        <Clock className="w-2.5 h-2.5" /> Waiting to upload
+                      </span>
+                    )}
                   </div>
                   <button
                     type="button"

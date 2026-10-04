@@ -108,3 +108,48 @@ test('CPR cycles started implicitly by re-arrest are represented in metrics', ()
   assert.equal(metrics.reArrestCount, 1);
   assert.deepEqual(metrics.arrestEpisodeDurationsSeconds, [120, 120]);
 });
+
+test('a code stopped without ROSC is measured to the time of death', () => {
+  const events: ClinicalEvent[] = [
+    event('CODE_START', 0, { reason: 'arrest' }, 1),
+    event('CPR_START', 1000, { cycleNumber: 1 }, 2),
+    event('EPINEPHRINE', 30000, { route: 'IV/IO', doseNumber: 1, doseMg: 1 }, 3),
+    event('CODE_END', 1500000, { outcome: 'TERMINATED', timeOfDeath: 1500000, arrestDurationSeconds: 1500 }, 4),
+  ];
+
+  const metrics = calculateResuscitationMetrics(events, undefined);
+
+  assert.equal(metrics.outcome, 'TERMINATED');
+  assert.equal(metrics.codeEndAt, 1500000);
+  assert.deepEqual(metrics.arrestEpisodeDurationsSeconds, [1500]);
+  assert.equal(metrics.totalArrestDurationSeconds, 1500);
+  assert.equal(metrics.roscCount, 0);
+});
+
+test('outcome follows the last episode: ROSC, then re-arrest, then stopped', () => {
+  const events: ClinicalEvent[] = [
+    event('CODE_START', 0, { reason: 'arrest' }, 1),
+    event('ROSC', 60000, { arrestDurationSeconds: 60 }, 2),
+    event('RE_ARREST', 120000, { priorArrestSeconds: 60 }, 3),
+    event('CODE_END', 300000, { outcome: 'TERMINATED', timeOfDeath: 300000, arrestDurationSeconds: 240 }, 4),
+  ];
+  const stopped = calculateResuscitationMetrics(events, undefined);
+  assert.equal(stopped.outcome, 'TERMINATED');
+  assert.deepEqual(stopped.arrestEpisodeDurationsSeconds, [60, 180]);
+
+  const stillInArrest = calculateResuscitationMetrics(events.slice(0, 3), undefined);
+  assert.equal(stillInArrest.outcome, 'NOT_DOCUMENTED');
+
+  const rosc = calculateResuscitationMetrics(events.slice(0, 2), undefined);
+  assert.equal(rosc.outcome, 'ROSC');
+});
+
+test('actions recorded outside the usual AHA sequence are counted', () => {
+  const events: ClinicalEvent[] = [
+    event('CODE_START', 0, { reason: 'arrest' }, 1),
+    event('EPINEPHRINE', 10000, { route: 'IV/IO', doseNumber: 1, protocolNote: 'before 2nd shock' }, 2),
+    event('SHOCK', 20000, { energyJ: 200, defibType: 'BIPHASIC', shockNumber: 1, protocolNote: 'during CPR' }, 3),
+    event('EPINEPHRINE', 200000, { route: 'IV/IO', doseNumber: 2 }, 4),
+  ];
+  assert.equal(calculateResuscitationMetrics(events, undefined).protocolDeviationCount, 2);
+});
