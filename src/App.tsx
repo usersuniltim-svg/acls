@@ -929,7 +929,7 @@ export default function App() {
         'CPR_PAUSE',
         (prev, at) => pauseCpr(prev, at),
         (prev) => `Compressions paused - CPR cycle held at ${formatClock(prev.cprTimeLeft)}`,
-        (prev) => ({ cprCycle: prev.cprCycleCount, remainingSeconds: prev.cprTimeLeft }),
+        (prev, next) => ({ cprCycle: prev.cprCycleCount, remainingSeconds: prev.cprTimeLeft, arrestEpisodeNumber: next.arrestEpisodeNumber }),
         now,
         (_prev, next) => next.activePrompt !== 'RHYTHM_CHECK',
       );
@@ -964,6 +964,7 @@ export default function App() {
         (prev, next) => ({
           priorArrestSeconds: arrestSeconds(prev, prev.roscAt ?? now),
           cprCycleNumber: next.cprCycleCount,
+          arrestEpisodeNumber: next.arrestEpisodeNumber,
         }),
         now,
       );
@@ -975,7 +976,7 @@ export default function App() {
       'CPR_RESUME',
       (prev, at) => resumeCpr(prev, at),
       () => 'Compressions resumed',
-      (prev) => ({ cprCycle: prev.cprCycleCount }),
+      (prev, next) => ({ cprCycle: prev.cprCycleCount, arrestEpisodeNumber: next.arrestEpisodeNumber }),
       now,
     );
   };
@@ -1024,6 +1025,7 @@ export default function App() {
         defibType: prev.defibType,
         shockNumber: next.shocksCount,
         cprCycleNumber: next.cprCycleCount,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
         ...(note ? { protocolNote: note } : {}),
       }),
       now,
@@ -1047,6 +1049,7 @@ export default function App() {
         doseMg: 1,
         route: 'IV/IO',
         doseNumber: next.epiCount,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
         ...(note ? { protocolNote: note } : {}),
       }),
       now,
@@ -1075,6 +1078,7 @@ export default function App() {
         route: 'IV/IO',
         doseNumber: next.amioCount ?? 0,
         maxDoses: AMIODARONE_MAX_DOSES,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
         ...(note ? { protocolNote: note } : {}),
       }),
       now,
@@ -1104,6 +1108,7 @@ export default function App() {
         route: 'IV/IO',
         doseNumber: next.lidoCount ?? 0,
         maxDoses: LIDOCAINE_MAX_DOSES,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
         ...(note ? { protocolNote: note } : {}),
       }),
       now,
@@ -1161,6 +1166,7 @@ export default function App() {
         checkNumber: next.rhythmCheckCount ?? 0,
         rhythm,
         startedAt: prev.rhythmCheckStartedAt ?? now,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
       }),
       now,
     );
@@ -1225,6 +1231,7 @@ export default function App() {
           checkNumber,
           rhythm: 'ORGANIZED_WITH_PULSE',
           startedAt: rhythmStartedAt,
+          arrestEpisodeNumber: next.arrestEpisodeNumber,
         },
         description: rhythmDescription,
       }, sequenceBase + 1);
@@ -1237,6 +1244,7 @@ export default function App() {
         payload: {
           arrestDurationSeconds: arrestSeconds(prev, now),
           rhythmCheckNumber: checkNumber,
+          arrestEpisodeNumber: next.arrestEpisodeNumber,
         },
         description: roscDescription,
       }, sequenceBase + 2);
