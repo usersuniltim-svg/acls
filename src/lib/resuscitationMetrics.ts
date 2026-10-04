@@ -28,17 +28,23 @@ export function calculateResuscitationMetrics(
   // ROSC or CODE_END (resuscitation stopped) closes the currently open episode.
   // ROSC time is therefore excluded from subsequent arrest-duration calculations.
   const arrestEpisodeDurationsSeconds: number[] = [];
+  const arrestEpisodeNumbers: number[] = [];
   let episodeStartAt: number | null = null;
+  let episodeNumber = 0;
   for (const event of sorted) {
     if (event.kind === 'CODE_START' && episodeStartAt == null) {
       episodeStartAt = event.timestamp;
+      episodeNumber = event.payload.arrestEpisodeNumber ?? 1;
     } else if (event.kind === 'RE_ARREST' && episodeStartAt == null) {
       episodeStartAt = event.timestamp;
+      episodeNumber = event.payload.arrestEpisodeNumber ?? (episodeNumber + 1);
     } else if ((event.kind === 'ROSC' || event.kind === 'CODE_END') && episodeStartAt != null) {
       arrestEpisodeDurationsSeconds.push(
         Math.max(0, Math.floor((event.timestamp - episodeStartAt) / 1000))
       );
+      arrestEpisodeNumbers.push(episodeNumber);
       episodeStartAt = null;
+      episodeNumber = 0;
     }
   }
   const totalArrestDurationSeconds =
@@ -87,6 +93,7 @@ export function calculateResuscitationMetrics(
     finalRoscAt,
     roscCount: roscEvents.length,
     arrestEpisodeDurationsSeconds,
+    arrestEpisodeNumbers,
     totalArrestDurationSeconds,
     arrestDurationSeconds: totalArrestDurationSeconds,
     timeToFirstCprSeconds: delta(firstCprAt),
