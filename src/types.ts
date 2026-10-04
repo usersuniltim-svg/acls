@@ -271,6 +271,8 @@ export interface AclsState {
   codeStartedAt?: number | null;
   /** 1-based arrest episode number for the currently active/last episode. */
   arrestEpisodeNumber?: number;
+  /** When the current arrest episode began (code start, or the latest re-arrest). */
+  arrestEpisodeStartedAt?: number | null;
   roscAt?: number | null;
   /** Resuscitation stopped without ROSC (time of death). The code is closed. */
   terminatedAt?: number | null;

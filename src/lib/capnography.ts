@@ -19,10 +19,14 @@ export const ETCO2_TERMINATION_ALS_SECONDS = 20 * 60;
 export interface Etco2Context {
   /** Previous reading in the same arrest episode, if any. */
   previousMmHg?: number | null;
-  /** Highest reading so far in this code, before this one. */
+  /** Highest reading so far in the current arrest episode, before this one. */
   maxSoFarMmHg?: number | null;
   airway: AdvancedAirwayDevice | 'NONE';
-  /** Arrest (ALS) time so far, seconds. */
+  /**
+   * ALS time in the CURRENT arrest episode, seconds (episodeArrestSeconds).
+   * Must match the episode-scoped readings: after a re-arrest the 20 minutes
+   * start again, so earlier episodes can neither suppress nor trigger the note.
+   */
   arrestSeconds: number;
 }
 
@@ -60,7 +64,7 @@ export function etco2Context(
   const sameEpisode = readings.filter(r => (r.payload.arrestEpisodeNumber ?? 1) === arrestEpisodeNumber);
   return {
     previousMmHg: sameEpisode.at(-1)?.payload.valueMmHg ?? null,
-    maxSoFarMmHg: readings.length ? Math.max(...readings.map(r => r.payload.valueMmHg)) : null,
+    maxSoFarMmHg: sameEpisode.length ? Math.max(...sameEpisode.map(r => r.payload.valueMmHg)) : null,
     airway,
     arrestSeconds,
   };

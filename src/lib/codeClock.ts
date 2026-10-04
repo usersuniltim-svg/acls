@@ -22,9 +22,10 @@ const EPI_REALERT_SECONDS = 7;
 
 export const AMIODARONE_MAX_DOSES = 2; // 300 mg, then 150 mg
 /** 2025 AHA: biphasic per manufacturer (e.g. initial 120-200 J; maximum if unknown); monophasic 360 J. */
-export const BIPHASIC_MIN_J = 120;
 export const MONOPHASIC_J = 360;
-export const MAX_DEFIB_J = 360;
+/** Plausibility bounds for a typed energy (typing-error check, not an AHA limit). */
+export const PLAUSIBLE_MIN_J = 100;
+export const PLAUSIBLE_MAX_J = 360;
 export const LIDOCAINE_MAX_DOSES = 2; // 1-1.5 mg/kg, then 0.5-0.75 mg/kg per 2025 AHA cardiac-arrest algorithm
 
 type AlertKind = NonNullable<AclsState['alert']>['kind'];
@@ -50,11 +51,24 @@ export function arrestSeconds(s: AclsState, now: number): number {
   return Math.max(0, Math.floor((end - s.codeStartedAt - (s.roscPausedMs ?? 0)) / 1000));
 }
 
+/**
+ * Arrest time in the current episode only, in whole seconds: from code start
+ * (episode 1) or from the latest re-arrest. An episode never contains ROSC,
+ * so this is plain elapsed time, stopping at ROSC or when resuscitation stops.
+ */
+export function episodeArrestSeconds(s: AclsState, now: number): number {
+  if (!s.codeStartedAt) return 0;
+  const start = s.arrestEpisodeStartedAt ?? s.codeStartedAt;
+  const end = s.roscAt ?? s.terminatedAt ?? now;
+  return Math.max(0, Math.floor((end - start) / 1000));
+}
+
 /** Fields that describe a code in progress, all cleared. */
 export function clearedClockFields(): Partial<AclsState> {
   return {
     codeStartedAt: null,
     arrestEpisodeNumber: 0,
+    arrestEpisodeStartedAt: null,
     roscAt: null,
     terminatedAt: null,
     roscElapsedSeconds: 0,
@@ -171,6 +185,7 @@ export function startCode(prev: AclsState, now: number): AclsState {
       ...clearedClockFields(),
       codeStartedAt: now,
       arrestEpisodeNumber: 1,
+      arrestEpisodeStartedAt: now,
       epiAnchorAt: now,
       rhythmCheckStartedAt: now,
       cprRemainingMs: CPR_MS,
@@ -205,6 +220,7 @@ function reArrestIfInRosc(prev: AclsState, now: number): AclsState {
     roscAt: null,
     // Each re-arrest after ROSC is a new arrest episode within the same code.
     arrestEpisodeNumber: (prev.arrestEpisodeNumber || 1) + 1,
+    arrestEpisodeStartedAt: now,
     rhythmCheckCount: 0,
   };
 }
@@ -497,18 +513,18 @@ export function shockEnergyConcern(prev: AclsState): string | null {
   if (prev.defibType === 'MONOPHASIC' && energy !== MONOPHASIC_J) {
     return `Monophasic shocks are given at ${MONOPHASIC_J} J (selected ${energy} J).`;
   }
-  if (energy > MAX_DEFIB_J) {
-    return `${energy} J is above the ${MAX_DEFIB_J} J maximum of adult defibrillators.`;
-  }
-  if (prev.defibType === 'BIPHASIC' && energy < BIPHASIC_MIN_J) {
-    return `${energy} J is below the usual adult biphasic dose (manufacturer's dose, e.g. 120-200 J; use the maximum if unknown).`;
+  // Not an AHA rule: a check for typing errors in a custom energy. Adult
+  // external defibrillators are typically set between 120 and 360 J for
+  // cardiac arrest and do not go above 360 J.
+  if (energy < PLAUSIBLE_MIN_J || energy > PLAUSIBLE_MAX_J) {
+    return `${energy} J is unusual for an adult cardiac-arrest shock (devices are typically set between 120 and 360 J). Check that it was entered correctly.`;
   }
   if (
     prev.lastShockEnergyJ != null &&
     prev.lastShockDefibType === prev.defibType &&
     energy < prev.lastShockEnergyJ
   ) {
-    return `${energy} J is lower than the previous shock (${prev.lastShockEnergyJ} J). AHA: second and subsequent shocks should be the same or higher.`;
+    return `${energy} J is lower than the previous shock (${prev.lastShockEnergyJ} J). AHA: second and subsequent biphasic shocks should follow the device/manufacturer strategy; equivalent or higher energy may be used.`;
   }
   return null;
 }
