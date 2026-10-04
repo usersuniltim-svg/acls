@@ -24,8 +24,12 @@ export function clinicalEventToLegacyLog(event: ClinicalEvent): LogEvent {
     event.kind === 'LIDOCAINE' ? 'DRUG_LIDO' :
     event.kind === 'CODE_START' || event.kind === 'CPR_START' || event.kind === 'CPR_RESUME' || event.kind === 'RE_ARREST' ? 'CPR_START' :
     event.kind === 'PROCEDURE' ? 'ADVANCED_AIRWAY' :
-    event.kind === 'INFO' || event.kind === 'CPR_PAUSE' || event.kind === 'CODE_END' ? 'INFO' :
-    event.kind as LogEvent['type'];
+    event.kind === 'SHOCK' ? 'SHOCK' :
+    event.kind === 'ROSC' ? 'ROSC' :
+    event.kind === 'RHYTHM_CHECK' ? 'RHYTHM_CHECK' :
+    // CPR_PAUSE, CODE_END, reversible causes, post-ROSC items, vitals,
+    // disposition and anything newer have no legacy type of their own.
+    'INFO';
   return { id: event.id, timestamp: event.timestamp, type: legacyType, description: event.description ?? event.kind };
 }
 

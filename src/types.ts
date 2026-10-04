@@ -22,6 +22,10 @@ export type ClinicalEventKind =
   | 'ROSC'
   | 'RE_ARREST'
   | 'CODE_END'
+  | 'REVERSIBLE_CAUSE'
+  | 'POST_ROSC_CHECK'
+  | 'VITALS'
+  | 'DISPOSITION'
   | 'PROCEDURE'
   | 'INFO';
 
@@ -98,6 +102,77 @@ export interface CodeEndPayload extends EpisodeScopedPayload {
   arrestDurationSeconds: number;
 }
 
+/** The AHA reversible causes of cardiac arrest (H's and T's). */
+export type ReversibleCauseId =
+  | 'HYPOVOLEMIA'
+  | 'HYPOXIA'
+  | 'ACIDOSIS'
+  | 'POTASSIUM'
+  | 'HYPOTHERMIA'
+  | 'TENSION_PNEUMOTHORAX'
+  | 'TAMPONADE'
+  | 'TOXINS'
+  | 'PULMONARY_THROMBOSIS'
+  | 'CORONARY_THROMBOSIS';
+
+export type ReversibleCauseStatus = 'SUSPECTED' | 'TREATED' | 'RULED_OUT';
+
+/** One assessment of one reversible cause, attributed to the arrest episode it was made in. */
+export interface ReversibleCausePayload extends EpisodeScopedPayload {
+  cause: ReversibleCauseId;
+  status: ReversibleCauseStatus;
+  /** What was done or found, e.g. "needle decompression", "K+ 7.1". */
+  note?: string;
+}
+
+/** Items of the 2025 AHA Adult Post-Cardiac Arrest Care Algorithm. */
+export type PostRoscItemId =
+  | 'AIRWAY'
+  | 'OXYGENATION'
+  | 'VENTILATION'
+  | 'MAP'
+  | 'ECG_12_LEAD'
+  | 'IMAGING'
+  | 'CAUSE_TREATMENT'
+  | 'FOLLOWS_COMMANDS'
+  | 'TEMPERATURE_CONTROL'
+  | 'EEG'
+  | 'GLUCOSE';
+
+/** A post-ROSC checklist item marked done (or un-marked) after ROSC. */
+export interface PostRoscCheckPayload extends EpisodeScopedPayload {
+  item: PostRoscItemId;
+  done: boolean;
+  /** For items with an answer: ECG 'STEMI' | 'NO_STEMI'; commands 'YES' | 'NO_OR_UNSURE'. */
+  result?: string;
+}
+
+/** Vital signs entered by the clinician after ROSC; flags list values outside AHA targets. */
+export interface VitalsPayload extends EpisodeScopedPayload {
+  phase: 'POST_ROSC';
+  sbp?: number;
+  dbp?: number;
+  /** mm Hg; calculated from SBP/DBP when not entered (mapIsCalculated). */
+  map?: number;
+  mapIsCalculated?: boolean;
+  hr?: number;
+  spo2?: number;
+  paco2?: number;
+  etco2?: number;
+  tempC?: number;
+  glucoseMgDl?: number;
+  flags: string[];
+}
+
+export type DispositionDestination = 'CATH_LAB' | 'ICU' | 'TRANSFER' | 'DIED' | 'OTHER';
+
+/** Where the patient went after ROSC. Closes the case. */
+export interface DispositionPayload extends EpisodeScopedPayload {
+  destination: DispositionDestination;
+  note?: string;
+  roscDurationSeconds: number;
+}
+
 export interface ProcedurePayload extends EpisodeScopedPayload {
   procedure?: string;
   site?: string;
@@ -116,6 +191,10 @@ export interface ClinicalEventPayloadMap {
   ROSC: RoscPayload;
   RE_ARREST: ReArrestPayload;
   CODE_END: CodeEndPayload;
+  REVERSIBLE_CAUSE: ReversibleCausePayload;
+  POST_ROSC_CHECK: PostRoscCheckPayload;
+  VITALS: VitalsPayload;
+  DISPOSITION: DispositionPayload;
   PROCEDURE: ProcedurePayload;
   INFO: Record<string, unknown>;
 }
@@ -176,6 +255,11 @@ export interface AclsState {
   terminatedAt?: number | null;
   /** Highest clinical-event sequence already included in a saved case (0 = nothing saved yet). */
   savedEventSequence?: number;
+  /** Seconds since ROSC (live while in ROSC, frozen at disposition). */
+  roscElapsedSeconds?: number;
+  /** Patient handed over / left after ROSC. The case is closed. */
+  dispositionAt?: number | null;
+  disposition?: DispositionDestination | null;
   roscPausedMs?: number;
   cprEndsAt?: number | null;
   cprRemainingMs?: number;
@@ -285,6 +369,17 @@ export interface ResuscitationMetrics {
   codeEndAt?: number | null;
   /** Actions the clinician recorded outside the usual AHA sequence (each flagged in the log). */
   protocolDeviationCount?: number;
+  /** Last recorded status of each reversible cause, per arrest episode. */
+  reversibleCauses?: { arrestEpisodeNumber: number; cause: ReversibleCauseId; status: ReversibleCauseStatus; at: number; note?: string }[];
+  /** Post-ROSC checklist items done at the end of the record (after the last ROSC). */
+  postRoscChecklistDone?: PostRoscItemId[];
+  /** Seconds from the ROSC to the first 12-lead ECG after it. */
+  timeFromRoscTo12LeadSeconds?: number | null;
+  postRoscVitalsCount?: number;
+  /** Post-ROSC vitals entries with at least one value outside the AHA targets. */
+  postRoscVitalsOutsideTargetCount?: number;
+  disposition?: DispositionDestination | null;
+  dispositionAt?: number | null;
 }
 
 export interface UserProfile {

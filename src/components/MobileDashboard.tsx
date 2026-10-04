@@ -33,9 +33,13 @@ import {
   PatientRhythm, 
   AclsState,
   UserProfile,
-  SavedCase
+  SavedCase,
+  ReversibleCauseId,
+  ReversibleCauseStatus,
+  PostRoscItemId,
+  DispositionDestination,
 } from '../types';
-import { CPR_CYCLE_DURATION, EPI_INTERVAL, HS_AND_TS } from '../constants';
+import { CPR_CYCLE_DURATION, EPI_INTERVAL } from '../constants';
 import {
   clearedClockFields,
   isCodeActive,
@@ -45,6 +49,10 @@ import {
   LIDOCAINE_MAX_DOSES,
 } from '../lib/codeClock';
 import SavedCasesList from './SavedCasesList';
+import PostRoscPanel from './PostRoscPanel';
+import ReversibleCausesPanel from './ReversibleCausesPanel';
+import type { VitalsInput } from '../lib/postRosc';
+import { DISPOSITION_LABEL } from '../lib/postRosc';
 import LockedGuestOverlay from './LockedGuestOverlay';
 import PrintableReport from './PrintableReport';
 import { printReport } from '../lib/printReport';
@@ -73,6 +81,10 @@ interface MobileDashboardProps {
   handleEpi: () => void;
   handleRosc: () => void;
   handleStopResuscitation: () => void;
+  onReversibleCause: (cause: ReversibleCauseId, status: ReversibleCauseStatus) => void;
+  onPostRoscCheck: (item: PostRoscItemId, result?: string) => void;
+  onPostRoscVitals: (input: VitalsInput) => string[] | null;
+  onDisposition: (destination: DispositionDestination) => void;
   handleAmiodarone: () => void;
   handleLidocaine: () => void;
   handleRhythmSelect: (rhythm: PatientRhythm) => void;
@@ -124,6 +136,10 @@ export default function MobileDashboard({
   handleEpi,
   handleRosc,
   handleStopResuscitation,
+  onReversibleCause,
+  onPostRoscCheck,
+  onPostRoscVitals,
+  onDisposition,
   handleAmiodarone,
   handleLidocaine,
   handleRhythmSelect,
@@ -352,7 +368,9 @@ export default function MobileDashboard({
               <span className={`text-[9.5px] font-bold tracking-wider uppercase ${state.terminatedAt ? (isDark ? 'text-slate-200 font-black' : 'text-slate-800 font-black') : state.roscAt ? 'text-emerald-600 font-black' : state.isTimerRunning ? 'text-red-600 font-black' : textMuted}`}>
                 {state.terminatedAt
                   ? `RESUSCITATION STOPPED ${new Date(state.terminatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                  : state.roscAt ? 'ROSC - POST-ARREST CARE' : state.isTimerRunning ? 'CPR IN PROGRESS' : 'CPR ON HOLD'}
+                  : state.dispositionAt && state.disposition
+                    ? `CLOSED: ${DISPOSITION_LABEL[state.disposition].toUpperCase()}`
+                    : state.roscAt ? 'ROSC - POST-ARREST CARE' : state.isTimerRunning ? 'CPR IN PROGRESS' : 'CPR ON HOLD'}
               </span>
               <button 
                 type="button"
@@ -396,7 +414,20 @@ export default function MobileDashboard({
           </div>
         </div>
 
+        {/* Post-ROSC care replaces the CPR ring while the patient has a pulse */}
+        {state.roscAt && !state.terminatedAt && (
+          <PostRoscPanel
+            state={state}
+            isDark={isDark}
+            onCheck={onPostRoscCheck}
+            onVitals={onPostRoscVitals}
+            onDisposition={onDisposition}
+            onReArrest={toggleTimer}
+          />
+        )}
+
         {/* Circular Resuscitation Stopwatch Ring */}
+        {!state.roscAt && (
         <div className="relative w-48 h-48 flex items-center justify-center shrink-0 my-1">
           <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
             <circle 
@@ -429,15 +460,16 @@ export default function MobileDashboard({
             <p className="text-[8.5px] font-mono text-red-600 uppercase mt-0.5 font-extrabold">Cycle #{state.cprCycleCount + 1}</p>
           </div>
         </div>
+        )}
 
         {/* CPR Action Controls */}
         <div className="w-full flex gap-2 shrink-0">
           <button 
             type="button"
             onClick={toggleTimer} 
-            disabled={Boolean(state.terminatedAt)}
+            disabled={Boolean(state.terminatedAt || state.dispositionAt)}
             className={`flex-1 h-12 rounded-2xl font-bold uppercase tracking-wider text-[10px] flex items-center justify-center gap-2 transition-all active:scale-95 border-none shadow-md cursor-pointer disabled:cursor-not-allowed ${
-              state.terminatedAt
+              state.terminatedAt || state.dispositionAt
                 ? 'bg-slate-500 text-white'
                 : state.isTimerRunning 
                 ? 'bg-amber-500 hover:bg-amber-600 text-white' 
@@ -446,6 +478,8 @@ export default function MobileDashboard({
           >
             {state.terminatedAt ? (
               <>Stopped - save the case in Journal</>
+            ) : state.dispositionAt ? (
+              <>Case closed - save it in Journal</>
             ) : state.isTimerRunning ? (
               <>
                 <Pause className="w-4 h-4 fill-current animate-pulse" /> Pause Code
@@ -459,7 +493,7 @@ export default function MobileDashboard({
           <button 
             type="button"
             onClick={resetCprTimer} 
-            disabled={Boolean(state.terminatedAt)}
+            disabled={Boolean(state.terminatedAt || state.dispositionAt)}
             className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all active:scale-95 shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
               isDark ? 'bg-slate-800 border-white/10 text-slate-300 hover:text-white' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'
             }`}
@@ -607,36 +641,8 @@ export default function MobileDashboard({
           </button>
         )}
 
-        {/* Reversible Causes Checklist (H's and T's) */}
-        <div className={`p-3.5 rounded-2xl border space-y-2.5 ${cardClass}`}>
-          <div className="flex justify-between items-center border-b pb-1.5 border-inherit">
-            <span className="text-[9px] uppercase tracking-wider font-bold text-red-600">
-              Reversible Causes (H's and T's)
-            </span>
-            <span className={`text-[8px] font-mono ${textMuted}`}>10 Checkpoints</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {HS_AND_TS.map((item, idx) => (
-              <label 
-                key={idx} 
-                className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition-all ${subCardClass}`}
-                onClick={() => vibrateDevice(30)}
-              >
-                <input 
-                  type="checkbox" 
-                  className="w-3.5 h-3.5 rounded border-gray-400 text-red-600 focus:ring-red-500" 
-                  onChange={(e) => {
-                    const status = e.target.checked ? 'IDENTIFIED' : 'CLEARED';
-                    addLog('INFO', `Diagnostic check: ${item.term} ${status}`);
-                  }}
-                />
-                <span className={`text-[9px] font-bold uppercase tracking-tight leading-tight ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-                  {item.term}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
+        {/* Reversible causes, per arrest episode */}
+        <ReversibleCausesPanel state={state} isDark={isDark} onSetStatus={onReversibleCause} />
 
         {/* Shortcuts */}
         <div className="grid grid-cols-2 gap-2">
@@ -841,6 +847,7 @@ export default function MobileDashboard({
             shocksCount={state.shocksCount}
             epiCount={state.epiCount}
             logs={state.logs}
+            clinicalEvents={state.clinicalEvents}
             certifiedBy={effectiveProfile.fullName}
             councilRegistration={effectiveProfile.councilRegistration}
             currentRhythm={state.currentRhythm}

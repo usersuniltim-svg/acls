@@ -153,3 +153,28 @@ test('actions recorded outside the usual AHA sequence are counted', () => {
   ];
   assert.equal(calculateResuscitationMetrics(events, undefined).protocolDeviationCount, 2);
 });
+
+
+test('post-ROSC care and reversible causes are summarised', () => {
+  const events: ClinicalEvent[] = [
+    event('CODE_START', 0, { reason: 'arrest', arrestEpisodeNumber: 1 }, 1),
+    event('REVERSIBLE_CAUSE', 30000, { cause: 'HYPOXIA', status: 'SUSPECTED', arrestEpisodeNumber: 1 }, 2),
+    event('REVERSIBLE_CAUSE', 60000, { cause: 'HYPOXIA', status: 'TREATED', note: 'intubated', arrestEpisodeNumber: 1 }, 3),
+    event('ROSC', 300000, { arrestDurationSeconds: 300, arrestEpisodeNumber: 1 }, 4),
+    event('POST_ROSC_CHECK', 420000, { item: 'ECG_12_LEAD', done: true, result: 'STEMI', arrestEpisodeNumber: 1 }, 5),
+    event('POST_ROSC_CHECK', 450000, { item: 'MAP', done: true, arrestEpisodeNumber: 1 }, 6),
+    event('VITALS', 460000, { phase: 'POST_ROSC', map: 58, spo2: 96, flags: ['MAP 58 mm Hg is below the 65 mm Hg target'], arrestEpisodeNumber: 1 }, 7),
+    event('VITALS', 900000, { phase: 'POST_ROSC', map: 72, spo2: 95, flags: [], arrestEpisodeNumber: 1 }, 8),
+    event('DISPOSITION', 1200000, { destination: 'CATH_LAB', roscDurationSeconds: 900, arrestEpisodeNumber: 1 }, 9),
+  ];
+  const m = calculateResuscitationMetrics(events, undefined);
+
+  assert.deepEqual(m.reversibleCauses?.map(c => `${c.arrestEpisodeNumber}:${c.cause}:${c.status}`), ['1:HYPOXIA:TREATED']);
+  assert.deepEqual([...(m.postRoscChecklistDone ?? [])].sort(), ['ECG_12_LEAD', 'MAP']);
+  assert.equal(m.timeFromRoscTo12LeadSeconds, 120);
+  assert.equal(m.postRoscVitalsCount, 2);
+  assert.equal(m.postRoscVitalsOutsideTargetCount, 1);
+  assert.equal(m.disposition, 'CATH_LAB');
+  assert.equal(m.dispositionAt, 1200000);
+  assert.equal(m.outcome, 'ROSC');
+});

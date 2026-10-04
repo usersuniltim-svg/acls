@@ -2,6 +2,8 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { ClinicalEvent, LogEvent } from '../types';
 import { normalizeCaseClinicalEvents } from '../lib/clinicalEvents';
+import { CAUSE_STATUS_LABEL, causeLabel, causeSummaryByEpisode } from '../lib/reversibleCauses';
+import { DISPOSITION_LABEL, postRoscItemLabel, postRoscResultLabel } from '../lib/postRosc';
 
 interface PrintableReportProps {
   /** Identifies this report so printReport() can print it on its own. */
@@ -63,8 +65,9 @@ function formatDate(timestamp: number) {
 
 function getRhythmLabel(description: string) {
   const lower = description.toLowerCase();
+  // Check non-shockable first: "non-shockable" also contains "shockable".
+  if (lower.includes('asystole / pea') || lower.includes('non-shockable') || lower.includes('non_shockable')) return 'Asystole / PEA';
   if (lower.includes('vf / pulseless vt') || lower.includes('shockable')) return 'VF / pulseless VT';
-  if (lower.includes('asystole / pea') || lower.includes('non-shockable')) return 'Asystole / PEA';
   if (lower.includes('organized rhythm')) return 'Organized rhythm with pulse';
   return description.replace(/^Rhythm check #\d+:\s*/i, '').trim();
 }
@@ -122,7 +125,11 @@ export default function PrintableReport({
   const firstEventAt = chronologicalLogs[0]?.timestamp ?? (savedAt ? new Date(savedAt).getTime() : Date.now());
   const lastEventAt = chronologicalLogs[chronologicalLogs.length - 1]?.timestamp ?? firstEventAt;
   const initialRhythm = rhythmLogs[0] ? getRhythmLabel(rhythmLogs[0].description) : 'Not documented';
-  const finalRhythm = currentRhythm || (rhythmLogs.length ? getRhythmLabel(rhythmLogs[rhythmLogs.length - 1].description) : 'Not documented');
+  const finalRhythm =
+    currentRhythm === 'SHOCKABLE' ? 'VF / pulseless VT' :
+    currentRhythm === 'NON_SHOCKABLE' ? 'Asystole / PEA' :
+    currentRhythm && currentRhythm !== 'UNKNOWN' ? currentRhythm :
+    rhythmLogs.length ? getRhythmLabel(rhythmLogs[rhythmLogs.length - 1].description) : 'Not documented';
   const hasRosc = chronologicalLogs.some((l) => l.type === 'ROSC' || /ROSC achieved|ROSC confirmed/i.test(l.description));
   // The outcome is how the last arrest episode ended: ROSC, resuscitation
   // stopped (time of death), or a re-arrest with no documented end.
@@ -133,6 +140,17 @@ export default function PrintableReport({
       : lastEnding?.kind === 'ROSC' || (!lastEnding && hasRosc)
         ? 'ROSC confirmed'
         : 'No ROSC documented';
+  // Reversible causes per arrest episode, and post-ROSC care.
+  const causeSummary = causeSummaryByEpisode(normalizedEvents);
+  const roscTimes = normalizedEvents.filter(e => e.kind === 'ROSC').map(e => e.timestamp);
+  const sinceRosc = (t: number) => {
+    const rosc = [...roscTimes].reverse().find(r => r <= t);
+    return rosc != null ? `+${formatDuration(Math.floor((t - rosc) / 1000))}` : '';
+  };
+  const postRoscChecks = normalizedEvents.filter((e): e is Extract<ClinicalEvent, { kind: 'POST_ROSC_CHECK' }> => e.kind === 'POST_ROSC_CHECK');
+  const vitalsEntries = normalizedEvents.filter((e): e is Extract<ClinicalEvent, { kind: 'VITALS' }> => e.kind === 'VITALS');
+  const dispositionEvent = normalizedEvents.filter((e): e is Extract<ClinicalEvent, { kind: 'DISPOSITION' }> => e.kind === 'DISPOSITION').at(-1);
+
   const signed = Boolean(signatureDataUrl);
   const recordStatus = signed ? 'SIGNED / ATTESTED' : 'UNSIGNED / DRAFT';
 
@@ -201,7 +219,7 @@ export default function PrintableReport({
 
           <footer className="acls-print-footer">
             <span>ACLS Companion • Case {patientCode}</span>
-            <span>Page 1 of 4</span>
+            <span>Page 1 of 5</span>
           </footer>
         </section>
 
@@ -240,7 +258,7 @@ export default function PrintableReport({
 
           <footer className="acls-print-footer">
             <span>ACLS Companion • Case {patientCode}</span>
-            <span>Page 2 of 4</span>
+            <span>Page 2 of 5</span>
           </footer>
         </section>
 
@@ -328,11 +346,96 @@ export default function PrintableReport({
 
           <footer className="acls-print-footer">
             <span>ACLS Companion • Case {patientCode}</span>
-            <span>Page 3 of 4</span>
+            <span>Page 3 of 5</span>
           </footer>
         </section>
 
         {/* PAGE 4 */}
+        <section className="acls-print-page">
+          <header className="acls-print-page-header">
+            <div>ACLS COMPANION <span>• {patientCode}</span></div>
+            <strong>CAUSES & POST-ROSC CARE</strong>
+          </header>
+
+          <section className="acls-print-section">
+            <h2>VIII. Reversible Causes (H's &amp; T's) by Arrest Episode</h2>
+            {causeSummary.length === 0 ? (
+              <div className="acls-print-empty">No reversible-cause assessments were recorded.</div>
+            ) : (
+              <table className="acls-print-table">
+                <thead><tr><th>Episode</th><th>Cause</th><th>Status</th><th>Time</th><th>Note</th></tr></thead>
+                <tbody>
+                  {causeSummary.map((c) => (
+                    <tr key={`${c.arrestEpisodeNumber}-${c.cause}`}>
+                      <td>{c.arrestEpisodeNumber}</td>
+                      <td>{causeLabel(c.cause)}</td>
+                      <td>{CAUSE_STATUS_LABEL[c.status]}</td>
+                      <td className="mono">{formatTime(c.at)}</td>
+                      <td>{c.note ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+
+          <section className="acls-print-section">
+            <h2>IX. Post-ROSC Care</h2>
+            {postRoscChecks.length === 0 && vitalsEntries.length === 0 && !dispositionEvent ? (
+              <div className="acls-print-empty">No post-ROSC care was recorded.</div>
+            ) : (
+              <>
+                {postRoscChecks.length > 0 && (
+                  <table className="acls-print-table">
+                    <thead><tr><th>Time</th><th>After ROSC</th><th>AHA post-arrest item</th></tr></thead>
+                    <tbody>
+                      {postRoscChecks.map((e) => (
+                        <tr key={e.id}>
+                          <td className="mono">{formatTime(e.timestamp)}</td>
+                          <td className="mono">{sinceRosc(e.timestamp)}</td>
+                          <td>
+                            {postRoscItemLabel(e.payload.item)}
+                            {e.payload.done
+                              ? (postRoscResultLabel(e.payload.item, e.payload.result) ? `: ${postRoscResultLabel(e.payload.item, e.payload.result)}` : '')
+                              : ' (marked not done)'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {vitalsEntries.length > 0 && (
+                  <table className="acls-print-table">
+                    <thead><tr><th>Time</th><th>Vitals</th><th>Outside AHA target</th></tr></thead>
+                    <tbody>
+                      {vitalsEntries.map((e) => (
+                        <tr key={e.id}>
+                          <td className="mono">{formatTime(e.timestamp)}</td>
+                          <td>{(e.description ?? '').replace(/^Post-ROSC vitals: /, '').replace(/ \[Outside target:.*$/, '')}</td>
+                          <td>{(e.payload.flags ?? []).join('; ') || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {dispositionEvent && (
+                  <div className="acls-print-info-grid">
+                    <div><span>Disposition</span><strong>{DISPOSITION_LABEL[dispositionEvent.payload.destination]}{dispositionEvent.payload.note ? ` (${dispositionEvent.payload.note})` : ''}</strong></div>
+                    <div><span>At</span><strong>{formatTime(dispositionEvent.timestamp)}</strong></div>
+                    <div><span>ROSC duration</span><strong>{formatDuration(dispositionEvent.payload.roscDurationSeconds)}</strong></div>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+
+          <footer className="acls-print-footer">
+            <span>ACLS Companion • Case {patientCode}</span>
+            <span>Page 4 of 5</span>
+          </footer>
+        </section>
+
+        {/* PAGE 5 */}
         <section className="acls-print-page acls-print-attestation-page">
           <header className="acls-print-page-header">
             <div>ACLS COMPANION <span>• {patientCode}</span></div>
@@ -340,7 +443,7 @@ export default function PrintableReport({
           </header>
 
           <section className="acls-print-section">
-            <h2>VIII. Resuscitation Record Review</h2>
+            <h2>X. Resuscitation Record Review</h2>
             <div className="acls-print-review-grid">
               <div><span>Resuscitation start</span><strong>{formatDateTime(firstEventAt)}</strong></div>
               <div><span>Last recorded event</span><strong>{formatDateTime(lastEventAt)}</strong></div>
@@ -375,7 +478,7 @@ export default function PrintableReport({
           </section>
 
           <section className="acls-print-record-info">
-            <h2>IX. Record Information</h2>
+            <h2>XI. Record Information</h2>
             <div><span>Case ID</span><strong>{patientCode}</strong></div>
             <div><span>Record version</span><strong>1.0</strong></div>
             <div><span>Generated by</span><strong>ACLS Companion</strong></div>
@@ -388,7 +491,7 @@ export default function PrintableReport({
 
           <footer className="acls-print-footer">
             <span>ACLS Companion • Case {patientCode}</span>
-            <span>Page 4 of 4</span>
+            <span>Page 5 of 5</span>
           </footer>
         </section>
       </main>

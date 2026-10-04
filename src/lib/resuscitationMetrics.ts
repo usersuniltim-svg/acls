@@ -1,5 +1,7 @@
 import { ClinicalEvent, ClinicalEventKind, PatientRhythm, ResuscitationMetrics } from '../types';
 import { normalizeCaseClinicalEvents } from './clinicalEvents';
+import { causeSummaryByEpisode } from './reversibleCauses';
+import { postRoscChecklist } from './postRosc';
 
 /**
  * Derives objective timeline metrics from recorded events only.
@@ -76,6 +78,22 @@ export function calculateResuscitationMetrics(
     Boolean(e.payload.protocolNote)
   ).length;
 
+  // Reversible causes: last status of each cause, per arrest episode.
+  const reversibleCauses = causeSummaryByEpisode(sorted);
+
+  // Post-ROSC care after the last ROSC.
+  const postRoscChecks = postRoscChecklist(sorted, finalRoscAt ?? Number.POSITIVE_INFINITY);
+  const postRoscChecklistDone = (Object.keys(postRoscChecks) as (keyof typeof postRoscChecks)[])
+    .filter(item => postRoscChecks[item]?.done);
+  // Time from the ROSC that preceded it to the first 12-lead ECG.
+  const firstEcg = sorted.find(e => e.kind === 'POST_ROSC_CHECK' && e.payload.item === 'ECG_12_LEAD' && e.payload.done);
+  const roscBeforeEcg = firstEcg ? [...roscEvents].reverse().find(r => r.timestamp <= firstEcg.timestamp) : undefined;
+  const timeFromRoscTo12LeadSeconds = firstEcg && roscBeforeEcg
+    ? Math.max(0, Math.floor((firstEcg.timestamp - roscBeforeEcg.timestamp) / 1000))
+    : null;
+  const vitals = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'VITALS' }> => e.kind === 'VITALS');
+  const dispositionEvent = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'DISPOSITION' }> => e.kind === 'DISPOSITION').at(-1);
+
   const medicationIntervalsSeconds: number[] = [];
   for (let i = 1; i < medications.length; i++) {
     medicationIntervalsSeconds.push(Math.max(0, Math.floor(
@@ -114,5 +132,12 @@ export function calculateResuscitationMetrics(
     outcome,
     codeEndAt,
     protocolDeviationCount,
+    reversibleCauses,
+    postRoscChecklistDone,
+    timeFromRoscTo12LeadSeconds,
+    postRoscVitalsCount: vitals.length,
+    postRoscVitalsOutsideTargetCount: vitals.filter(v => (v.payload.flags ?? []).length > 0).length,
+    disposition: dispositionEvent?.payload.destination ?? null,
+    dispositionAt: dispositionEvent?.timestamp ?? null,
   };
 }

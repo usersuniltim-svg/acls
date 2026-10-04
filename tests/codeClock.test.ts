@@ -17,6 +17,7 @@ import {
   checkEpinephrine,
   checkAntiarrhythmic,
   resumeCpr,
+  recordDisposition,
 } from '../src/lib/codeClock';
 import type { AclsState } from '../src/types';
 
@@ -466,4 +467,44 @@ test('a new code resets the arrest episode number to episode 1', () => {
   state = terminateResuscitation(state, 250000);
   state = startCode(state, 300000);
   assert.equal(state.arrestEpisodeNumber, 1);
+});
+
+
+// ---------------------------------------------------------------------------
+// Post-ROSC: live ROSC timer and disposition
+// ---------------------------------------------------------------------------
+
+test('time since ROSC is live during ROSC and resets on re-arrest', () => {
+  let state = confirmRosc(startCprCycle(startCode(baseState(), 10000), 11000), 60000);
+  state = advanceClock(state, 60000 + 95000);
+  assert.equal(state.roscElapsedSeconds, 95);
+
+  state = resumeCpr(state, 60000 + 100000); // re-arrest
+  assert.equal(state.roscElapsedSeconds, 0);
+  assert.equal(state.arrestEpisodeNumber, 2);
+});
+
+test('disposition closes the case: ROSC timer freezes, no re-arrest can be added', () => {
+  let state = confirmRosc(startCprCycle(startCode(baseState(), 10000), 11000), 60000);
+  state = recordDisposition(state, 60000 + 30 * 60 * 1000, 'ICU');
+
+  assert.equal(state.disposition, 'ICU');
+  assert.equal(state.dispositionAt, 60000 + 30 * 60 * 1000);
+  assert.equal(state.roscElapsedSeconds, 30 * 60);
+  assert.strictEqual(advanceClock(state, 60000 + 90 * 60 * 1000), state);
+  assert.strictEqual(resumeCpr(state, 60000 + 31 * 60 * 1000), state);
+  assert.strictEqual(startCprCycle(state, 60000 + 31 * 60 * 1000), state);
+  assert.strictEqual(recordDisposition(state, 60000 + 32 * 60 * 1000, 'DIED'), state);
+});
+
+test('disposition is only possible in ROSC, and a new code clears it', () => {
+  const arrest = startCprCycle(startCode(baseState(), 10000), 11000);
+  assert.strictEqual(recordDisposition(arrest, 50000, 'ICU'), arrest);
+
+  const closed = recordDisposition(confirmRosc(arrest, 60000), 70000, 'CATH_LAB');
+  const next = startCode(closed, 100000);
+  assert.equal(next.dispositionAt, null);
+  assert.equal(next.disposition, null);
+  assert.equal(next.roscElapsedSeconds, 0);
+  assert.equal(isCodeActive(next), true);
 });
