@@ -20,7 +20,11 @@ import {
   recordDisposition,
   recordAirway,
   shockEnergyConcern,
+  episodeArrestSeconds,
+  arrestSeconds,
 } from '../src/lib/codeClock';
+import { assessEtco2, etco2Context } from '../src/lib/capnography';
+import { createClinicalEvent } from '../src/lib/clinicalEvents';
 import type { AclsState } from '../src/types';
 
 function baseState(): AclsState {
@@ -546,8 +550,21 @@ test('monophasic is fixed at 360 J; biphasic energy follows the device strategy'
   assert.equal(shockEnergyConcern(shockReady(360, 'MONOPHASIC')), null);
   assert.match(shockEnergyConcern(shockReady(200, 'MONOPHASIC')) ?? '', /Monophasic shocks are given at 360 J/);
   assert.equal(shockEnergyConcern(shockReady(100)), null, 'AHA does not define a universal biphasic minimum; use the manufacturer dose');
-  assert.equal(shockEnergyConcern(shockReady(400)), null, 'AHA does not define a universal 360 J biphasic maximum');
+  assert.equal(shockEnergyConcern(shockReady(150)), null);
   assert.equal(shockEnergyConcern(shockReady(360)), null);
+});
+
+test('a typed energy no adult defibrillator would use asks to check the entry (typing-error check)', () => {
+  for (const typo of [2, 15, 99, 400, 1000]) {
+    const concern = shockEnergyConcern(shockReady(typo)) ?? '';
+    assert.match(concern, /unusual for an adult cardiac-arrest shock/, `${typo} J`);
+    assert.match(concern, /Check that it was entered correctly/, `${typo} J`);
+    assert.doesNotMatch(concern, /AHA/, 'worded as a typing check, not an AHA rule');
+  }
+  // it asks, it does not block: confirmed entries are still recorded
+  const state = shockReady(1000);
+  assert.equal(checkShock(state, 12000).canRecord, true);
+  assert.equal(deliverShock(state, 12000, { override: true }).lastShockEnergyJ, 1000);
 });
 
 test('switching waveform does not compare energies across waveforms', () => {
@@ -593,4 +610,47 @@ test('exchanging the device is a new placement; a new code clears the airway', (
   const closed = terminateResuscitation(state, 100000);
   assert.strictEqual(recordAirway(closed, 110000, 'SGA', true), closed);
   assert.equal(startCode(closed, 200000).advancedAirway, null);
+});
+
+
+// ---------------------------------------------------------------------------
+// Episode arrest time (for the EtCO2 20-minute window)
+// ---------------------------------------------------------------------------
+
+test('episode arrest time restarts at each re-arrest', () => {
+  const min = 60_000;
+  const T0 = 1_000_000_000;
+  let state = startCprCycle(startCode(baseState(), T0), T0 + 1000);
+  assert.equal(episodeArrestSeconds(state, T0 + 10 * min), 600);
+
+  state = confirmRosc(state, T0 + 15 * min);
+  assert.equal(episodeArrestSeconds(state, T0 + 30 * min), 15 * 60, 'stops at ROSC');
+
+  state = resumeCpr(state, T0 + 30 * min); // re-arrest: episode 2
+  assert.equal(state.arrestEpisodeNumber, 2);
+  assert.equal(state.arrestEpisodeStartedAt, T0 + 30 * min);
+  assert.equal(episodeArrestSeconds(state, T0 + 35 * min), 5 * 60);
+  assert.equal(arrestSeconds(state, T0 + 35 * min), 20 * 60, 'whole-code arrest time still counts both episodes');
+
+  assert.equal(startCode(terminateResuscitation(state, T0 + 40 * min), T0 + 50 * min).arrestEpisodeStartedAt, T0 + 50 * min);
+});
+
+test('EtCO2 stop-decision note needs 20 minutes within the current episode', () => {
+  const min = 60_000;
+  const T0 = 1_000_000_000;
+  // Episode 1: 15 min of CPR with EtCO2 25, then ROSC; re-arrest at 30 min.
+  let state = startCprCycle(startCode(baseState(), T0), T0 + 1000);
+  state = resumeCpr(confirmRosc(state, T0 + 15 * min), T0 + 30 * min);
+  const events = [
+    createClinicalEvent({ kind: 'ETCO2', timestamp: T0 + 10 * min, payload: { valueMmHg: 25, airway: 'ETT', flags: [], arrestEpisodeNumber: 1 } }, 1),
+  ];
+  const note = /multimodal decision to stop/;
+
+  // 5 minutes into episode 2 (20 min of arrest in total): no note.
+  const at5 = assessEtco2(8, etco2Context(events, 2, 'ETT', episodeArrestSeconds(state, T0 + 35 * min)));
+  assert.ok(!at5.some(f => note.test(f)), 'not after only 5 minutes of this episode');
+
+  // 20 minutes into episode 2 with no reading above 10 in it: note shown.
+  const at20 = assessEtco2(8, etco2Context(events, 2, 'ETT', episodeArrestSeconds(state, T0 + 50 * min)));
+  assert.ok(at20.some(f => note.test(f)), 'after 20 minutes of this episode');
 });

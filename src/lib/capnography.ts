@@ -22,7 +22,11 @@ export interface Etco2Context {
   /** Highest reading so far in the current arrest episode, before this one. */
   maxSoFarMmHg?: number | null;
   airway: AdvancedAirwayDevice | 'NONE';
-  /** Arrest (ALS) time so far, seconds. */
+  /**
+   * ALS time in the CURRENT arrest episode, seconds (episodeArrestSeconds).
+   * Must match the episode-scoped readings: after a re-arrest the 20 minutes
+   * start again, so earlier episodes can neither suppress nor trigger the note.
+   */
   arrestSeconds: number;
 }
 

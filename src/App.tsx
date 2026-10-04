@@ -64,6 +64,7 @@ import {
   checkEpinephrine,
   checkShock,
   clearedClockFields,
+  episodeArrestSeconds,
   confirmRosc,
   deliverShock,
   terminateResuscitation,
@@ -1300,7 +1301,8 @@ export default function App() {
     const airway = state.advancedAirway?.device ?? 'NONE';
     const flags = assessEtco2(
       valueMmHg,
-      etco2Context(state.clinicalEvents, state.arrestEpisodeNumber || 1, airway, arrestSeconds(state, now)),
+      // Readings and the 20-minute window are both scoped to the current arrest episode.
+      etco2Context(state.clinicalEvents, state.arrestEpisodeNumber || 1, airway, episodeArrestSeconds(state, now)),
     );
     vibrateDevice(30);
     addLog(
