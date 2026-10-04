@@ -2286,10 +2286,29 @@ export default function App() {
                         </button>
                       ))}
                     </div>
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-[8px] font-bold uppercase tracking-wide text-gray-500 whitespace-nowrap">Other device setting</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="1000"
+                        step="1"
+                        value={![120, 150, 200, 300, 360].includes(state.selectedEnergy) ? state.selectedEnergy : ''}
+                        placeholder="J"
+                        aria-label="Custom shock energy in joules"
+                        onChange={e => {
+                          const value = Number(e.target.value);
+                          if (Number.isFinite(value) && value > 0 && value <= 1000) {
+                            setState(prev => ({ ...prev, selectedEnergy: value }));
+                          }
+                        }}
+                        className="h-8 w-20 rounded-lg border border-gray-300 bg-white px-2 text-[10px] font-mono text-gray-800"
+                      />
+                    </div>
                     <p className="text-[8.5px] text-gray-500 leading-snug">
                       {state.defibType === 'MONOPHASIC'
                         ? 'Monophasic: 360 J.'
-                        : "Follow the device's dose (e.g. 120-200 J first; maximum if unknown). Later shocks: same or higher."}
+                        : "Use the defibrillator manufacturer/device setting. AHA example: 120-200 J initially; if unknown, use the device maximum. Later shocks may use an equivalent or higher dose."}
                     </p>
                   </div>
                   
