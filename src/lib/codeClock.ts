@@ -49,7 +49,8 @@ export function arrestSeconds(s: AclsState, now: number): number {
 /** Fields that describe a code in progress, all cleared. */
 export function clearedClockFields(): Partial<AclsState> {
   return {
-    codeStartedAt: null,\n    arrestEpisodeNumber: 0,
+    codeStartedAt: null,
+    arrestEpisodeNumber: 0,
     roscAt: null,
     terminatedAt: null,
     roscPausedMs: 0,
@@ -156,6 +157,7 @@ export function startCode(prev: AclsState, now: number): AclsState {
       ...prev,
       ...clearedClockFields(),
       codeStartedAt: now,
+      arrestEpisodeNumber: 1,
       epiAnchorAt: now,
       rhythmCheckStartedAt: now,
       cprRemainingMs: CPR_MS,
@@ -188,6 +190,8 @@ function reArrestIfInRosc(prev: AclsState, now: number): AclsState {
     ...prev,
     roscPausedMs: (prev.roscPausedMs ?? 0) + (now - prev.roscAt),
     roscAt: null,
+    // Each re-arrest after ROSC is a new arrest episode within the same code.
+    arrestEpisodeNumber: (prev.arrestEpisodeNumber || 1) + 1,
     rhythmCheckCount: 0,
   };
 }
