@@ -948,7 +948,7 @@ export default function App() {
         'CODE_START',
         (prev, at) => startCode(prev, at),
         () => 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.',
-        () => ({ reason: 'user_started_resuscitation', initialRhythmAssessment: true }),
+        (prev, next) => ({ reason: 'user_started_resuscitation', initialRhythmAssessment: true, arrestEpisodeNumber: next.arrestEpisodeNumber }),
         now,
       );
       return;
@@ -1134,7 +1134,7 @@ export default function App() {
       'CODE_END',
       (prev, at) => terminateResuscitation(prev, at),
       (prev, next) => `Resuscitation stopped - time of death ${timeOfDeath} after ${formatClock(next.totalTime)} of arrest time`,
-      (prev, next) => ({ outcome: 'TERMINATED', timeOfDeath: now, arrestDurationSeconds: next.totalTime }),
+      (prev, next) => ({ outcome: 'TERMINATED', timeOfDeath: now, arrestDurationSeconds: next.totalTime, arrestEpisodeNumber: next.arrestEpisodeNumber }),
       now,
     );
   };
@@ -1178,7 +1178,7 @@ export default function App() {
       'ROSC',
       (prev, at) => confirmRosc(prev, at),
       (prev, next) => `ROSC achieved after ${formatClock(arrestSeconds(prev, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`,
-      (prev) => ({ arrestDurationSeconds: arrestSeconds(prev, now) }),
+      (prev, next) => ({ arrestDurationSeconds: arrestSeconds(prev, now), arrestEpisodeNumber: next.arrestEpisodeNumber }),
       now,
     );
   };
