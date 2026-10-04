@@ -1,4 +1,4 @@
-import { AclsState, DispositionDestination, PatientRhythm } from '../types';
+import { AclsState, AdvancedAirwayDevice, DispositionDestination, PatientRhythm } from '../types';
 import { CPR_CYCLE_DURATION, EPI_INTERVAL } from '../constants';
 
 /**
@@ -21,6 +21,10 @@ const RHYTHM_CHECK_MS = RHYTHM_CHECK_SECONDS * 1000;
 const EPI_REALERT_SECONDS = 7;
 
 export const AMIODARONE_MAX_DOSES = 2; // 300 mg, then 150 mg
+/** 2025 AHA: biphasic per manufacturer (e.g. initial 120-200 J; maximum if unknown); monophasic 360 J. */
+export const BIPHASIC_MIN_J = 120;
+export const MONOPHASIC_J = 360;
+export const MAX_DEFIB_J = 360;
 export const LIDOCAINE_MAX_DOSES = 2; // 1-1.5 mg/kg, then 0.5-0.75 mg/kg per 2025 AHA cardiac-arrest algorithm
 
 type AlertKind = NonNullable<AclsState['alert']>['kind'];
@@ -56,6 +60,9 @@ export function clearedClockFields(): Partial<AclsState> {
     roscElapsedSeconds: 0,
     dispositionAt: null,
     disposition: null,
+    advancedAirway: null,
+    lastShockEnergyJ: null,
+    lastShockDefibType: null,
     roscPausedMs: 0,
     cprEndsAt: null,
     cprRemainingMs: CPR_MS,
@@ -306,6 +313,8 @@ export function deliverShock(prev: AclsState, now: number, opts: ActionOptions =
       isTimerRunning: false,
       cprEndsAt: null,
       shocksCount: prev.shocksCount + 1,
+      lastShockEnergyJ: prev.selectedEnergy,
+      lastShockDefibType: prev.defibType,
       currentRhythm: 'SHOCKABLE',
       activePrompt: prev.activePrompt === 'EPI_DUE' ? 'EPI_DUE' : null,
     },
@@ -477,20 +486,67 @@ function noArrestReason(s: AclsState): string {
   return 'The patient is in ROSC. If they have re-arrested, tap "Re-Arrest: Restart CPR" first.';
 }
 
+/**
+ * Is the selected shock energy in line with the 2025 AHA algorithm?
+ * Biphasic: manufacturer's dose (e.g. initial 120-200 J; maximum if unknown),
+ * second and subsequent doses the same or higher. Monophasic: 360 J.
+ * Returns the reason it is unusual, or null.
+ */
+export function shockEnergyConcern(prev: AclsState): string | null {
+  const energy = prev.selectedEnergy;
+  if (prev.defibType === 'MONOPHASIC' && energy !== MONOPHASIC_J) {
+    return `Monophasic shocks are given at ${MONOPHASIC_J} J (selected ${energy} J).`;
+  }
+  if (energy > MAX_DEFIB_J) {
+    return `${energy} J is above the ${MAX_DEFIB_J} J maximum of adult defibrillators.`;
+  }
+  if (prev.defibType === 'BIPHASIC' && energy < BIPHASIC_MIN_J) {
+    return `${energy} J is below the usual adult biphasic dose (manufacturer's dose, e.g. 120-200 J; use the maximum if unknown).`;
+  }
+  if (
+    prev.lastShockEnergyJ != null &&
+    prev.lastShockDefibType === prev.defibType &&
+    energy < prev.lastShockEnergyJ
+  ) {
+    return `${energy} J is lower than the previous shock (${prev.lastShockEnergyJ} J). AHA: second and subsequent shocks should be the same or higher.`;
+  }
+  return null;
+}
+
 export function checkShock(prev: AclsState, now: number): ActionCheck {
   if (!isCodeActive(prev)) return notNow(noArrestReason(prev));
   const s = advanceClock(prev, now);
-  if (s.activePrompt === 'SHOCK_ADVISED' && s.currentRhythm === 'SHOCKABLE' && !s.isTimerRunning) return FITS;
-  if (s.activePrompt === 'RHYTHM_CHECK') {
-    return flagged('The rhythm for this rhythm check has not been recorded yet.');
-  }
-  if (s.isTimerRunning) {
-    return flagged(`A CPR cycle is running (${mmss(s.cprTimeLeft)} left). Shocks are usually given right after a rhythm check shows VF/pVT.`);
-  }
-  if (s.currentRhythm !== 'SHOCKABLE') {
-    return flagged('No shockable rhythm (VF/pVT) is recorded at the last rhythm check.');
-  }
-  return flagged('No rhythm check is in progress. Shocks are usually given right after a rhythm check shows VF/pVT.');
+  let sequence: string | null = null;
+  if (s.activePrompt === 'SHOCK_ADVISED' && s.currentRhythm === 'SHOCKABLE' && !s.isTimerRunning) sequence = null;
+  else if (s.activePrompt === 'RHYTHM_CHECK') sequence = 'The rhythm for this rhythm check has not been recorded yet.';
+  else if (s.isTimerRunning) sequence = `A CPR cycle is running (${mmss(s.cprTimeLeft)} left). Shocks are usually given right after a rhythm check shows VF/pVT.`;
+  else if (s.currentRhythm !== 'SHOCKABLE') sequence = 'No shockable rhythm (VF/pVT) is recorded at the last rhythm check.';
+  else sequence = 'No rhythm check is in progress. Shocks are usually given right after a rhythm check shows VF/pVT.';
+
+  const reasons = [sequence, shockEnergyConcern(s)].filter((r): r is string => Boolean(r));
+  return reasons.length === 0 ? FITS : flagged(reasons.join(' '));
+}
+
+/**
+ * Advanced airway placed (or its placement confirmed with waveform
+ * capnography). Stays in place for the rest of the code, across ROSC and
+ * re-arrest. Only while the code is open.
+ */
+export function recordAirway(
+  prev: AclsState,
+  now: number,
+  device: AdvancedAirwayDevice,
+  confirmedByCapnography: boolean,
+): AclsState {
+  if (!prev.codeStartedAt || prev.terminatedAt || prev.dispositionAt) return prev;
+  const existing = prev.advancedAirway;
+  const sameDevice = existing != null && existing.device === device;
+  // Confirming the airway already in place keeps its placement time;
+  // a different device (e.g. SGA exchanged for an ETT) is a new placement.
+  const at = sameDevice ? existing!.at : now;
+  const confirmed = confirmedByCapnography || (sameDevice && existing!.confirmedByCapnography);
+  if (sameDevice && existing!.confirmedByCapnography === confirmed) return prev; // nothing new
+  return { ...prev, advancedAirway: { device, at, confirmedByCapnography: confirmed } };
 }
 
 export function checkEpinephrine(prev: AclsState, now: number): ActionCheck {

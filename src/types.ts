@@ -26,6 +26,8 @@ export type ClinicalEventKind =
   | 'POST_ROSC_CHECK'
   | 'VITALS'
   | 'DISPOSITION'
+  | 'AIRWAY'
+  | 'ETCO2'
   | 'PROCEDURE'
   | 'INFO';
 
@@ -173,6 +175,23 @@ export interface DispositionPayload extends EpisodeScopedPayload {
   roscDurationSeconds: number;
 }
 
+export type AdvancedAirwayDevice = 'ETT' | 'SGA';
+
+/** Advanced airway placed, or its placement confirmed by waveform capnography. */
+export interface AirwayPayload extends EpisodeScopedPayload {
+  device: AdvancedAirwayDevice;
+  confirmation: 'WAVEFORM_CAPNOGRAPHY' | 'CLINICAL_ONLY';
+  /** True when this event only adds capnography confirmation to an airway already recorded. */
+  confirmationOnly?: boolean;
+}
+
+/** One end-tidal CO2 reading during CPR; flags say what it may mean (2025 AHA). */
+export interface Etco2Payload extends EpisodeScopedPayload {
+  valueMmHg: number;
+  airway: AdvancedAirwayDevice | 'NONE';
+  flags: string[];
+}
+
 export interface ProcedurePayload extends EpisodeScopedPayload {
   procedure?: string;
   site?: string;
@@ -195,6 +214,8 @@ export interface ClinicalEventPayloadMap {
   POST_ROSC_CHECK: PostRoscCheckPayload;
   VITALS: VitalsPayload;
   DISPOSITION: DispositionPayload;
+  AIRWAY: AirwayPayload;
+  ETCO2: Etco2Payload;
   PROCEDURE: ProcedurePayload;
   INFO: Record<string, unknown>;
 }
@@ -260,6 +281,11 @@ export interface AclsState {
   /** Patient handed over / left after ROSC. The case is closed. */
   dispositionAt?: number | null;
   disposition?: DispositionDestination | null;
+  /** Advanced airway in place for this code (kept across ROSC and re-arrest). */
+  advancedAirway?: { device: AdvancedAirwayDevice; at: number; confirmedByCapnography: boolean } | null;
+  /** Energy and waveform of the last shock delivered in this code. */
+  lastShockEnergyJ?: number | null;
+  lastShockDefibType?: 'BIPHASIC' | 'MONOPHASIC' | null;
   roscPausedMs?: number;
   cprEndsAt?: number | null;
   cprRemainingMs?: number;
@@ -380,6 +406,13 @@ export interface ResuscitationMetrics {
   postRoscVitalsOutsideTargetCount?: number;
   disposition?: DispositionDestination | null;
   dispositionAt?: number | null;
+  /** Energy of each shock, in order (J). */
+  shockEnergiesJ?: number[];
+  advancedAirwayDevice?: AdvancedAirwayDevice | null;
+  timeToAdvancedAirwaySeconds?: number | null;
+  airwayConfirmedByCapnography?: boolean | null;
+  etco2ReadingCount?: number;
+  maxEtco2DuringCprMmHg?: number | null;
 }
 
 export interface UserProfile {

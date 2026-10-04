@@ -23,7 +23,7 @@ export function clinicalEventToLegacyLog(event: ClinicalEvent): LogEvent {
     event.kind === 'AMIODARONE' ? 'DRUG_AMIO' :
     event.kind === 'LIDOCAINE' ? 'DRUG_LIDO' :
     event.kind === 'CODE_START' || event.kind === 'CPR_START' || event.kind === 'CPR_RESUME' || event.kind === 'RE_ARREST' ? 'CPR_START' :
-    event.kind === 'PROCEDURE' ? 'ADVANCED_AIRWAY' :
+    event.kind === 'PROCEDURE' || event.kind === 'AIRWAY' ? 'ADVANCED_AIRWAY' :
     event.kind === 'SHOCK' ? 'SHOCK' :
     event.kind === 'ROSC' ? 'ROSC' :
     event.kind === 'RHYTHM_CHECK' ? 'RHYTHM_CHECK' :
