@@ -434,3 +434,36 @@ test('nothing can be recorded against a code that is not running, even with over
   assert.equal(inRosc.canRecord, false);
   assert.match(inRosc.reason ?? '', /ROSC/);
 });
+
+
+test('arrest episode increments on re-arrest and rhythm numbering restarts locally', () => {
+  let state = startCode(baseState(), 10000);
+  assert.equal(state.arrestEpisodeNumber, 1);
+
+  state = selectRhythm(state, 'NON_SHOCKABLE', 10001);
+  state = startCprCycle(state, 10002);
+  state = confirmRosc(state, 60000);
+
+  state = resumeCpr(state, 120000);
+
+  assert.equal(state.arrestEpisodeNumber, 2);
+  assert.equal(state.rhythmCheckCount, 0);
+
+  state = advanceClock(state, 240000);
+  assert.equal(state.activePrompt, 'RHYTHM_CHECK');
+  state = selectRhythm(state, 'NON_SHOCKABLE', 240001);
+  assert.equal(state.rhythmCheckCount, 1);
+});
+
+test('a new code resets the arrest episode number to episode 1', () => {
+  let state = startCode(baseState(), 10000);
+  state = selectRhythm(state, 'NON_SHOCKABLE', 10001);
+  state = startCprCycle(state, 10002);
+  state = confirmRosc(state, 60000);
+  state = resumeCpr(state, 120000);
+  assert.equal(state.arrestEpisodeNumber, 2);
+
+  state = terminateResuscitation(state, 250000);
+  state = startCode(state, 300000);
+  assert.equal(state.arrestEpisodeNumber, 1);
+});

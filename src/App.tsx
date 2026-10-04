@@ -929,7 +929,7 @@ export default function App() {
         'CPR_PAUSE',
         (prev, at) => pauseCpr(prev, at),
         (prev) => `Compressions paused - CPR cycle held at ${formatClock(prev.cprTimeLeft)}`,
-        (prev) => ({ cprCycle: prev.cprCycleCount, remainingSeconds: prev.cprTimeLeft }),
+        (prev, next) => ({ cprCycle: prev.cprCycleCount, remainingSeconds: prev.cprTimeLeft, arrestEpisodeNumber: next.arrestEpisodeNumber }),
         now,
         (_prev, next) => next.activePrompt !== 'RHYTHM_CHECK',
       );
@@ -948,7 +948,7 @@ export default function App() {
         'CODE_START',
         (prev, at) => startCode(prev, at),
         () => 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.',
-        () => ({ reason: 'user_started_resuscitation', initialRhythmAssessment: true }),
+        (prev, next) => ({ reason: 'user_started_resuscitation', initialRhythmAssessment: true, arrestEpisodeNumber: next.arrestEpisodeNumber }),
         now,
       );
       return;
@@ -964,6 +964,7 @@ export default function App() {
         (prev, next) => ({
           priorArrestSeconds: arrestSeconds(prev, prev.roscAt ?? now),
           cprCycleNumber: next.cprCycleCount,
+          arrestEpisodeNumber: next.arrestEpisodeNumber,
         }),
         now,
       );
@@ -975,7 +976,7 @@ export default function App() {
       'CPR_RESUME',
       (prev, at) => resumeCpr(prev, at),
       () => 'Compressions resumed',
-      (prev) => ({ cprCycle: prev.cprCycleCount }),
+      (prev, next) => ({ cprCycle: prev.cprCycleCount, arrestEpisodeNumber: next.arrestEpisodeNumber }),
       now,
     );
   };
@@ -1024,6 +1025,7 @@ export default function App() {
         defibType: prev.defibType,
         shockNumber: next.shocksCount,
         cprCycleNumber: next.cprCycleCount,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
         ...(note ? { protocolNote: note } : {}),
       }),
       now,
@@ -1047,6 +1049,7 @@ export default function App() {
         doseMg: 1,
         route: 'IV/IO',
         doseNumber: next.epiCount,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
         ...(note ? { protocolNote: note } : {}),
       }),
       now,
@@ -1075,6 +1078,7 @@ export default function App() {
         route: 'IV/IO',
         doseNumber: next.amioCount ?? 0,
         maxDoses: AMIODARONE_MAX_DOSES,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
         ...(note ? { protocolNote: note } : {}),
       }),
       now,
@@ -1104,6 +1108,7 @@ export default function App() {
         route: 'IV/IO',
         doseNumber: next.lidoCount ?? 0,
         maxDoses: LIDOCAINE_MAX_DOSES,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
         ...(note ? { protocolNote: note } : {}),
       }),
       now,
@@ -1134,7 +1139,7 @@ export default function App() {
       'CODE_END',
       (prev, at) => terminateResuscitation(prev, at),
       (prev, next) => `Resuscitation stopped - time of death ${timeOfDeath} after ${formatClock(next.totalTime)} of arrest time`,
-      (prev, next) => ({ outcome: 'TERMINATED', timeOfDeath: now, arrestDurationSeconds: next.totalTime }),
+      (prev, next) => ({ outcome: 'TERMINATED', timeOfDeath: now, arrestDurationSeconds: next.totalTime, arrestEpisodeNumber: next.arrestEpisodeNumber }),
       now,
     );
   };
@@ -1161,6 +1166,7 @@ export default function App() {
         checkNumber: next.rhythmCheckCount ?? 0,
         rhythm,
         startedAt: prev.rhythmCheckStartedAt ?? now,
+        arrestEpisodeNumber: next.arrestEpisodeNumber,
       }),
       now,
     );
@@ -1178,7 +1184,7 @@ export default function App() {
       'ROSC',
       (prev, at) => confirmRosc(prev, at),
       (prev, next) => `ROSC achieved after ${formatClock(arrestSeconds(prev, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`,
-      (prev) => ({ arrestDurationSeconds: arrestSeconds(prev, now) }),
+      (prev, next) => ({ arrestDurationSeconds: arrestSeconds(prev, now), arrestEpisodeNumber: next.arrestEpisodeNumber }),
       now,
     );
   };
@@ -1225,6 +1231,7 @@ export default function App() {
           checkNumber,
           rhythm: 'ORGANIZED_WITH_PULSE',
           startedAt: rhythmStartedAt,
+          arrestEpisodeNumber: next.arrestEpisodeNumber,
         },
         description: rhythmDescription,
       }, sequenceBase + 1);
@@ -1237,6 +1244,7 @@ export default function App() {
         payload: {
           arrestDurationSeconds: arrestSeconds(prev, now),
           rhythmCheckNumber: checkNumber,
+          arrestEpisodeNumber: next.arrestEpisodeNumber,
         },
         description: roscDescription,
       }, sequenceBase + 2);
