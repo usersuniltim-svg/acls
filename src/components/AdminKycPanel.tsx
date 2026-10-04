@@ -28,7 +28,10 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
   // Sample cases shown straight away, before Firestore confirms the write.
   const [localSampleCases, setLocalSampleCases] = useState<AdminCase[]>([]);
   const [loading, setLoading] = useState(true);
+  // Doctor records (profiles) and case logs load separately, so one failing
+  // never hides the other.
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [casesError, setCasesError] = useState<{ code?: string; message: string } | null>(null);
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [actionStatus, setActionStatus] = useState<string | null>(null);
@@ -42,6 +45,7 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
 
     setLoading(true);
     setLoadError(null);
+    setCasesError(null);
 
     // 1. Subscribe to profiles collection
     const profilesCol = collection(db, 'profiles');
@@ -90,9 +94,10 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
         casesList.push({ ...data, id: data.id || docSnap.id, doctorUid: ownerUid });
       });
       setStoredCases(casesList);
+      setCasesError(null);
     }, (err) => {
       console.error("Admin panel could not load cases:", err);
-      setLoadError(prev => prev || (err?.code ? `${err.code}: ${err.message}` : String(err)));
+      setCasesError({ code: err?.code, message: err?.message ? String(err.message) : String(err) });
     });
 
     return () => {
@@ -373,6 +378,29 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
               Saved Case Logs ({allCases.length})
             </button>
           </div>
+
+          {/* Case logs could not be read: say why, without hiding the doctor list */}
+          {casesError && (() => {
+            const link = casesError.message.match(/https:\/\/\S+/)?.[0];
+            return (
+              <div className="mt-3 text-left text-xs bg-amber-50 rounded-xl border border-amber-300 p-3 text-amber-900 space-y-1">
+                <p className="font-bold uppercase tracking-wider text-[10px]">Doctors' case logs could not be loaded</p>
+                {casesError.code === 'permission-denied' ? (
+                  <p className="text-[10px]">
+                    Firebase refused the query that reads every doctor's cases. The latest <strong>firestore.rules</strong> have
+                    not been published yet: open Firebase Console → Firestore → the <strong>ai-studio-…</strong> database → Rules,
+                    paste the repository's firestore.rules and click Publish. Doctor verification below still works.
+                  </p>
+                ) : casesError.code === 'failed-precondition' && link ? (
+                  <p className="text-[10px]">
+                    Firestore needs an index for this query.{' '}
+                    <a href={link} target="_blank" rel="noreferrer" className="underline font-bold">Create the index</a>, wait a minute, then reopen this panel.
+                  </p>
+                ) : null}
+                <p className="font-mono text-[9px] break-all opacity-80">{casesError.code ? `${casesError.code}: ` : ''}{casesError.message}</p>
+              </div>
+            );
+          })()}
 
           {/* VIEW 1: KYC APPLICATIONS */}
           {activeView === 'kyc' && (
