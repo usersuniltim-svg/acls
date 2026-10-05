@@ -84,7 +84,10 @@ export interface MedicationPayload extends EpisodeScopedPayload {
 }
 
 export interface RoscPayload extends EpisodeScopedPayload {
+  /** Total arrest time of the code so far (all episodes, time in ROSC excluded). */
   arrestDurationSeconds: number;
+  /** Arrest time of the episode this ROSC ends. */
+  episodeArrestSeconds?: number;
   rhythmCheckNumber?: number;
 }
 
@@ -415,6 +418,33 @@ export interface ResuscitationMetrics {
   airwayConfirmedByCapnography?: boolean | null;
   etco2ReadingCount?: number;
   maxEtco2DuringCprMmHg?: number | null;
+  /** Each arrest episode rebuilt from the timeline: duration, shocks, drugs, how it ended. */
+  episodes?: ArrestEpisodeSummary[];
+  /**
+   * Real-time seconds between consecutive epinephrine doses within the same
+   * arrest episode. The gap across a ROSC is not an interval and is left out.
+   */
+  epinephrineIntervalsSeconds?: number[];
+  /** Seconds from the start of the code to the first recorded IV/IO access. */
+  timeToVascularAccessSeconds?: number | null;
+}
+
+export interface ArrestEpisodeSummary {
+  episode: number;
+  startAt: number;
+  /** When the episode ended (ROSC or resuscitation stopped); null if still open. */
+  endAt: number | null;
+  endedBy: 'ROSC' | 'CODE_END' | null;
+  durationSeconds: number | null;
+  shocks: number;
+  epinephrineDoses: number;
+  amiodaroneDoses: number;
+  lidocaineDoses: number;
+  rhythmChecks: number;
+  /** Seconds from the start of this episode to its first epinephrine dose. */
+  firstEpinephrineAfterSeconds: number | null;
+  /** Seconds between consecutive epinephrine doses within this episode. */
+  epinephrineIntervalsSeconds: number[];
 }
 
 export interface UserProfile {

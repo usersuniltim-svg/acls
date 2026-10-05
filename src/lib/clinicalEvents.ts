@@ -79,6 +79,10 @@ export function normalizeCaseClinicalEvents(events: ClinicalEvent[] | undefined,
         case 'ADVANCED_AIRWAY':
           return { ...base, kind: 'PROCEDURE', payload: {} };
         case 'CPR_START':
+          // Older versions logged the code start and re-arrests as plain CPR
+          // starts; their wording tells them apart, so episodes can be rebuilt.
+          if (/^Resuscitation started/i.test(log.description)) return { ...base, kind: 'CODE_START', payload: {} };
+          if (/re-arrest/i.test(log.description)) return { ...base, kind: 'RE_ARREST', payload: { priorArrestSeconds: 0 } };
           return { ...base, kind: 'CPR_START', payload: {} };
         case 'INFO':
         default:
