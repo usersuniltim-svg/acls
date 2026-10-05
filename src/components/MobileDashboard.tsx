@@ -29,7 +29,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  EventType, 
   PatientRhythm, 
   AclsState,
   UserProfile,
@@ -92,7 +91,8 @@ interface MobileDashboardProps {
   handleAmiodarone: () => void;
   handleLidocaine: () => void;
   handleRhythmSelect: (rhythm: PatientRhythm) => void;
-  addLog: (type: EventType, description: string) => void;
+  /** Record IV/IO access (a procedure in the current arrest episode). */
+  onVascularAccess: () => void;
   effectiveProfile: UserProfile;
   handleStartCPR: () => void;
   hapticDuration: number;
@@ -149,7 +149,7 @@ export default function MobileDashboard({
   handleAmiodarone,
   handleLidocaine,
   handleRhythmSelect,
-  addLog,
+  onVascularAccess,
   effectiveProfile,
   handleStartCPR,
   hapticDuration,
@@ -503,7 +503,8 @@ export default function MobileDashboard({
             className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all active:scale-95 shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
               isDark ? 'bg-slate-800 border-white/10 text-slate-300 hover:text-white' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'
             }`}
-            title="Next CPR Cycle"
+            title={state.roscAt ? 'Re-arrest: restart CPR' : 'Next CPR Cycle'}
+            aria-label={state.roscAt ? 'Re-arrest: restart CPR' : 'Next CPR Cycle'}
           >
             <RotateCcw className="w-4 h-4" />
           </button>
@@ -657,12 +658,13 @@ export default function MobileDashboard({
         <div className="grid grid-cols-1 gap-2">
           <button 
             type="button"
-            onClick={() => addLog('INFO', 'Intravenous and Intraosseous Access confirmed')}
-            className={`h-10 rounded-xl border text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+            onClick={onVascularAccess}
+            disabled={!state.codeStartedAt || Boolean(state.terminatedAt) || Boolean(state.dispositionAt)}
+            className={`h-10 rounded-xl border text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
               isDark ? 'bg-slate-800 border-white/10 text-slate-300 hover:bg-slate-700' : 'bg-gray-100 border-gray-300 text-gray-800 hover:bg-gray-200'
             }`}
           >
-            Log IV/IO Acc
+            Log IV/IO Access
           </button>
         </div>
       </div>

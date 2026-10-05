@@ -271,7 +271,7 @@ export function pauseCpr(prev: AclsState, now: number): AclsState {
 
 /** "Resume Code": continue the held CPR cycle (or restart CPR after a re-arrest). */
 export function resumeCpr(prev: AclsState, now: number): AclsState {
-  if (prev.isTimerRunning) return prev;
+  if (prev.isTimerRunning || prev.terminatedAt || prev.dispositionAt) return prev;
   if (!prev.codeStartedAt || prev.roscAt || !prev.cprRemainingMs) {
     return startCprCycle(prev, now);
   }
@@ -499,6 +499,7 @@ function mmss(seconds: number): string {
 function noArrestReason(s: AclsState): string {
   if (!s.codeStartedAt) return 'No code is running. Start the code first.';
   if (s.terminatedAt) return 'Resuscitation has already been stopped for this case.';
+  if (s.dispositionAt) return 'This case was closed at disposition. Save it, then start a new code for a new arrest.';
   return 'The patient is in ROSC. If they have re-arrested, tap "Re-Arrest: Restart CPR" first.';
 }
 

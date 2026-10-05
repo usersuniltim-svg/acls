@@ -2,6 +2,7 @@ import { ClinicalEvent, ClinicalEventKind, PatientRhythm, ResuscitationMetrics }
 import { normalizeCaseClinicalEvents } from './clinicalEvents';
 import { causeSummaryByEpisode } from './reversibleCauses';
 import { postRoscChecklist } from './postRosc';
+import { summarizeEpisodes } from './arrestEpisodes';
 
 /**
  * Derives objective timeline metrics from recorded events only.
@@ -104,6 +105,12 @@ export function calculateResuscitationMetrics(
   const lastAirway = airwayEvents.at(-1);
   const etco2 = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'ETCO2' }> => e.kind === 'ETCO2');
 
+  // Per-episode reconstruction: shocks, drugs and epinephrine timing within each arrest.
+  const episodes = summarizeEpisodes(sorted);
+  const epinephrineIntervalsSeconds = episodes.flatMap(e => e.epinephrineIntervalsSeconds);
+  const firstVascularAccess = sorted.find(e => e.kind === 'PROCEDURE' && e.payload.procedure === 'IV_IO_ACCESS');
+
+  // Legacy: gaps between any two consecutive drugs, across the whole code.
   const medicationIntervalsSeconds: number[] = [];
   for (let i = 1; i < medications.length; i++) {
     medicationIntervalsSeconds.push(Math.max(0, Math.floor(
@@ -157,5 +164,8 @@ export function calculateResuscitationMetrics(
       : null,
     etco2ReadingCount: etco2.length,
     maxEtco2DuringCprMmHg: etco2.length ? Math.max(...etco2.map(e => e.payload.valueMmHg)) : null,
+    episodes,
+    epinephrineIntervalsSeconds,
+    timeToVascularAccessSeconds: delta(firstVascularAccess?.timestamp ?? null),
   };
 }

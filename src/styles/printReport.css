@@ -290,6 +290,75 @@
   white-space: nowrap;
 }
 
+.acls-print-episodes {
+  margin-top: 12px;
+}
+
+.acls-print-episodes h3 {
+  margin: 0 0 6px;
+  font-size: 8pt;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.acls-print-episodes-table th:first-child,
+.acls-print-episodes-table td:first-child {
+  width: 10%;
+}
+
+.acls-print-episodes-table th:nth-child(2),
+.acls-print-episodes-table td:nth-child(2) {
+  width: 13%;
+}
+
+.acls-print-meds-table th:nth-child(4),
+.acls-print-meds-table td:nth-child(4) {
+  width: 10%;
+}
+
+.acls-print-meds-table th:nth-child(5),
+.acls-print-meds-table td:nth-child(5) {
+  width: 20%;
+}
+
+/* Tables that start with the time: wider time column, the rest wraps normally. */
+.acls-print-time-first th:first-child,
+.acls-print-time-first td:first-child {
+  width: 15%;
+}
+
+.acls-print-time-first td:first-child {
+  font-family: "Courier New", monospace;
+  white-space: nowrap;
+}
+
+.acls-print-time-first th:nth-child(n+2),
+.acls-print-time-first td:nth-child(n+2) {
+  width: auto;
+}
+
+.acls-print-time-first td:nth-child(n+2):not(.mono) {
+  font-family: inherit;
+  white-space: normal;
+}
+
+.acls-print-causes-table th:first-child,
+.acls-print-causes-table td:first-child {
+  width: 11%;
+}
+
+.acls-print-causes-table th:nth-child(2),
+.acls-print-causes-table td:nth-child(2) {
+  width: 27%;
+  font-family: inherit;
+  white-space: normal;
+}
+
+.acls-print-table + .acls-print-table {
+  margin-top: 8px;
+}
+
 .acls-print-timeline-table th:nth-child(3),
 .acls-print-timeline-table td:nth-child(3) {
   width: auto;

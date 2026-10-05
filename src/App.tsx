@@ -25,9 +25,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  EventType, 
-  LogEvent,
-  ClinicalEventKind, 
   PatientRhythm, 
   AclsState,
   UserProfile,
@@ -39,7 +36,6 @@ import {
   AdvancedAirwayDevice,
 } from './types';
 import { assessEtco2, etco2Context } from './lib/capnography';
-import { createClinicalEvent } from './lib/clinicalEvents';
 import { CAUSE_STATUS_LABEL, causeLabel } from './lib/reversibleCauses';
 import {
   DISPOSITION_LABEL,
@@ -65,28 +61,34 @@ import {
   checkShock,
   clearedClockFields,
   episodeArrestSeconds,
-  confirmRosc,
-  deliverShock,
-  terminateResuscitation,
-  recordDisposition,
-  recordAirway,
   ActionCheck,
   ActionOptions,
-  giveAmiodarone,
-  giveEpinephrine,
-  giveLidocaine,
   isCodeActive,
-  pauseCpr,
-  resumeCpr,
-  selectRhythm,
-  startCode,
-  startCprCycle,
   stopClock,
-  amiodaroneDoseLabel,
-  lidocaineDoseLabel,
-  AMIODARONE_MAX_DOSES,
-  LIDOCAINE_MAX_DOSES,
 } from './lib/codeClock';
+import {
+  ActionSpec,
+  RecordInput,
+  RecordingActor,
+  airwayAction,
+  amiodaroneAction,
+  appendRecord,
+  applyAction,
+  applyRoscAtRhythmCheck,
+  codeIsOpen as codeIsOpenFor,
+  cprCycleAction,
+  dispositionAction,
+  epinephrineAction,
+  formatClock,
+  lidocaineAction,
+  pauseAction,
+  resumeAction,
+  rhythmAction,
+  roscAction,
+  shockAction,
+  startCodeAction,
+  stopResuscitationAction,
+} from './lib/clinicalActions';
 import { 
   auth, 
   db, 
@@ -814,111 +816,24 @@ export default function App() {
     };
   }, [codeIsActive]);
 
-  const addLog = (
-    type: EventType,
-    description: string,
-    structured?: {
-      kind?: ClinicalEventKind;
-      payload?: Record<string, unknown>;
-      source?: 'user' | 'system' | 'import';
-    }
-  ) => {
-    const timestamp = Date.now();
-    const newLog: LogEvent = {
-      id: Math.random().toString(36).substring(2, 11),
-      timestamp,
-      type,
-      description,
-    };
-
-    setState(prev => {
-      const sequence = prev.clinicalEvents.length > 0
-        ? Math.max(...prev.clinicalEvents.map(event => event.sequence)) + 1
-        : 1;
-      const kind: ClinicalEventKind = structured?.kind ?? (
-        type === 'DRUG_EPI' ? 'EPINEPHRINE' :
-        type === 'DRUG_AMIO' ? 'AMIODARONE' :
-        type === 'DRUG_LIDO' ? 'LIDOCAINE' :
-        type === 'SHOCK' ? 'SHOCK' :
-        type === 'ROSC' ? 'ROSC' :
-        type === 'RHYTHM_CHECK' ? 'RHYTHM_CHECK' :
-        type === 'ADVANCED_AIRWAY' ? 'PROCEDURE' :
-        type === 'CPR_START' ? 'CPR_START' :
-        'INFO'
-      );
-      const event = createClinicalEvent({
-        kind,
-        timestamp,
-        source: structured?.source ?? 'user',
-        actorId: user?.uid,
-        actorName: effectiveProfile.fullName,
-        // Attribute every event recorded during a code to its arrest episode.
-        payload: {
-          ...(prev.codeStartedAt ? { arrestEpisodeNumber: prev.arrestEpisodeNumber || 1 } : {}),
-          ...(structured?.payload ?? {}),
-        } as any,
-        description,
-      }, sequence);
-
-      return {
-        ...prev,
-        logs: [newLog, ...prev.logs],
-        clinicalEvents: [...prev.clinicalEvents, event],
-      };
-    });
-  };
+  /** Who is recording: stamped on every clinical event. */
+  const recordingActor = (): RecordingActor => ({ actorId: user?.uid, actorName: effectiveProfile.fullName });
 
   /**
-   * Apply a clinical transition and append its audit event in the same
-   * functional state update. This prevents rapid/double taps from creating
-   * an event for an action that the state machine rejected.
+   * Apply a clinical action: the clock transition and its audit event are
+   * committed in one functional state update (see lib/clinicalActions), so a
+   * rapid double tap can never record an action the clock rejected.
    */
-  const applyClinicalAction = (
-    type: EventType,
-    kind: ClinicalEventKind,
-    transition: (prev: AclsState, now: number) => AclsState,
-    description: (prev: AclsState, next: AclsState) => string,
-    payload: (prev: AclsState, next: AclsState, now: number) => Record<string, unknown>,
-    now = Date.now(),
-    shouldRecord: (prev: AclsState, next: AclsState) => boolean = () => true,
-  ) => {
-    setState(prev => {
-      const next = transition(prev, now);
-      if (next === prev) return prev;
-      if (!shouldRecord(prev, next)) return next;
-
-      const timestamp = now;
-      const logDescription = description(prev, next);
-      const newLog: LogEvent = {
-        id: Math.random().toString(36).substring(2, 11),
-        timestamp,
-        type,
-        description: logDescription,
-      };
-      // Append to the transition's result, not to `prev`: starting a new code
-      // clears the previous patient's events, and they must not come back.
-      const sequence = next.clinicalEvents.length > 0
-        ? Math.max(...next.clinicalEvents.map(event => event.sequence)) + 1
-        : 1;
-      const event = createClinicalEvent({
-        kind,
-        timestamp,
-        source: 'user',
-        actorId: user?.uid,
-        actorName: effectiveProfile.fullName,
-        payload: payload(prev, next, now) as any,
-        description: logDescription,
-      }, sequence);
-
-      return {
-        ...next,
-        logs: [newLog, ...next.logs],
-        clinicalEvents: [...next.clinicalEvents, event],
-      };
-    });
+  const runAction = (spec: ActionSpec, now = Date.now()) => {
+    const actor = recordingActor();
+    setState(prev => applyAction(prev, spec, now, actor));
   };
 
-  const formatClock = (seconds: number) => `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
+  /** Record an observation (no clock change). Episode attribution is added from the live state. */
+  const record = (rec: Omit<RecordInput, 'timestamp'>, now = Date.now()) => {
+    const actor = recordingActor();
+    setState(prev => appendRecord(prev, { ...rec, timestamp: now }, actor));
+  };
 
   /**
    * Actions outside the usual AHA sequence are not silently ignored: the
@@ -937,9 +852,6 @@ export default function App() {
     return recordIt ? { override: true } : undefined;
   };
 
-  /** Text appended to a log line for an action recorded outside the usual sequence. */
-  const deviationSuffix = (note?: string) => (note ? ` [Recorded outside usual AHA sequence: ${note}]` : '');
-
   /** Clinical events recorded since the last save of this code. */
   const unsavedEventCount = state.clinicalEvents.filter(e => e.sequence > (state.savedEventSequence ?? 0)).length;
 
@@ -948,15 +860,7 @@ export default function App() {
     const now = Date.now();
 
     if (state.isTimerRunning) {
-      applyClinicalAction(
-        'INFO',
-        'CPR_PAUSE',
-        (prev, at) => pauseCpr(prev, at),
-        (prev) => `Compressions paused - CPR cycle held at ${formatClock(prev.cprTimeLeft)}`,
-        (prev, next) => ({ cprCycle: prev.cprCycleCount, remainingSeconds: prev.cprTimeLeft, arrestEpisodeNumber: next.arrestEpisodeNumber }),
-        now,
-        (_prev, next) => next.activePrompt !== 'RHYTHM_CHECK',
-      );
+      runAction(pauseAction(), now);
       return;
     }
 
@@ -971,69 +875,32 @@ export default function App() {
 
     if (!state.codeStartedAt) {
       MedicalAudio.playAlert();
-      applyClinicalAction(
-        'CPR_START',
-        'CODE_START',
-        (prev, at) => startCode(prev, at),
-        () => 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.',
-        (prev, next) => ({ reason: 'user_started_resuscitation', initialRhythmAssessment: true, arrestEpisodeNumber: next.arrestEpisodeNumber }),
-        now,
-      );
+      runAction(startCodeAction(), now);
       return;
     }
 
-    if (state.roscAt) {
-      MedicalAudio.playAlert();
-      applyClinicalAction(
-        'CPR_START',
-        'RE_ARREST',
-        (prev, at) => resumeCpr(prev, at),
-        (prev) => `Re-arrest after ROSC - CPR restarted (arrest time so far ${formatClock(arrestSeconds(prev, prev.roscAt ?? now))})`,
-        (prev, next) => ({
-          priorArrestSeconds: arrestSeconds(prev, prev.roscAt ?? now),
-          cprCycleNumber: next.cprCycleCount,
-          arrestEpisodeNumber: next.arrestEpisodeNumber,
-        }),
-        now,
-      );
-      return;
-    }
-
-    applyClinicalAction(
-      'INFO',
-      'CPR_RESUME',
-      (prev, at) => resumeCpr(prev, at),
-      () => 'Compressions resumed',
-      (prev, next) => ({ cprCycle: prev.cprCycleCount, arrestEpisodeNumber: next.arrestEpisodeNumber }),
-      now,
-    );
+    if (state.roscAt) MedicalAudio.playAlert();
+    // In ROSC this records a re-arrest (the next episode); otherwise it resumes held CPR.
+    const actor = recordingActor();
+    setState(prev => applyAction(prev, resumeAction(prev), now, actor));
   };
 
+  /** "Next CPR cycle" / "Begin CPR". In ROSC this is a re-arrest and is recorded as one. */
+  const startNextCprCycle = (vibration: number) => {
+    vibrateDevice(vibration);
+    if (state.roscAt) MedicalAudio.playAlert();
+    const now = Date.now();
+    const actor = recordingActor();
+    setState(prev => applyAction(prev, cprCycleAction(prev), now, actor));
+  };
   const resetCprTimer = () => {
-    vibrateDevice(75);
-    const now = Date.now();
-    applyClinicalAction(
-      'CPR_START',
-      'CPR_START',
-      (prev, at) => startCprCycle(prev, at),
-      (prev, next) => `CPR Cycle #${next.cprCycleCount} started`,
-      (prev, next) => ({ cycleNumber: next.cprCycleCount }),
-      now,
-    );
+    // The small "next cycle" icon is easy to tap by mistake; in ROSC it would add a re-arrest.
+    if (state.roscAt && !state.dispositionAt && !window.confirm(
+      `Has the patient re-arrested?\n\nThis restarts CPR and opens arrest episode ${(state.arrestEpisodeNumber || 1) + 1}.`
+    )) return;
+    startNextCprCycle(75);
   };
-
-  const handleBeginCpr = () => {
-    vibrateDevice(75);
-    const now = Date.now();
-    applyClinicalAction(
-      'CPR_START',
-      'CPR_START',
-      (prev, at) => startCprCycle(prev, at),
-      (prev, next) => `CPR Cycle #${next.cprCycleCount} started`,
-      (prev, next) => ({ cycleNumber: next.cprCycleCount }),
-      now,
-    );
-  };
+  const handleBeginCpr = () => startNextCprCycle(75);
 
   const handleShock = () => {
     const now = Date.now(); // the moment it was tapped, even if a question follows
@@ -1043,21 +910,7 @@ export default function App() {
     const note = opts.override ? check.reason : undefined;
     vibrateDevice([300, 100, 300, 100, 450]);
     MedicalAudio.playUrgent();
-    applyClinicalAction(
-      'SHOCK',
-      'SHOCK',
-      (prev, at) => deliverShock(prev, at, opts),
-      (prev, next) => `Defibrillation administered: ${prev.selectedEnergy}J (Shock #${next.shocksCount}) - Resuming CPR Cycle immediately${deviationSuffix(note)}`,
-      (prev, next) => ({
-        energyJ: prev.selectedEnergy,
-        defibType: prev.defibType,
-        shockNumber: next.shocksCount,
-        cprCycleNumber: next.cprCycleCount,
-        arrestEpisodeNumber: next.arrestEpisodeNumber,
-        ...(note ? { protocolNote: note } : {}),
-      }),
-      now,
-    );
+    runAction(shockAction(opts, note), now);
   };
 
   const handleEpi = () => {
@@ -1068,26 +921,8 @@ export default function App() {
     const note = opts.override ? check.reason : undefined;
     vibrateDevice([150, 80, 150]);
     MedicalAudio.playAlert();
-    applyClinicalAction(
-      'DRUG_EPI',
-      'EPINEPHRINE',
-      (prev, at) => giveEpinephrine(prev, at, opts),
-      (prev, next) => `Administered 1mg Epinephrine IV/IO (Total Dose Count: #${next.epiCount}) - 3-5m countdown running${deviationSuffix(note)}`,
-      (prev, next) => ({
-        doseMg: 1,
-        route: 'IV/IO',
-        doseNumber: next.epiCount,
-        arrestEpisodeNumber: next.arrestEpisodeNumber,
-        ...(note ? { protocolNote: note } : {}),
-      }),
-      now,
-    );
+    runAction(epinephrineAction(opts, note), now);
   };
-
-  const antiarrhythmicDescription = (name: string, label: string, dose: number, max: number, note?: string) =>
-    (dose > max
-      ? `${name} IV/IO - additional dose #${dose} (beyond the usual ${max}-dose maximum)`
-      : `${name} ${label} IV/IO (dose ${dose} of ${max})`) + deviationSuffix(note);
 
   const handleAmiodarone = () => {
     const now = Date.now();
@@ -1096,21 +931,7 @@ export default function App() {
     if (!opts) return;
     const note = opts.override ? check.reason : undefined;
     vibrateDevice([150, 80, 150]);
-    applyClinicalAction(
-      'DRUG_AMIO',
-      'AMIODARONE',
-      (prev) => giveAmiodarone(prev, opts),
-      (prev, next) => antiarrhythmicDescription('Amiodarone', amiodaroneDoseLabel(next.amioCount ?? 0), next.amioCount ?? 0, AMIODARONE_MAX_DOSES, note),
-      (prev, next) => ({
-        doseLabel: amiodaroneDoseLabel(next.amioCount ?? 0),
-        route: 'IV/IO',
-        doseNumber: next.amioCount ?? 0,
-        maxDoses: AMIODARONE_MAX_DOSES,
-        arrestEpisodeNumber: next.arrestEpisodeNumber,
-        ...(note ? { protocolNote: note } : {}),
-      }),
-      now,
-    );
+    runAction(amiodaroneAction(opts, note), now);
   };
 
   const handleLidocaine = () => {
@@ -1120,27 +941,7 @@ export default function App() {
     if (!opts) return;
     const note = opts.override ? check.reason : undefined;
     vibrateDevice([150, 80, 150]);
-    applyClinicalAction(
-      'DRUG_LIDO',
-      'LIDOCAINE',
-      (prev) => giveLidocaine(prev, opts),
-      (prev, next) => {
-        const dose = next.lidoCount ?? 0;
-        const base = dose > LIDOCAINE_MAX_DOSES
-          ? `Lidocaine IV/IO - additional dose #${dose} (beyond the usual ${LIDOCAINE_MAX_DOSES}-dose maximum; max total 3 mg/kg)`
-          : `Lidocaine ${lidocaineDoseLabel(dose)} IV/IO (dose ${dose}; max total 3 mg/kg)`;
-        return base + deviationSuffix(note);
-      },
-      (prev, next) => ({
-        doseLabel: lidocaineDoseLabel(next.lidoCount ?? 0),
-        route: 'IV/IO',
-        doseNumber: next.lidoCount ?? 0,
-        maxDoses: LIDOCAINE_MAX_DOSES,
-        arrestEpisodeNumber: next.arrestEpisodeNumber,
-        ...(note ? { protocolNote: note } : {}),
-      }),
-      now,
-    );
+    runAction(lidocaineAction(opts, note), now);
   };
 
   // -------------------------------------------------------------------------
@@ -1148,8 +949,25 @@ export default function App() {
   // -------------------------------------------------------------------------
 
   /** The code is open for documentation: started, not stopped, not handed over. */
-  const codeIsOpen = Boolean(state.codeStartedAt) && !state.terminatedAt && !state.dispositionAt;
+  const codeIsOpen = codeIsOpenFor(state);
   const inPostRosc = Boolean(state.roscAt) && codeIsOpen;
+
+  /** IV/IO access: a procedure in the current arrest episode. */
+  const handleVascularAccess = () => {
+    if (!codeIsOpen) {
+      window.alert(state.codeStartedAt
+        ? 'This case is closed. IV/IO access can be recorded while the code is open.'
+        : 'Start the code first, then record IV/IO access.');
+      return;
+    }
+    vibrateDevice(30);
+    record({
+      type: 'INFO',
+      kind: 'PROCEDURE',
+      description: 'Vascular access: IV/IO access confirmed',
+      payload: { procedure: 'IV_IO_ACCESS' },
+    });
+  };
 
   /** H's and T's: one cause, one status, attributed to the current arrest episode. */
   const handleReversibleCause = (cause: ReversibleCauseId, status: ReversibleCauseStatus) => {
@@ -1167,11 +985,12 @@ export default function App() {
     }
     vibrateDevice(30);
     const episode = state.arrestEpisodeNumber || 1;
-    addLog(
-      'INFO',
-      `H's & T's (arrest episode ${episode}): ${causeLabel(cause)} - ${CAUSE_STATUS_LABEL[status]}${note ? ` (${note})` : ''}`,
-      { kind: 'REVERSIBLE_CAUSE', payload: { cause, status, ...(note ? { note } : {}), arrestEpisodeNumber: episode } },
-    );
+    record({
+      type: 'INFO',
+      kind: 'REVERSIBLE_CAUSE',
+      description: `H's & T's (arrest episode ${episode}): ${causeLabel(cause)} - ${CAUSE_STATUS_LABEL[status]}${note ? ` (${note})` : ''}`,
+      payload: { cause, status, ...(note ? { note } : {}), arrestEpisodeNumber: episode },
+    });
   };
 
   /** Post-ROSC checklist: tap to mark done (tap again to undo); some items record an answer. */
@@ -1186,11 +1005,12 @@ export default function App() {
     vibrateDevice(30);
     const done = !undo;
     const resultLabel = done ? postRoscResultLabel(item, result) : undefined;
-    addLog(
-      'INFO',
-      `Post-ROSC: ${postRoscItemLabel(item)}${resultLabel ? ` - ${resultLabel}` : ''}${done ? '' : ' - marked not done'}`,
-      { kind: 'POST_ROSC_CHECK', payload: { item, done, ...(done && result ? { result } : {}) } },
-    );
+    record({
+      type: 'INFO',
+      kind: 'POST_ROSC_CHECK',
+      description: `Post-ROSC: ${postRoscItemLabel(item)}${resultLabel ? ` - ${resultLabel}` : ''}${done ? '' : ' - marked not done'}`,
+      payload: { item, done, ...(done && result ? { result } : {}) },
+    });
   };
 
   /** Post-ROSC vitals; returns the values outside the AHA targets (null if nothing recorded). */
@@ -1207,11 +1027,12 @@ export default function App() {
     }
     const flags = assessPostRoscVitals(vitals);
     vibrateDevice(30);
-    addLog(
-      'INFO',
-      `Post-ROSC vitals: ${summary}${flags.length ? ` [Outside target: ${flags.join('; ')}]` : ''}`,
-      { kind: 'VITALS', payload: { phase: 'POST_ROSC', ...vitals, flags } },
-    );
+    record({
+      type: 'INFO',
+      kind: 'VITALS',
+      description: `Post-ROSC vitals: ${summary}${flags.length ? ` [Outside target: ${flags.join('; ')}]` : ''}`,
+      payload: { phase: 'POST_ROSC', ...vitals, flags },
+    });
     return flags;
   };
 
@@ -1235,54 +1056,23 @@ export default function App() {
     );
     if (!sure) return;
     vibrateDevice(100);
-    applyClinicalAction(
-      'INFO',
-      'DISPOSITION',
-      (prev, t) => recordDisposition(prev, t, destination),
-      (prev, next) => `Disposition: ${label}${note ? ` (${note})` : ''} after ${formatClock(next.roscElapsedSeconds ?? 0)} of ROSC`,
-      (prev, next) => ({
-        destination,
-        ...(note ? { note } : {}),
-        roscDurationSeconds: next.roscElapsedSeconds ?? 0,
-        arrestEpisodeNumber: next.arrestEpisodeNumber,
-      }),
-      now,
-    );
+    runAction(dispositionAction(destination, label, note), now);
   };
 
   // -------------------------------------------------------------------------
   // Advanced airway and capnography
   // -------------------------------------------------------------------------
 
-  const airwayName = (d: AdvancedAirwayDevice) => (d === 'ETT' ? 'Endotracheal tube' : 'Supraglottic airway');
-
-  /** Advanced airway placed, or (confirmationOnly) its placement confirmed by waveform capnography. */
+  /** Advanced airway placed, or its placement confirmed by waveform capnography. */
   const handleAirway = (device: AdvancedAirwayDevice, confirmedByCapnography: boolean) => {
     if (!codeIsOpen) {
       window.alert(state.codeStartedAt ? 'This case is closed.' : 'Start the code first, then record the airway.');
       return;
     }
-    const existing = state.advancedAirway;
-    const confirmationOnly = Boolean(existing && existing.device === device && confirmedByCapnography && !existing.confirmedByCapnography);
-    const ettUnconfirmed = device === 'ETT' && !confirmedByCapnography;
-    const note = ettUnconfirmed
-      ? 'AHA: confirm and monitor endotracheal tube placement with continuous waveform capnography.'
-      : undefined;
     vibrateDevice(50);
-    applyClinicalAction(
-      'ADVANCED_AIRWAY',
-      'AIRWAY',
-      (prev, t) => recordAirway(prev, t, device, confirmedByCapnography),
-      () => confirmationOnly
-        ? `${airwayName(device)} placement confirmed by waveform capnography`
-        : `Advanced airway placed: ${airwayName(device)} - ${confirmedByCapnography ? 'placement confirmed by waveform capnography' : 'confirmed clinically only'}${note ? ` [${note}]` : ''}`,
-      (prev, next) => ({
-        device,
-        confirmation: confirmedByCapnography ? 'WAVEFORM_CAPNOGRAPHY' : 'CLINICAL_ONLY',
-        ...(confirmationOnly ? { confirmationOnly: true } : {}),
-        arrestEpisodeNumber: next.arrestEpisodeNumber || 1,
-      }),
-    );
+    const now = Date.now();
+    const actor = recordingActor();
+    setState(prev => applyAction(prev, airwayAction(prev.advancedAirway, device, confirmedByCapnography), now, actor));
   };
 
   /** One EtCO2 reading during CPR; returns what it may mean (null if not recorded). */
@@ -1305,11 +1095,12 @@ export default function App() {
       etco2Context(state.clinicalEvents, state.arrestEpisodeNumber || 1, airway, episodeArrestSeconds(state, now)),
     );
     vibrateDevice(30);
-    addLog(
-      'INFO',
-      `EtCO2 ${valueMmHg} mm Hg during CPR (${airway === 'NONE' ? 'no advanced airway' : airway})${flags.length ? ` [${flags.join(' ')}]` : ''}`,
-      { kind: 'ETCO2', payload: { valueMmHg, airway, flags } },
-    );
+    record({
+      type: 'INFO',
+      kind: 'ETCO2',
+      description: `EtCO2 ${valueMmHg} mm Hg during CPR (${airway === 'NONE' ? 'no advanced airway' : airway})${flags.length ? ` [${flags.join(' ')}]` : ''}`,
+      payload: { valueMmHg, airway, flags },
+    }, now);
     return flags;
   };
 
@@ -1332,14 +1123,7 @@ export default function App() {
     if (!sure) return;
     vibrateDevice(200);
     MedicalAudio.stopAll();
-    applyClinicalAction(
-      'INFO',
-      'CODE_END',
-      (prev, at) => terminateResuscitation(prev, at),
-      (prev, next) => `Resuscitation stopped - time of death ${timeOfDeath} after ${formatClock(next.totalTime)} of arrest time`,
-      (prev, next) => ({ outcome: 'TERMINATED', timeOfDeath: now, arrestDurationSeconds: next.totalTime, arrestEpisodeNumber: next.arrestEpisodeNumber }),
-      now,
-    );
+    runAction(stopResuscitationAction(timeOfDeath), now);
   };
 
   const handleRhythmSelect = (rhythm: PatientRhythm) => {
@@ -1347,27 +1131,7 @@ export default function App() {
     if (rhythm === 'NON_SHOCKABLE') {
       MedicalAudio.playAlert();
     }
-    const now = Date.now();
-    applyClinicalAction(
-      'RHYTHM_CHECK',
-      'RHYTHM_CHECK',
-      (prev, at) => selectRhythm(prev, rhythm, at),
-      (prev, next) => {
-        const label = rhythm === 'SHOCKABLE'
-          ? 'VF / pulseless VT (shockable)'
-          : rhythm === 'NON_SHOCKABLE'
-            ? 'Asystole / PEA (non-shockable)'
-            : rhythm;
-        return `Rhythm check #${next.rhythmCheckCount}: ${label}`;
-      },
-      (prev, next) => ({
-        checkNumber: next.rhythmCheckCount ?? 0,
-        rhythm,
-        startedAt: prev.rhythmCheckStartedAt ?? now,
-        arrestEpisodeNumber: next.arrestEpisodeNumber,
-      }),
-      now,
-    );
+    runAction(rhythmAction(rhythm));
   };
 
   const handleRosc = () => {
@@ -1376,83 +1140,16 @@ export default function App() {
       return;
     }
     vibrateDevice([60, 60, 60, 60, 400]);
-    const now = Date.now();
-    applyClinicalAction(
-      'ROSC',
-      'ROSC',
-      (prev, at) => confirmRosc(prev, at),
-      (prev, next) => `ROSC achieved after ${formatClock(arrestSeconds(prev, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`,
-      (prev, next) => ({ arrestDurationSeconds: arrestSeconds(prev, now), arrestEpisodeNumber: next.arrestEpisodeNumber }),
-      now,
-    );
+    runAction(roscAction());
   };
 
   const handleRoscAtRhythmCheck = () => {
     vibrateDevice([60, 60, 60, 60, 400]);
     const now = Date.now();
-    // The rhythm-check event and ROSC transition are committed atomically so
-    // a second tap cannot create a duplicate rhythm/ROSC pair.
-    setState(prev => {
-      if (!prev.codeStartedAt || prev.roscAt || prev.activePrompt !== 'RHYTHM_CHECK') return prev;
-      const next = confirmRosc(
-        { ...prev, rhythmCheckCount: (prev.rhythmCheckCount ?? 0) + 1 },
-        now,
-      );
-      if (next === prev) return prev;
-
-      const checkNumber = (prev.rhythmCheckCount ?? 0) + 1;
-      const rhythmStartedAt = prev.rhythmCheckStartedAt ?? now;
-      const sequenceBase = prev.clinicalEvents.length > 0
-        ? Math.max(...prev.clinicalEvents.map(event => event.sequence))
-        : 0;
-      const rhythmDescription = `Rhythm check #${checkNumber}: organized rhythm with pulse`;
-      const roscDescription = `ROSC confirmed at rhythm check #${checkNumber} after ${formatClock(arrestSeconds(prev, now))} of arrest time - Initiating Post-Cardiac Arrest Care Protocol`;
-      const rhythmLog: LogEvent = {
-        id: Math.random().toString(36).substring(2, 11),
-        timestamp: now,
-        type: 'RHYTHM_CHECK',
-        description: rhythmDescription,
-      };
-      const roscLog: LogEvent = {
-        id: Math.random().toString(36).substring(2, 11),
-        timestamp: now,
-        type: 'ROSC',
-        description: roscDescription,
-      };
-      const rhythmEvent = createClinicalEvent({
-        kind: 'RHYTHM_CHECK',
-        timestamp: now,
-        source: 'user',
-        actorId: user?.uid,
-        actorName: effectiveProfile.fullName,
-        payload: {
-          checkNumber,
-          rhythm: 'ORGANIZED_WITH_PULSE',
-          startedAt: rhythmStartedAt,
-          arrestEpisodeNumber: next.arrestEpisodeNumber,
-        },
-        description: rhythmDescription,
-      }, sequenceBase + 1);
-      const roscEvent = createClinicalEvent({
-        kind: 'ROSC',
-        timestamp: now,
-        source: 'user',
-        actorId: user?.uid,
-        actorName: effectiveProfile.fullName,
-        payload: {
-          arrestDurationSeconds: arrestSeconds(prev, now),
-          rhythmCheckNumber: checkNumber,
-          arrestEpisodeNumber: next.arrestEpisodeNumber,
-        },
-        description: roscDescription,
-      }, sequenceBase + 2);
-
-      return {
-        ...next,
-        logs: [roscLog, rhythmLog, ...prev.logs],
-        clinicalEvents: [...prev.clinicalEvents, rhythmEvent, roscEvent],
-      };
-    });
+    const actor = recordingActor();
+    // The rhythm-check event and ROSC are committed together, so a second tap
+    // cannot create a duplicate rhythm/ROSC pair.
+    setState(prev => applyRoscAtRhythmCheck(prev, now, actor));
   };
 
   const handleStartCPR = () => {
@@ -1474,15 +1171,7 @@ export default function App() {
         return;
       }
     }
-    const now = Date.now();
-    applyClinicalAction(
-      'CPR_START',
-      'CODE_START',
-      (prev, at) => startCode(prev, at),
-      () => 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.',
-      () => ({ reason: 'user_started_resuscitation', initialRhythmAssessment: true }),
-      now,
-    );
+    runAction(startCodeAction());
     setHasSessionStarted(true);
   };
 
@@ -2152,7 +1841,7 @@ export default function App() {
         handleAmiodarone={handleAmiodarone}
         handleLidocaine={handleLidocaine}
         handleRhythmSelect={handleRhythmSelect}
-        addLog={addLog}
+        onVascularAccess={handleVascularAccess}
         effectiveProfile={effectiveProfile}
         handleStartCPR={handleStartCPR}
         hapticDuration={hapticDuration}

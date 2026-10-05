@@ -4,6 +4,7 @@ import { ClinicalEvent, LogEvent } from '../types';
 import { normalizeCaseClinicalEvents } from '../lib/clinicalEvents';
 import { CAUSE_STATUS_LABEL, causeLabel, causeSummaryByEpisode } from '../lib/reversibleCauses';
 import { DISPOSITION_LABEL, postRoscItemLabel, postRoscResultLabel } from '../lib/postRosc';
+import { episodeOfEvents, summarizeEpisodes } from '../lib/arrestEpisodes';
 
 interface PrintableReportProps {
   /** Identifies this report so printReport() can print it on its own. */
@@ -104,21 +105,26 @@ export default function PrintableReport({
     description: event.description || event.kind,
   }));
 
+  // Tables by event kind. Free-text matching is only for plain notes (INFO),
+  // e.g. records from older versions: "non-shockable" is not a shock and
+  // "episode" is not epinephrine.
+  const kindOf = new Map(normalizedEvents.map((e) => [e.id, e.kind] as const));
+  const isNote = (l: LogEvent) => kindOf.get(l.id) === 'INFO';
   const drugLogs = chronologicalLogs.filter((l) =>
     l.type === 'DRUG_EPI' ||
     l.type === 'DRUG_AMIO' ||
     l.type === 'DRUG_LIDO' ||
-    /epinephrine|epi|amiodarone|lidocaine|atropine|magnesium|bicarb|calcium/i.test(l.description)
+    (isNote(l) && /\b(epinephrine|adrenaline|amiodarone|lidocaine|atropine|magnesium|bicarbonate|bicarb|calcium)\b/i.test(l.description))
   );
 
   const shockLogs = chronologicalLogs.filter((l) =>
-    l.type === 'SHOCK' || /shock|joule|defibrillation/i.test(l.description)
+    l.type === 'SHOCK' || (isNote(l) && /\b(defibrillat\w*|joules?|shock #\d+)/i.test(l.description))
   );
 
   const procedureLogs = chronologicalLogs.filter((l) =>
     l.type === 'ROSC' ||
     l.type === 'ADVANCED_AIRWAY' ||
-    /airway|intubation|vascular access|iv access|io access|central line|arterial line|chest tube|thoracostomy|procedure/i.test(l.description)
+    (isNote(l) && /airway|intubation|vascular access|iv access|io access|central line|arterial line|chest tube|thoracostomy|procedure/i.test(l.description))
   );
 
   const rhythmLogs = chronologicalLogs.filter((l) => l.type === 'RHYTHM_CHECK');
@@ -151,6 +157,24 @@ export default function PrintableReport({
   const vitalsEntries = normalizedEvents.filter((e): e is Extract<ClinicalEvent, { kind: 'VITALS' }> => e.kind === 'VITALS');
   const etco2Events = normalizedEvents.filter((e): e is Extract<ClinicalEvent, { kind: 'ETCO2' }> => e.kind === 'ETCO2');
   const dispositionEvent = normalizedEvents.filter((e): e is Extract<ClinicalEvent, { kind: 'DISPOSITION' }> => e.kind === 'DISPOSITION').at(-1);
+
+  // Arrest episodes (each ROSC followed by re-arrest starts a new one) and
+  // medication timing within them.
+  const episodes = summarizeEpisodes(normalizedEvents);
+  const episodeOf = episodeOfEvents(normalizedEvents);
+  const eventById = new Map(normalizedEvents.map((e) => [e.id, e] as const));
+  const sincePreviousDose = (id: string): string => {
+    const dose = eventById.get(id);
+    if (!dose || (dose.kind !== 'EPINEPHRINE' && dose.kind !== 'AMIODARONE' && dose.kind !== 'LIDOCAINE')) return '-';
+    const earlier = normalizedEvents.filter((p) =>
+      p.kind === dose.kind && (p.timestamp < dose.timestamp || (p.timestamp === dose.timestamp && p.sequence < dose.sequence)));
+    const previous = earlier.at(-1);
+    if (!previous) return 'First dose';
+    const gap = formatDuration(Math.floor((dose.timestamp - previous.timestamp) / 1000));
+    return episodeOf.get(previous.id) === episodeOf.get(dose.id) ? gap : `${gap} (earlier episode)`;
+  };
+  const episodeEndLabel = (endedBy: 'ROSC' | 'CODE_END' | null) =>
+    endedBy === 'ROSC' ? 'ROSC' : endedBy === 'CODE_END' ? 'Resuscitation stopped' : 'No end documented';
 
   const signed = Boolean(signatureDataUrl);
   const recordStatus = signed ? 'SIGNED / ATTESTED' : 'UNSIGNED / DRAFT';
@@ -207,6 +231,34 @@ export default function PrintableReport({
               <div><span>Shocks Delivered</span><strong>{shocksCount}</strong></div>
               <div><span>Epinephrine Doses</span><strong>{epiCount}</strong></div>
             </div>
+            {episodes.length > 0 && (
+              <div className="acls-print-episodes">
+                <h3>Arrest episodes ({episodes.length})</h3>
+                <table className="acls-print-table acls-print-episodes-table">
+                  <thead><tr><th>Episode</th><th>Started</th><th>Arrest time</th><th>Ended by</th><th>Shocks</th><th>Epinephrine</th><th>Amio / Lido</th></tr></thead>
+                  <tbody>
+                    {episodes.map((ep) => (
+                      <tr key={ep.episode}>
+                        <td>{ep.episode}</td>
+                        <td className="mono">{formatTime(ep.startAt)}</td>
+                        <td className="mono">{ep.durationSeconds != null ? formatDuration(ep.durationSeconds) : '-'}</td>
+                        <td>{episodeEndLabel(ep.endedBy)}</td>
+                        <td>{ep.shocks}</td>
+                        <td>
+                          {ep.epinephrineDoses}
+                          {ep.firstEpinephrineAfterSeconds != null ? ` (first at +${formatDuration(ep.firstEpinephrineAfterSeconds)})` : ''}
+                        </td>
+                        <td>
+                          {ep.amiodaroneDoses + ep.lidocaineDoses === 0
+                            ? '-'
+                            : [ep.amiodaroneDoses ? `Amiodarone ${ep.amiodaroneDoses}` : '', ep.lidocaineDoses ? `Lidocaine ${ep.lidocaineDoses}` : ''].filter(Boolean).join(', ')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           <section className="acls-print-section acls-print-physician-card">
@@ -275,14 +327,16 @@ export default function PrintableReport({
             {drugLogs.length === 0 ? (
               <div className="acls-print-empty">No medication administration events were recorded.</div>
             ) : (
-              <table className="acls-print-table">
-                <thead><tr><th>#</th><th>Time</th><th>Medication / Dose / Route</th></tr></thead>
+              <table className="acls-print-table acls-print-meds-table">
+                <thead><tr><th>#</th><th>Time</th><th>Medication / Dose / Route</th><th>Episode</th><th>Since previous dose</th></tr></thead>
                 <tbody>
                   {drugLogs.map((log, idx) => (
                     <tr key={log.id || `${log.timestamp}-${idx}`}>
                       <td>{idx + 1}</td>
                       <td className="mono">{formatTime(log.timestamp)}</td>
                       <td>{log.description}</td>
+                      <td>{episodeOf.get(log.id) ?? '-'}</td>
+                      <td>{sincePreviousDose(log.id)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -315,7 +369,7 @@ export default function PrintableReport({
             {procedureLogs.length === 0 ? (
               <div className="acls-print-empty">No airway or procedure events were recorded.</div>
             ) : (
-              <table className="acls-print-table">
+              <table className="acls-print-table acls-print-time-first">
                 <thead><tr><th>Time</th><th>Procedure / Intervention</th></tr></thead>
                 <tbody>
                   {procedureLogs.map((log, idx) => (
@@ -332,7 +386,7 @@ export default function PrintableReport({
           {etco2Events.length > 0 && (
             <section className="acls-print-section">
               <h2>VI-b. End-Tidal CO2 During CPR</h2>
-              <table className="acls-print-table">
+              <table className="acls-print-table acls-print-time-first">
                 <thead><tr><th>Time</th><th>EtCO2</th><th>Airway</th><th>Note</th></tr></thead>
                 <tbody>
                   {etco2Events.map((e) => (
@@ -382,7 +436,7 @@ export default function PrintableReport({
             {causeSummary.length === 0 ? (
               <div className="acls-print-empty">No reversible-cause assessments were recorded.</div>
             ) : (
-              <table className="acls-print-table">
+              <table className="acls-print-table acls-print-causes-table">
                 <thead><tr><th>Episode</th><th>Cause</th><th>Status</th><th>Time</th><th>Note</th></tr></thead>
                 <tbody>
                   {causeSummary.map((c) => (
@@ -406,7 +460,7 @@ export default function PrintableReport({
             ) : (
               <>
                 {postRoscChecks.length > 0 && (
-                  <table className="acls-print-table">
+                  <table className="acls-print-table acls-print-time-first">
                     <thead><tr><th>Time</th><th>After ROSC</th><th>AHA post-arrest item</th></tr></thead>
                     <tbody>
                       {postRoscChecks.map((e) => (
@@ -425,7 +479,7 @@ export default function PrintableReport({
                   </table>
                 )}
                 {vitalsEntries.length > 0 && (
-                  <table className="acls-print-table">
+                  <table className="acls-print-table acls-print-time-first">
                     <thead><tr><th>Time</th><th>Vitals</th><th>Outside AHA target</th></tr></thead>
                     <tbody>
                       {vitalsEntries.map((e) => (
