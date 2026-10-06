@@ -10,6 +10,7 @@ import { auth, db } from '../lib/firebase';
 import { collection, collectionGroup, onSnapshot, doc, setDoc } from 'firebase/firestore';
 import { DoctorKyc, SavedCase, UserProfile } from '../types';
 import { AdminCase, combineAdminCases } from '../lib/caseStore';
+import { verifyCase, voidAmendment } from '../lib/caseIntegrity';
 
 interface AdminKycPanelProps {
   isOpen: boolean;
@@ -144,23 +145,11 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
       ]
     };
 
+    // Shown in this view only. Sample data never goes into the case registry,
+    // where it would mix with real patients' records.
     setLocalSampleCases(prev => [sampleCase, ...prev]);
-
-    try {
-      const caseRef = doc(db, 'cases', sampleId);
-      await setDoc(caseRef, {
-        ...sampleCase,
-        userId: auth.currentUser?.uid || 'admin_user',
-        isSample: true,
-        syncedAt: Date.now()
-      }, { merge: true });
-      setActionStatus("✓ Sample Resuscitation Case generated & synced to Firestore Registry");
-      setTimeout(() => setActionStatus(null), 3000);
-    } catch (err) {
-      console.warn("Could not save sample case to Firestore:", err);
-      setActionStatus("✓ Sample Resuscitation Case created in registry view");
-      setTimeout(() => setActionStatus(null), 3000);
-    }
+    setActionStatus("✓ Sample case added to this view (not saved to the registry)");
+    setTimeout(() => setActionStatus(null), 3000);
   };
 
   if (!isOpen) return null;
@@ -175,64 +164,35 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
       institution: 'Hospital Practice'
     };
 
+    const { rejectionReason: _oldReason, ...previous } = existingKyc as DoctorKyc;
     const updatedKyc: DoctorKyc = {
-      ...existingKyc,
+      ...previous,
       councilRegistration: existingKyc.councilRegistration || targetProfile?.councilRegistration || 'Not provided',
       kycStatus: 'approved',
       approvedAt: Date.now(),
       approvedBy: currentUserEmail || 'App admin'
     };
 
-    // Update in-memory state immediately for instant feedback
-    setProfiles(prev => prev.map(p => {
-      if (p.id === docId) {
-        return {
-          ...p,
-          kyc: updatedKyc,
-          councilRegistration: updatedKyc.councilRegistration
-        };
-      }
-      return p;
-    }));
+    // Write first; show it as approved only once the server has accepted it.
+    try {
+      const fields = { kyc: updatedKyc, councilRegistration: updatedKyc.councilRegistration };
+      await setDoc(doc(db, 'profiles', docId), fields, { mergeFields: ['kyc', 'councilRegistration'] });
+      await setDoc(doc(db, 'users', docId), fields, { mergeFields: ['kyc', 'councilRegistration'] }).catch(() => {});
+    } catch (err) {
+      console.warn('Approval was not saved:', err);
+      setActionStatus(`Approval NOT saved for ${doctorName}: the server refused it. Check that you are signed in as admin and the rules are published.`);
+      setTimeout(() => setActionStatus(null), 6000);
+      return;
+    }
 
-    // If this is the current practitioner or local profile, update local cache & notify App.tsx
+    setProfiles(prev => prev.map(p => (p.id === docId
+      ? { ...p, kyc: updatedKyc, councilRegistration: updatedKyc.councilRegistration }
+      : p)));
     if (onProfileApproved) {
       onProfileApproved(docId, updatedKyc);
     }
-    try {
-      const local = localStorage.getItem('acls_user_profile');
-      if (local) {
-        const parsed = JSON.parse(local);
-        if (docId === auth.currentUser?.uid || parsed.email === targetProfile?.email) {
-          localStorage.setItem('acls_user_profile', JSON.stringify({
-            ...parsed,
-            kyc: updatedKyc,
-            councilRegistration: updatedKyc.councilRegistration
-          }));
-        }
-      }
-    } catch (e) {}
-
-    try {
-      const profileRef = doc(db, 'profiles', docId);
-      await setDoc(profileRef, {
-        kyc: updatedKyc,
-        councilRegistration: updatedKyc.councilRegistration
-      }, { merge: true });
-
-      const userRef = doc(db, 'users', docId);
-      await setDoc(userRef, {
-        kyc: updatedKyc,
-        councilRegistration: updatedKyc.councilRegistration
-      }, { merge: true }).catch(() => {});
-
-      setActionStatus(`✓ Verified & Approved Medical License for ${doctorName}`);
-      setTimeout(() => setActionStatus(null), 3000);
-    } catch (err) {
-      console.warn("Firestore approval write notice:", err);
-      setActionStatus(`✓ Approved (Verified locally and in state)`);
-      setTimeout(() => setActionStatus(null), 3000);
-    }
+    setActionStatus(`✓ Verified & Approved Medical License for ${doctorName}`);
+    setTimeout(() => setActionStatus(null), 3000);
   };
 
   const handleReject = (docId: string, doctorName: string) => {
@@ -255,43 +215,29 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
       institution: 'Hospital Practice'
     };
 
+    const { approvedAt: _approvedAt, approvedBy: _approvedBy, ...withoutApproval } = existingKyc as DoctorKyc;
     const updatedKyc: DoctorKyc = {
-      ...existingKyc,
+      ...withoutApproval,
       kycStatus: 'rejected',
       rejectionReason: reason
     };
 
-    setProfiles(prev => prev.map(p => {
-      if (p.id === docId) {
-        return {
-          ...p,
-          kyc: updatedKyc
-        };
-      }
-      return p;
-    }));
+    try {
+      await setDoc(doc(db, 'profiles', docId), { kyc: updatedKyc }, { mergeFields: ['kyc'] });
+      await setDoc(doc(db, 'users', docId), { kyc: updatedKyc }, { mergeFields: ['kyc'] }).catch(() => {});
+    } catch (err) {
+      console.warn('Rejection was not saved:', err);
+      setActionStatus(`Rejection NOT saved for ${doctorName}: the server refused it.`);
+      setTimeout(() => setActionStatus(null), 6000);
+      return;
+    }
 
+    setProfiles(prev => prev.map(p => (p.id === docId ? { ...p, kyc: updatedKyc } : p)));
     if (onProfileApproved) {
       onProfileApproved(docId, updatedKyc);
     }
-
-    try {
-      const profileRef = doc(db, 'profiles', docId);
-      await setDoc(profileRef, {
-        kyc: updatedKyc
-      }, { merge: true });
-
-      const userRef = doc(db, 'users', docId);
-      await setDoc(userRef, {
-        kyc: updatedKyc
-      }, { merge: true }).catch(() => {});
-
-      setActionStatus(`Rejected KYC application for ${doctorName}`);
-      setTimeout(() => setActionStatus(null), 3000);
-    } catch (err) {
-      setActionStatus(`Rejected (Local state updated)`);
-      setTimeout(() => setActionStatus(null), 3000);
-    }
+    setActionStatus(`Rejected KYC application for ${doctorName}`);
+    setTimeout(() => setActionStatus(null), 3000);
   };
 
   const filteredProfiles = profiles.filter(p => {
@@ -669,6 +615,24 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                           {c.doctorEmail && (
                             <p className="text-[10px] text-gray-500 break-all">Account: {c.doctorEmail}</p>
                           )}
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {voidAmendment(c) && (
+                              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-300" title={voidAmendment(c)?.text}>
+                                Voided
+                              </span>
+                            )}
+                            {(() => {
+                              const integrity = verifyCase(c);
+                              if (integrity === 'ALTERED') return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-600 text-white">Fingerprint mismatch</span>;
+                              if (integrity === 'VERIFIED') return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300">Fingerprint OK</span>;
+                              return null;
+                            })()}
+                            {(c.amendments?.length ?? 0) > 0 && (
+                              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-300">
+                                {c.amendments!.length} amendment{c.amendments!.length > 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -775,10 +739,10 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                 {/* Event Logs Timeline */}
                 <div className="flex-1 overflow-y-auto space-y-1.5 border border-gray-200 p-2.5 rounded-xl bg-gray-50 max-h-56 custom-scrollbar text-xs font-mono">
                   {selectedCaseModal.logs && selectedCaseModal.logs.length > 0 ? (
-                    selectedCaseModal.logs.map((log) => (
+                    [...selectedCaseModal.logs].sort((a, b) => a.timestamp - b.timestamp).map((log) => (
                       <div key={log.id} className="p-1.5 bg-white rounded border border-gray-200 flex items-start gap-2">
                         <span className="text-[9px] text-gray-500 shrink-0 font-bold">
-                          +{Math.floor(log.timestamp / 60)}:{(log.timestamp % 60).toString().padStart(2, '0')}
+                          {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
                         </span>
                         <span className="text-[10px] text-black leading-tight">{log.description}</span>
                       </div>
@@ -787,6 +751,20 @@ export default function AdminKycPanel({ isOpen, onClose, currentUserEmail, onPro
                     <p className="text-[10px] text-gray-500 text-center py-4">No granular log entries recorded for this case.</p>
                   )}
                 </div>
+
+                {/* Amendments after signing */}
+                {(selectedCaseModal.amendments?.length ?? 0) > 0 && (
+                  <div className="border border-gray-200 p-2.5 rounded-xl bg-gray-50 space-y-1">
+                    <span className="text-[9px] font-bold uppercase text-black block">Amendments after signing</span>
+                    {selectedCaseModal.amendments!.map((a) => (
+                      <div key={a.id} className={`text-[10px] ${a.kind === 'VOID' ? 'text-red-800' : 'text-black'}`}>
+                        <strong>{a.kind === 'VOID' ? 'Voided' : 'Addendum'}</strong>{' '}
+                        <span className="font-mono text-gray-600">{new Date(a.at).toLocaleString()}</span>
+                        {a.byName ? ` by ${a.byName}` : ''}: {a.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Signature Preview */}
                 {selectedCaseModal.signatureDataUrl && (

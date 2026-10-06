@@ -15,6 +15,7 @@
  * be unit-tested without a browser or Firestore.
  */
 import type { SavedCase } from '../types';
+import { mergeAmendments } from './caseIntegrity';
 
 export interface KeyValueStore {
   getItem(key: string): string | null;
@@ -120,6 +121,24 @@ export function isPending(uid: string, caseId: string, store: KeyValueStore | nu
  */
 export function mergeCaseLists<T extends { id: string; savedAt?: number }>(primary: T[], secondary: T[]): T[] {
   return unionById(primary, secondary).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+}
+
+/**
+ * The list the doctor sees: the server's cases plus everything waiting to
+ * upload. A server case with amendments still waiting to upload shows them
+ * already (the signed content shown is always the server's).
+ */
+export function visibleCaseList(serverCases: SavedCase[], pending: SavedCase[]): SavedCase[] {
+  const pendingById = new Map(pending.map(c => [c.id, c] as const));
+  const serverIds = new Set(serverCases.map(c => c.id));
+  const fromServer = serverCases.map(c => {
+    const local = pendingById.get(c.id);
+    if (!local) return c;
+    const amendments = mergeAmendments(c.amendments, local.amendments);
+    return { ...c, ...(amendments.length ? { amendments } : {}), syncPending: true };
+  });
+  const onlyLocal = pending.filter(c => !serverIds.has(c.id)).map(c => ({ ...c, syncPending: true }));
+  return mergeCaseLists(fromServer, onlyLocal);
 }
 
 /** A case as the admin panel sees it: tagged with the doctor who saved it. */

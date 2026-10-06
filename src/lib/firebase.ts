@@ -8,10 +8,12 @@ import {
   collection,
   deleteDoc,
   getDocFromServer,
+  runTransaction,
   Unsubscribe,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { SavedCase, UserProfile } from '../types';
+import { MAX_NEW_AMENDMENTS_PER_WRITE, isSigned, mergeAmendments } from './caseIntegrity';
 
 const app = initializeApp(firebaseConfig);
 
@@ -87,6 +89,10 @@ export async function syncUserProfileToFirestore(userId: string, data: Partial<U
   try {
     const profileData = { ...data } as Record<string, unknown>;
     delete profileData.savedCases;
+    // Verification status and admin rights are never sent from here: a stale
+    // copy on this device must not overwrite (or undo) an admin's decision.
+    delete profileData.kyc;
+    delete profileData.isAdmin;
     await setDoc(doc(db, 'profiles', userId), { ...profileData, updatedAt: Date.now() }, { merge: true });
     await setDoc(doc(db, 'users', userId), { ...profileData, updatedAt: Date.now() }, { merge: true }).catch(() => {});
     return true;
@@ -97,23 +103,59 @@ export async function syncUserProfileToFirestore(userId: string, data: Partial<U
   }
 }
 
-/** Write exactly one canonical case. */
-export async function saveUserCaseToFirestore(userId: string, caseRecord: SavedCase): Promise<boolean> {
-  if (!userId || !caseRecord?.id) return false;
-  const path = `users/${userId}/cases/${caseRecord.id}`;
+export type UploadResult = 'ok' | 'failed' | 'refused';
+
+/**
+ * Upload one case from the device queue, safely for signed records:
+ *  - not on the server yet: create it as signed;
+ *  - already there and signed: the server copy is final; only amendments this
+ *    device added are appended (a retry after a lost reply changes nothing);
+ *  - already there, older unsigned record: merged as before.
+ * 'refused' means the server rejected it (rules); trying again will not help.
+ */
+export async function uploadUserCase(userId: string, caseRecord: SavedCase): Promise<UploadResult> {
+  if (!userId || !caseRecord?.id) return 'refused';
+  const ref = doc(db, 'users', userId, 'cases', caseRecord.id);
+  const { syncPending: _pending, syncRefused: _refused, ...record } = caseRecord;
   try {
-    const { syncPending: _displayOnly, ...record } = caseRecord;
-    await setDoc(doc(db, 'users', userId, 'cases', caseRecord.id), {
-      ...record,
-      userId,
-      updatedAt: Date.now(),
-      storageVersion: 2,
-    }, { merge: true });
-    return true;
+    let more = true;
+    while (more) {
+      more = false;
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists()) {
+          // A brand-new case. Amendments made before the first upload go in with it,
+          // up to the number the rules accept in one write; the rest follow.
+          const amendments = record.amendments ?? [];
+          const first = amendments.slice(0, MAX_NEW_AMENDMENTS_PER_WRITE);
+          more = amendments.length > first.length;
+          tx.set(ref, {
+            ...record,
+            ...(record.amendments ? { amendments: first } : {}),
+            userId,
+            updatedAt: Date.now(),
+            storageVersion: 2,
+          });
+          return;
+        }
+        const server = snap.data() as SavedCase;
+        if (isSigned(server)) {
+          const before = server.amendments ?? [];
+          const merged = mergeAmendments(before, record.amendments);
+          const next = merged.slice(0, before.length + MAX_NEW_AMENDMENTS_PER_WRITE);
+          more = merged.length > next.length;
+          if (next.length > before.length) tx.update(ref, { amendments: next, updatedAt: Date.now() });
+          return;
+        }
+        tx.set(ref, { ...record, userId, updatedAt: Date.now(), storageVersion: 2 }, { merge: true });
+      });
+    }
+    return 'ok';
   } catch (error) {
-    console.error('Failed to save case to Firestore:', error);
-    try { handleFirestoreError(error, OperationType.WRITE, path); } catch (e) {}
-    return false;
+    const code = (error as { code?: string })?.code ?? '';
+    console.error('Failed to upload case:', error);
+    try { handleFirestoreError(error, OperationType.WRITE, `users/${userId}/cases/${caseRecord.id}`); } catch (e) {}
+    return code === 'permission-denied' || code === 'invalid-argument' ? 'refused' : 'failed';
   }
 }
 
@@ -127,37 +169,6 @@ export async function deleteUserCaseFromFirestore(userId: string, caseId: string
   } catch (error) {
     console.error('Failed to delete case from Firestore:', error);
     try { handleFirestoreError(error, OperationType.DELETE, path); } catch (e) {}
-    return false;
-  }
-}
-
-/** Legacy bulk synchronizer retained for migration/backward compatibility. */
-export async function syncSavedCasesToFirestore(userId: string, cases: SavedCase[]): Promise<boolean> {
-  if (!userId) return false;
-  try {
-    for (const c of cases) {
-      const ok = await saveUserCaseToFirestore(userId, c);
-      if (!ok) return false;
-    }
-    await setDoc(doc(db, 'profiles', userId), { lastCasesSyncAt: Date.now(), caseStorageVersion: 2 }, { merge: true });
-    return true;
-  } catch (error) {
-    console.error('Failed to sync saved cases to Firestore:', error);
-    try { handleFirestoreError(error, OperationType.WRITE, `users/${userId}/cases`); } catch (e) {}
-    return false;
-  }
-}
-
-export async function migrateLegacySavedCasesToFirestore(userId: string, legacyCases?: SavedCase[]): Promise<boolean> {
-  if (!userId || !Array.isArray(legacyCases) || legacyCases.length === 0) return true;
-  try {
-    for (const c of legacyCases) {
-      const ok = await saveUserCaseToFirestore(userId, c);
-      if (!ok) return false;
-    }
-    return true;
-  } catch (error) {
-    console.error('Failed to migrate legacy saved cases:', error);
     return false;
   }
 }

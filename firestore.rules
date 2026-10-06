@@ -10,13 +10,15 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    // Exactly one admin account. Emails containing "admin", "council",
-    // "board" or "medical" get NO special access any more.
+    // Admin: the Firebase custom claim admin == true (set with
+    // scripts/set-admin-claim.mjs). The verified owner email is still accepted
+    // while the claim is being rolled out; remove that line once the claim is set.
     function isAdmin() {
       return signedIn()
-        && request.auth.token.email != null
-        && request.auth.token.email.lower() == 'user.suniltim@gmail.com'
-        && request.auth.token.email_verified == true;
+        && (request.auth.token.get('admin', false) == true
+            || (request.auth.token.get('email', '') is string
+                && request.auth.token.get('email', '').lower() == 'user.suniltim@gmail.com'
+                && request.auth.token.get('email_verified', false) == true));
     }
 
     function kycIsSelfServe(data) {
@@ -31,10 +33,75 @@ service cloud.firestore {
         && kycIsSelfServe(data);
     }
 
+    function wasApproved() {
+      return resource.data.get('kyc', {}).get('kycStatus', '') == 'approved';
+    }
+
+    // Identity that an approval vouches for. Once approved, changing any of
+    // these sends the doctor back to verification (kyc must become pending).
+    function identityKeys() {
+      return ['fullName', 'councilRegistration', 'profession', 'highestDegree', 'dob'];
+    }
+
     function ownerUpdateOk() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       return !changed.hasAny(['isAdmin'])
-        && (!changed.hasAny(['kyc']) || kycIsSelfServe(request.resource.data));
+        && (!changed.hasAny(['kyc']) || kycIsSelfServe(request.resource.data))
+        && (!wasApproved() || !changed.hasAny(identityKeys()) || kycIsSelfServe(request.resource.data));
+    }
+
+    // ---- Signed cases -------------------------------------------------------
+    // A case is signed when it has a fingerprint (contentHash) or a signature.
+    // Its content never changes after that; only amendments (addenda, voiding)
+    // are appended, each by the signed-in author. See src/lib/caseIntegrity.ts.
+
+    function isSignedCase(data) {
+      return ('contentHash' in data) || (data.get('signatureDataUrl', '') != '');
+    }
+
+    function validAmendment(a) {
+      return a is map
+        && a.keys().hasAll(['id', 'at', 'by', 'kind', 'text'])
+        && a.keys().hasOnly(['id', 'at', 'by', 'byName', 'kind', 'text'])
+        && a.id is string && a.id.size() > 0 && a.id.size() <= 64
+        && a.at is number
+        && a.by == request.auth.uid
+        && a.kind in ['ADDENDUM', 'VOID']
+        && a.text is string && a.text.size() > 0 && a.text.size() <= 2000
+        && (!('byName' in a) || (a.byName is string && a.byName.size() <= 200));
+    }
+
+    function newAmendmentOk(after, i) {
+      return i >= after.size() || validAmendment(after[i]);
+    }
+
+    // Append-only: everything already there stays, in order; at most 5 new per write.
+    function amendmentsAppendOnly(before, after) {
+      return after is list
+        && after.size() >= before.size()
+        && after.size() <= before.size() + 5
+        && after[0:before.size()] == before
+        && newAmendmentOk(after, before.size())
+        && newAmendmentOk(after, before.size() + 1)
+        && newAmendmentOk(after, before.size() + 2)
+        && newAmendmentOk(after, before.size() + 3)
+        && newAmendmentOk(after, before.size() + 4);
+    }
+
+    function caseCreateOk(uid) {
+      let data = request.resource.data;
+      return data.userId == uid
+        && amendmentsAppendOnly([], data.get('amendments', []));
+    }
+
+    function caseUpdateOk(uid) {
+      let before = resource.data;
+      let after = request.resource.data;
+      return before.userId == uid
+        && after.userId == uid
+        && (!isSignedCase(before)
+            || after.diff(before).affectedKeys().hasOnly(['updatedAt', 'storageVersion', 'amendments']))
+        && amendmentsAppendOnly(before.get('amendments', []), after.get('amendments', []));
     }
 
     // Practitioner profile and KYC.
@@ -53,28 +120,23 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
 
       // Canonical case storage. Cases are isolated by authenticated UID.
+      // Signed cases: content fixed, amendments append-only, never deleted by
+      // the doctor (void instead). Admin may delete (e.g. a data-protection request).
       match /cases/{caseId} {
         allow read: if isOwner(userId) || isAdmin();
-        allow create: if isOwner(userId)
-          && request.resource.data.userId == request.auth.uid;
-        allow update: if isOwner(userId)
-          && resource.data.userId == request.auth.uid
-          && request.resource.data.userId == request.auth.uid;
-        allow delete: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && caseCreateOk(request.auth.uid);
+        allow update: if isOwner(userId) && caseUpdateOk(request.auth.uid);
+        allow delete: if isAdmin() || (isOwner(userId) && !isSignedCase(resource.data));
       }
     }
 
-    // Legacy/global case records retained for backward compatibility while
-    // existing installations migrate to users/{uid}/cases/{caseId}.
+    // Legacy top-level case records: read-only. The app has not written here
+    // since cases moved to users/{uid}/cases; nothing new may be added.
     match /cases/{caseId} {
       allow read: if isAdmin()
                   || (signedIn() && resource.data.userId == request.auth.uid);
-      allow create: if signedIn()
-                    && (request.resource.data.userId == request.auth.uid || isAdmin());
-      allow update: if signedIn()
-                    && ((resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid) || isAdmin());
-      allow delete: if isAdmin()
-                    || (signedIn() && resource.data.userId == request.auth.uid);
+      allow create, update: if false;
+      allow delete: if isAdmin();
     }
 
     // Admin-only: lets the admin panel read every doctor's cases in one

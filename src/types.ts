@@ -332,6 +332,19 @@ export interface SavedCase {
   councilRegistration: string;
   signatureDataUrl?: string;
 
+  /** When the clinician signed the case. */
+  signedAt?: number;
+  /** Account (Firebase uid) that signed it. */
+  signedByUid?: string;
+  /**
+   * Fingerprint of the signed content (see lib/caseIntegrity). Absent on cases
+   * saved before fingerprinting was added.
+   */
+  contentHash?: string;
+  hashAlgorithm?: 'SHA-256';
+  /** Addenda and voiding, added after signing. The signed content itself never changes. */
+  amendments?: CaseAmendment[];
+
   // Storage/audit metadata. Optional so existing saved records remain readable.
   userId?: string;
   updatedAt?: number;
@@ -340,6 +353,19 @@ export interface SavedCase {
 
   /** Display only, never stored in Firestore: saved on this device, not uploaded yet. */
   syncPending?: boolean;
+  /** Display only: the server refused this copy (kept on the device). */
+  syncRefused?: boolean;
+}
+
+/** Something added to a signed case afterwards: a note (addendum) or voiding it, with who and when. */
+export interface CaseAmendment {
+  id: string;
+  at: number;
+  /** Firebase uid of the author ('' on a device-only guest case). */
+  by: string;
+  byName?: string;
+  kind: 'ADDENDUM' | 'VOID';
+  text: string;
 }
 
 export interface GroundingChunk {

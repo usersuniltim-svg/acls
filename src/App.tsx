@@ -29,6 +29,7 @@ import {
   AclsState,
   UserProfile,
   SavedCase,
+  CaseAmendment,
   ReversibleCauseId,
   ReversibleCauseStatus,
   PostRoscItemId,
@@ -95,7 +96,7 @@ import {
   testFirestoreConnection, 
   syncUserProfileToFirestore, 
   subscribeToUserCases,
-  saveUserCaseToFirestore,
+  uploadUserCase,
   deleteUserCaseFromFirestore,
 } from './lib/firebase';
 import {
@@ -106,7 +107,9 @@ import {
   mergeCaseLists,
   readPendingCases,
   removePendingCase,
+  visibleCaseList,
 } from './lib/caseStore';
+import { amendCase, amendmentProblem, isSigned, makeAmendment, mergeAmendments, sealCase } from './lib/caseIntegrity';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import MobileDashboard from './components/MobileDashboard';
@@ -174,6 +177,8 @@ function CprLogo({ className = "w-28 h-auto", isDark = false }: { className?: st
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  /** The admin custom claim on the sign-in token (see scripts/set-admin-claim.mjs). */
+  const [hasAdminClaim, setHasAdminClaim] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     try {
       const raw = localStorage.getItem('acls_user_profile');
@@ -220,9 +225,7 @@ export default function App() {
   /** Rebuild the visible list from the server view and the upload queue. */
   const refreshCaseList = (uid: string): number => {
     const pending = readPendingCases(uid);
-    const pendingIds = new Set(pending.map(c => c.id));
-    const merged = mergeCaseLists(serverViewRef.current.cases, pending)
-      .map(c => (pendingIds.has(c.id) ? { ...c, syncPending: true } : c));
+    const merged = visibleCaseList(serverViewRef.current.cases, pending);
     setSavedCases(merged);
     try {
       localStorage.setItem('acls_saved_cases', JSON.stringify(merged));
@@ -245,20 +248,35 @@ export default function App() {
    * While offline this waits (Firestore sends it when the connection returns).
    */
   const uploadCase = async (uid: string, caseRecord: SavedCase): Promise<boolean> => {
-    const ok = await saveUserCaseToFirestore(uid, caseRecord);
-    if (ok) {
-      const stillWanted = isPending(uid, caseRecord.id); // false if deleted meanwhile
+    const result = await uploadUserCase(uid, caseRecord);
+    if (result === 'ok') {
+      const queued = readPendingCases(uid).find(c => c.id === caseRecord.id); // undefined if deleted meanwhile
+      const uploadedIds = new Set((caseRecord.amendments ?? []).map(a => a.id));
+      const newerAmendment = (queued?.amendments ?? []).some(a => !uploadedIds.has(a.id));
+      if (newerAmendment && queued) {
+        // An amendment was added while this upload was running: send it too.
+        if (auth.currentUser?.uid === uid) refreshCaseList(uid);
+        return uploadCase(uid, queued);
+      }
       removePendingCase(uid, caseRecord.id);
-      if (stillWanted && !serverViewRef.current.cases.some(c => c.id === caseRecord.id)) {
+      if (queued) {
+        const known = serverViewRef.current.cases.find(c => c.id === caseRecord.id);
+        const shown = known
+          ? { ...known, amendments: mergeAmendments(known.amendments, caseRecord.amendments) }
+          : caseRecord;
         serverViewRef.current = {
           ...serverViewRef.current,
-          cases: mergeCaseLists([caseRecord], serverViewRef.current.cases),
+          cases: mergeCaseLists([shown], serverViewRef.current.cases),
         };
       }
       finishLegacyMigrationIfUploaded(uid);
+    } else if (result === 'refused') {
+      // The server will not take this copy as it is; keep it on the device and say so.
+      const queued = readPendingCases(uid).find(c => c.id === caseRecord.id);
+      if (queued && !queued.syncRefused) addPendingCase(uid, { ...queued, syncRefused: true });
     }
     if (auth.currentUser?.uid === uid) refreshCaseList(uid);
-    return ok;
+    return result === 'ok';
   };
 
   /** Upload everything in the queue. Resolves true when the queue is empty. */
@@ -272,9 +290,13 @@ export default function App() {
         while (auth.currentUser?.uid === uid) {
           // Re-read each time: cases can be saved or deleted while this runs.
           const next = readPendingCases(uid).find(c => !attempted.has(c.id));
-          if (!next) return true;
+          if (!next) return readPendingCases(uid).length === 0;
           attempted.add(next.id);
-          if (!(await uploadCase(uid, next))) return false;
+          if (!(await uploadCase(uid, next))) {
+            // A copy the server refused stays on the device; the others still go up.
+            if (readPendingCases(uid).find(c => c.id === next.id)?.syncRefused) continue;
+            return false;
+          }
         }
         return false;
       } finally {
@@ -509,8 +531,16 @@ export default function App() {
         caseUnsubscribeRef.current = null;
       }
       setUser(currentUser);
+      setHasAdminClaim(false);
       if (!currentUser) {
         hasAutoPromptedKycRef.current = false;
+      } else {
+        const tokenResult = typeof currentUser.getIdTokenResult === 'function' ? currentUser.getIdTokenResult() : null;
+        tokenResult
+          ?.then((t) => {
+            if (auth.currentUser?.uid === currentUser.uid) setHasAdminClaim(t.claims.admin === true);
+          })
+          .catch(() => {});
       }
       if (currentUser) {
         const cleanEmail = (currentUser.email || '').toLowerCase().trim();
@@ -1226,7 +1256,7 @@ export default function App() {
 
   const handleSaveCurrentCase = (patientCode: string, signatureDataUrl?: string): boolean => {
 
-    const newCase: SavedCase = {
+    const unsealed: SavedCase = {
       id: `case_${Date.now()}`,
       patientCode: patientCode || `CASE-${Date.now().toString().slice(-4)}`,
       savedAt: Date.now(),
@@ -1242,6 +1272,8 @@ export default function App() {
       signatureDataUrl: signatureDataUrl || '',
       ...(user?.uid ? { userId: user.uid } : {}),
     };
+    // Signing fixes the content: it is fingerprinted now and can only be amended afterwards.
+    const newCase = sealCase(unsealed, { uid: user?.uid });
 
     // Everything recorded so far is now in a saved case.
     const savedThrough = state.clinicalEvents.reduce((max, e) => Math.max(max, e.sequence), 0);
@@ -1286,7 +1318,55 @@ export default function App() {
     return true;
   };
 
+  /**
+   * Add an addendum to a signed case, or void it. The signed content stays as
+   * it was; the amendment is appended with who and when. Returns a problem to
+   * show, or null when it was recorded.
+   */
+  const handleAmendCase = (caseId: string, kind: CaseAmendment['kind'], text: string): string | null => {
+    const shown = savedCases.find(c => c.id === caseId);
+    if (!shown) return 'This case is no longer in the list.';
+    const problem = amendmentProblem(shown, kind, text);
+    if (problem) return problem;
+    const amendment = makeAmendment(kind, text, { uid: user?.uid, name: effectiveProfile.fullName });
+
+    if (user?.uid) {
+      const uid = user.uid;
+      // Start from the copy waiting to upload, if any, so earlier amendments are kept.
+      const base = readPendingCases(uid).find(c => c.id === caseId)
+        ?? serverViewRef.current.cases.find(c => c.id === caseId)
+        ?? shown;
+      const { syncPending: _p, syncRefused: _r, ...clean } = base;
+      if (!addPendingCase(uid, amendCase(clean, amendment))) {
+        console.warn('Could not keep the amendment on the device; it will upload while the app stays open.');
+      }
+      refreshCaseList(uid);
+      setSyncStatus('syncing');
+      flushPendingCases(uid)
+        .then((ok) => {
+          setSyncStatus(ok ? 'synced' : 'offline');
+          if (ok) setLastSyncedAt(Date.now());
+        })
+        .catch(() => setSyncStatus('offline'));
+      return null;
+    }
+
+    // Not signed in: the case lives on this device only.
+    const updated = savedCases.map(c => (c.id === caseId ? amendCase(c, amendment) : c));
+    setSavedCases(updated);
+    try {
+      localStorage.setItem('acls_saved_cases', JSON.stringify(updated));
+    } catch (e) {}
+    return null;
+  };
+
   const handleDeleteCase = (caseId: string) => {
+    const target = savedCases.find(c => c.id === caseId);
+    if (user?.uid && target && isSigned(target)) {
+      // A signed record is never deleted from the registry; it can be voided with a reason.
+      window.alert('Signed cases cannot be deleted. Open the case and use "Void case" with a reason; it stays in the record, marked void.');
+      return;
+    }
     if (user?.uid) {
       const uid = user.uid;
       // Remove it from the upload queue too, so a case deleted before it
@@ -1339,8 +1419,12 @@ export default function App() {
 
   // Fallback Practitioner profile info & Admin Detection
   const userEmail = (user?.email || profile?.email || '').toLowerCase().trim();
+  // Same test as the Firestore rules: the admin claim, or (while the claim is
+  // being rolled out) the verified owner email. The UI follows the rules; the
+  // rules are what actually protect the data.
   const isUserAdmin = Boolean(
-    userEmail === 'user.suniltim@gmail.com' ||
+    hasAdminClaim ||
+    (userEmail === 'user.suniltim@gmail.com' && user?.emailVerified !== false) ||
     profile?.isAdmin === true
   );
 
@@ -1856,6 +1940,7 @@ export default function App() {
         savedCases={savedCases}
         onSaveCurrentCase={handleSaveCurrentCase}
         onDeleteCase={handleDeleteCase}
+        onAmendCase={handleAmendCase}
         isGuestMode={isGuestMode}
         theme={theme}
         setTheme={setTheme}

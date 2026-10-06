@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ShieldCheck, Stethoscope, Award, Building, FileCheck, CheckCircle2, Clock, AlertTriangle, Send } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { DoctorKyc, UserProfile } from '../types';
 
 interface DoctorKycModalProps {
@@ -56,33 +56,53 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
       return;
     }
 
+    const reg = councilRegistration.toUpperCase().trim();
+    const wasApproved = currentKyc.kycStatus === 'approved';
+    if (wasApproved) {
+      const same = (a?: string, b?: string) => (a || '').trim() === (b || '').trim();
+      const unchanged =
+        same(reg, (currentKyc.councilRegistration || userProfile?.councilRegistration || '').toUpperCase()) &&
+        same(fullName, userProfile?.fullName) &&
+        same(degree, currentKyc.degree || userProfile?.highestDegree) &&
+        same(specialty, currentKyc.specialty) &&
+        same(institution, currentKyc.institution) &&
+        same(idCardNumber, currentKyc.idCardNumber);
+      if (unchanged) {
+        setSuccessMsg('Nothing changed. Your verification stays as it is.');
+        setTimeout(() => onClose(), 1000);
+        return;
+      }
+      // An approval vouches for these exact details; changing them means verifying again.
+      const sure = window.confirm(
+        'Your details are verified. Changing them sends them back to the app admin for verification, ' +
+        'and features for verified doctors are paused until they are approved again.\n\nSave the changes?'
+      );
+      if (!sure) return;
+    }
+
     setIsSubmitting(true);
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    // Maintain existing approved status if re-editing, otherwise set to pending for Admin review
-    const targetStatus = currentKyc.kycStatus === 'approved' ? 'approved' : 'pending';
-
     const updatedKyc: DoctorKyc = {
-      councilRegistration: councilRegistration.toUpperCase().trim(),
+      councilRegistration: reg,
       degree: degree.trim(),
       specialty: specialty.trim(),
       institution: institution.trim(),
       idCardNumber: idCardNumber.trim(),
-      kycStatus: targetStatus,
+      kycStatus: 'pending',
       submittedAt: Date.now(),
-      ...(targetStatus === 'approved' ? { approvedAt: currentKyc.approvedAt || Date.now() } : {})
     };
 
-    const currentUid = auth.currentUser?.uid || userProfile?.uid || 'practitioner_local';
-    const currentEmail = auth.currentUser?.email || userProfile?.email || '';
-    const currentDisplayName = auth.currentUser?.displayName || 'Practitioner';
+    const currentUid = auth.currentUser.uid;
+    const currentEmail = auth.currentUser.email || userProfile?.email || '';
+    const currentDisplayName = auth.currentUser.displayName || 'Practitioner';
 
     const profileData: UserProfile = {
       fullName: fullName.trim() || ('Dr. ' + currentDisplayName),
       email: currentEmail,
       profession: 'doctor',
-      councilRegistration: councilRegistration.toUpperCase().trim(),
+      councilRegistration: reg,
       highestDegree: degree.trim(),
       dob: userProfile?.dob || '1990-01-01',
       sex: userProfile?.sex || 'other',
@@ -91,46 +111,51 @@ export default function DoctorKycModal({ isOpen, onClose, userProfile, onKycUpda
       onboardedAt: userProfile?.onboardedAt || Date.now()
     };
 
+    // Replace these fields whole (a plain merge would deep-merge kyc and keep
+    // an old approvedAt/approvedBy, which the rules rightly refuse).
+    const replaceFields = { mergeFields: Object.keys(profileData) };
+
+    const saved = () => {
+      try {
+        localStorage.setItem('acls_user_profile', JSON.stringify({ ...(userProfile || {}), ...profileData }));
+      } catch (e) {}
+      if (onKycUpdated) onKycUpdated(profileData);
+    };
+
     try {
-      const profileRef = doc(db, 'profiles', currentUid);
-      await setDoc(profileRef, profileData, { merge: true });
-
-      // Mirror to secondary collection
-      const userRef = doc(db, 'users', currentUid);
-      await setDoc(userRef, profileData, { merge: true }).catch(() => {});
-
-      try {
-        localStorage.setItem('acls_user_profile', JSON.stringify({
-          ...(userProfile || {}),
-          ...profileData
-        }));
-      } catch (e) {}
-
-      if (targetStatus === 'approved') {
-        setSuccessMsg("Doctor KYC details updated and verified.");
-      } else {
-        setSuccessMsg("Doctor KYC application submitted successfully! Pending verification by the app admin.");
+      const write = setDoc(doc(db, 'profiles', currentUid), profileData, replaceFields);
+      // Without a connection the write waits; say so instead of spinning.
+      const outcome = await Promise.race([
+        write.then(() => 'sent' as const),
+        new Promise<'waiting'>(resolve => setTimeout(() => resolve('waiting'), 8000)),
+      ]);
+      if (outcome === 'waiting') {
+        setSuccessMsg('No connection right now. Your details will be sent for verification when the connection returns (keep the app open).');
+        write
+          .then(() => {
+            saved();
+            setDoc(doc(db, 'users', currentUid), profileData, replaceFields).catch(() => {});
+          })
+          .catch((err) => {
+            console.warn('KYC submission refused:', err);
+            setSuccessMsg(null);
+            setErrorMsg('The server did not accept these details. Please check them and try again.');
+          });
+        return;
       }
-
-      if (onKycUpdated) onKycUpdated(profileData);
+      // Mirror to secondary collection
+      await setDoc(doc(db, 'users', currentUid), profileData, replaceFields).catch(() => {});
+      saved();
+      setSuccessMsg(wasApproved
+        ? 'Changes sent. Your details are pending verification again by the app admin.'
+        : 'Doctor KYC application submitted successfully! Pending verification by the app admin.');
       setTimeout(() => {
         onClose();
       }, 1000);
-
     } catch (err: any) {
-      console.warn("Firestore KYC submit fallback to local:", err);
-      // Even if offline, persist locally so progress is not lost
-      try {
-        localStorage.setItem('acls_user_profile', JSON.stringify({
-          ...(userProfile || {}),
-          ...profileData
-        }));
-      } catch (e) {}
-      if (onKycUpdated) onKycUpdated(profileData);
-      setSuccessMsg("Doctor KYC application saved locally! Pending verification by the app admin.");
-      setTimeout(() => {
-        onClose();
-      }, 1000);
+      console.warn('KYC submission refused:', err);
+      try { handleFirestoreError(err, OperationType.WRITE, `profiles/${currentUid}`); } catch (e) {}
+      setErrorMsg('The server did not accept these details, so nothing was changed. Please check them and try again.');
     } finally {
       setIsSubmitting(false);
     }

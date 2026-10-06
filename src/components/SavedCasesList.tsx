@@ -1,15 +1,20 @@
 import React, { useState, useRef } from 'react';
 import { SavedCase, LogEvent } from '../types';
 import { calculateResuscitationMetrics } from '../lib/resuscitationMetrics';
-import { FileText, Trash2, Calendar, Clock, Zap, Syringe, Eye, AlertCircle, PlusCircle, CheckCircle2, X, PenTool, RotateCcw, Printer, ShieldCheck, AlertTriangle, Download, FileDown } from 'lucide-react';
+import { FileText, Trash2, Calendar, Clock, Zap, Syringe, Eye, AlertCircle, PlusCircle, CheckCircle2, X, PenTool, RotateCcw, Printer, ShieldCheck, AlertTriangle, Download, FileDown, Ban, FilePlus2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PrintableReport from './PrintableReport';
 import { printReport } from '../lib/printReport';
+import { isSigned, shortFingerprint, verifyCase, voidAmendment } from '../lib/caseIntegrity';
 
 interface SavedCasesListProps {
   savedCases: SavedCase[];
   onSaveCurrentCase: (patientCode: string, signatureDataUrl?: string) => boolean;
   onDeleteCase: (caseId: string) => void;
+  /** Addendum or void on a signed case; returns a problem to show, or null when recorded. */
+  onAmendCase: (caseId: string, kind: 'ADDENDUM' | 'VOID', text: string) => string | null;
+  /** Device-only (guest) lists may delete signed cases; the registry never does. */
+  canDeleteSigned?: boolean;
   hasCurrentLogs: boolean;
   practitionerName: string;
   councilRegistration: string;
@@ -19,6 +24,8 @@ export default function SavedCasesList({
   savedCases = [],
   onSaveCurrentCase,
   onDeleteCase,
+  onAmendCase,
+  canDeleteSigned = false,
   hasCurrentLogs,
   practitionerName,
   councilRegistration,
@@ -29,7 +36,31 @@ export default function SavedCasesList({
   const [pendingData, setPendingData] = useState<{ patientCode: string; signatureDataUrl: string } | null>(null);
   const [isAccuracyConfirmed, setIsAccuracyConfirmed] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [viewingCase, setViewingCase] = useState<SavedCase | null>(null);
+  // The case being viewed is looked up by id, so an amendment shows at once.
+  const [viewingCaseId, setViewingCaseId] = useState<string | null>(null);
+  const viewingCase = viewingCaseId ? savedCases.find(c => c.id === viewingCaseId) ?? null : null;
+  const setViewingCase = (c: SavedCase | null) => setViewingCaseId(c ? c.id : null);
+
+  const amend = (item: SavedCase, kind: 'ADDENDUM' | 'VOID') => {
+    const text = window.prompt(
+      kind === 'VOID'
+        ? `Void case ${item.patientCode}?\n\nThe record is kept, marked VOID, with your reason. This cannot be undone.\n\nReason for voiding:`
+        : `Addendum to case ${item.patientCode}.\n\nThe signed record is not changed; this note is added after it with your name and the time.`,
+      '',
+    );
+    if (text === null) return;
+    const problem = onAmendCase(item.id, kind, text);
+    if (problem) window.alert(problem);
+  };
+
+  const removeCase = (item: SavedCase) => {
+    const sure = window.confirm(
+      isSigned(item)
+        ? `Delete case ${item.patientCode} from this device?\n\nIt was saved in guest mode, so it exists only here. This cannot be undone.`
+        : `Delete case ${item.patientCode}? This cannot be undone.`
+    );
+    if (sure) onDeleteCase(item.id);
+  };
 
   // Canvas Signature Pad State
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -198,7 +229,7 @@ export default function SavedCasesList({
           {savedCases.map((item, idx) => (
             <div
               key={item.id}
-              className="bg-white border border-gray-300 rounded-xl p-3.5 space-y-3 shadow-md flex flex-col justify-between text-black"
+              className={`bg-white border border-gray-300 rounded-xl p-3.5 space-y-3 shadow-md flex flex-col justify-between text-black ${voidAmendment(item) ? 'opacity-70' : ''}`}
             >
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-2">
@@ -207,7 +238,15 @@ export default function SavedCasesList({
                       Saved Case #{idx + 1}
                     </span>
                     <h4 className="text-xs font-bold text-black truncate max-w-[160px]">{item.patientCode}</h4>
-                    {item.syncPending && (
+                    {voidAmendment(item) && (
+                      <span
+                        className="mt-1 mr-1 inline-flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider text-red-800 bg-red-100 border border-red-300 px-1.5 py-0.5 rounded"
+                        title={`Voided: ${voidAmendment(item)?.text}`}
+                      >
+                        <Ban className="w-2.5 h-2.5" /> Voided
+                      </span>
+                    )}
+                    {item.syncPending && !item.syncRefused && (
                       <span
                         className="mt-1 inline-flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded"
                         title="Saved on this device. It uploads automatically when you are online and signed in."
@@ -215,15 +254,26 @@ export default function SavedCasesList({
                         <Clock className="w-2.5 h-2.5" /> Waiting to upload
                       </span>
                     )}
+                    {item.syncRefused && (
+                      <span
+                        className="mt-1 inline-flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider text-red-800 bg-red-100 border border-red-300 px-1.5 py-0.5 rounded"
+                        title="The server did not accept this copy. It is kept on this device; contact the app admin."
+                      >
+                        <AlertTriangle className="w-2.5 h-2.5" /> Upload refused
+                      </span>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteCase(item.id)}
-                    className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer border-none"
-                    title="Delete saved case"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {(canDeleteSigned || !isSigned(item)) && (
+                    <button
+                      type="button"
+                      onClick={() => removeCase(item)}
+                      className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer border-none"
+                      title="Delete saved case"
+                      aria-label="Delete saved case"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3 text-[9px] text-gray-700 font-mono font-bold">
@@ -588,7 +638,7 @@ export default function SavedCasesList({
                       <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">Re-arrest</span><strong className="text-[9px]">{metrics.reArrestCount}</strong></div>
                       <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">Amio</span><strong className="text-[9px]">{metrics.amiodaroneCount}</strong></div>
                       <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">Lido</span><strong className="text-[9px]">{metrics.lidocaineCount}</strong></div>
-                      <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">ROSC</span><strong className="text-[9px]">{formatMetric(metrics.arrestDurationSeconds)}</strong></div>
+                      <div className="bg-white p-1.5 rounded-lg border border-gray-200 text-center"><span className="text-[7px] text-gray-500 uppercase block">Arrest time</span><strong className="text-[9px]">{formatMetric(metrics.arrestDurationSeconds)}</strong></div>
                     </div>
                   </div>
                 );
@@ -608,6 +658,53 @@ export default function SavedCasesList({
                   </div>
                 ))}
               </div>
+
+              {/* Signed record: fingerprint and amendments */}
+              {(() => {
+                const integrity = verifyCase(viewingCase);
+                const amendments = viewingCase.amendments ?? [];
+                return (
+                  <div className="p-2.5 bg-gray-50 border border-gray-300 rounded-xl space-y-1.5 shrink-0" data-testid="case-integrity">
+                    <div className="flex items-center gap-1.5 text-[8.5px] font-bold uppercase tracking-wider">
+                      {integrity === 'VERIFIED' && <><ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-800">Signed record unchanged</span></>}
+                      {integrity === 'ALTERED' && <><AlertTriangle className="w-3.5 h-3.5 text-red-600" /><span className="text-red-700">Content does not match its signature</span></>}
+                      {integrity === 'UNSEALED' && <><ShieldCheck className="w-3.5 h-3.5 text-gray-500" /><span className="text-gray-700">Signed before fingerprinting was added</span></>}
+                    </div>
+                    {viewingCase.contentHash && (
+                      <div className="text-[8px] font-mono text-gray-600">Fingerprint {shortFingerprint(viewingCase.contentHash)}…</div>
+                    )}
+                    {amendments.length > 0 && (
+                      <div className="space-y-1 pt-1 border-t border-gray-200">
+                        {amendments.map(a => (
+                          <div key={a.id} className={`text-[9px] ${a.kind === 'VOID' ? 'text-red-800' : 'text-black'}`}>
+                            <strong className="uppercase">{a.kind === 'VOID' ? 'Voided' : 'Addendum'}</strong>
+                            {' '}<span className="font-mono text-gray-600">{new Date(a.at).toLocaleString()}</span>
+                            {a.byName ? <span className="text-gray-600"> by {a.byName}</span> : null}: {a.text}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {!voidAmendment(viewingCase) && (
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => amend(viewingCase, 'ADDENDUM')}
+                        className="px-2.5 py-1.5 bg-white hover:bg-gray-100 text-black border border-gray-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                      >
+                        <FilePlus2 className="w-3 h-3" /> Add addendum
+                      </button>
+                        <button
+                          type="button"
+                          onClick={() => amend(viewingCase, 'VOID')}
+                          className="px-2.5 py-1.5 bg-white hover:bg-red-50 text-red-700 border border-red-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                        >
+                          <Ban className="w-3 h-3" /> Void case
+                        </button>
+                    </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Certified Signature Display */}
               {viewingCase.signatureDataUrl && (
@@ -658,6 +755,10 @@ export default function SavedCasesList({
           certifiedBy={viewingCase.certifiedBy}
           councilRegistration={viewingCase.councilRegistration}
           signatureDataUrl={viewingCase.signatureDataUrl}
+          signedAt={viewingCase.signedAt}
+          contentHash={viewingCase.contentHash}
+          integrity={verifyCase(viewingCase)}
+          amendments={viewingCase.amendments}
         />
       )}
     </div>

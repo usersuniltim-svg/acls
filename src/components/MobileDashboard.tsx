@@ -107,6 +107,8 @@ interface MobileDashboardProps {
   savedCases?: SavedCase[];
   onSaveCurrentCase?: (patientCode: string, signatureDataUrl?: string) => boolean;
   onDeleteCase?: (caseId: string) => void;
+  /** Addendum or void on a signed case; returns a problem to show, or null. */
+  onAmendCase?: (caseId: string, kind: 'ADDENDUM' | 'VOID', text: string) => string | null;
   isGuestMode?: boolean;
   theme?: 'medical-white' | 'clinical-dark';
   setTheme?: (theme: 'medical-white' | 'clinical-dark') => void;
@@ -164,6 +166,7 @@ export default function MobileDashboard({
   savedCases = [],
   onSaveCurrentCase,
   onDeleteCase,
+  onAmendCase,
   isGuestMode = false,
   theme = 'medical-white',
   setTheme,
@@ -861,6 +864,8 @@ export default function MobileDashboard({
           savedCases={savedCases}
           onSaveCurrentCase={onSaveCurrentCase || (() => false)}
           onDeleteCase={onDeleteCase || (() => {})}
+          onAmendCase={onAmendCase || (() => 'Not available here.')}
+          canDeleteSigned={isGuestMode}
           hasCurrentLogs={state.logs.length > 0}
           practitionerName={effectiveProfile.fullName}
           councilRegistration={effectiveProfile.councilRegistration}

@@ -1,0 +1,13 @@
+{
+  "firestore": [
+    {
+      "database": "ai-studio-acls2025companio-0cbfa567-5a2a-466e-acc5-6227e31fbadd",
+      "rules": "firestore.rules"
+    }
+  ],
+  "emulators": {
+    "firestore": { "port": 8080 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  }
+}

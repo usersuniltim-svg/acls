@@ -78,6 +78,55 @@
   color: #166534;
 }
 
+.acls-print-status.voided {
+  border-color: #b91c1c;
+  color: #991b1b;
+}
+
+.acls-print-void-banner {
+  margin-bottom: 14px;
+  padding: 8px 10px;
+  border: 1.5px solid #b91c1c;
+  border-radius: 6px;
+  color: #7f1d1d;
+  font-size: 8.5pt;
+}
+
+.acls-print-fingerprint strong {
+  font-family: "Courier New", monospace;
+  font-size: 7pt;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.acls-print-alert {
+  color: #b91c1c;
+}
+
+.acls-print-amendments-table th:first-child,
+.acls-print-amendments-table td:first-child {
+  width: 24%;
+  font-family: "Courier New", monospace;
+}
+
+.acls-print-amendments-table th:nth-child(2),
+.acls-print-amendments-table td:nth-child(2) {
+  width: 12%;
+  font-family: inherit;
+  white-space: normal;
+}
+
+.acls-print-amendments-table th:nth-child(3),
+.acls-print-amendments-table td:nth-child(3) {
+  width: 20%;
+}
+
+.acls-print-amendment-note {
+  margin: 6px 0 0;
+  color: #4b5563;
+  font-size: 7.5pt;
+}
+
 .acls-print-rule {
   height: 2px;
   background: #111827;
