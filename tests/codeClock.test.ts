@@ -224,6 +224,43 @@ test('antiarrhythmics are gated until a shockable rhythm has received three shoc
 });
 
 
+test('re-arrest resets rhythm and scopes shock-sequence gates to the new episode while retaining drug exposure', () => {
+  let state = selectRhythm(startCode(baseState(), 10000), 'SHOCKABLE', 10001);
+  state = deliverShock(state, 10002);
+  state = selectRhythm(advanceClock(state, 130002), 'SHOCKABLE', 130003);
+  state = deliverShock(state, 130004);
+  state = selectRhythm(advanceClock(state, 250004), 'SHOCKABLE', 250005);
+  state = deliverShock(state, 250006);
+  state = giveAmiodarone(state);
+  assert.equal(state.episodeShocksCount, 3);
+  assert.equal(state.amioCount, 1);
+
+  state = confirmRosc(state, 260000);
+  state = startCprCycle(state, 300000); // re-arrest
+  assert.equal(state.arrestEpisodeNumber, 2);
+  assert.equal(state.shocksCount, 3, 'case-wide shock total is preserved');
+  assert.equal(state.episodeShocksCount, 0, 'new episode starts with no shocks');
+  assert.equal(state.currentRhythm, 'UNKNOWN', 'prior VF/pVT must not be treated as current rhythm');
+  assert.equal(state.lastShockEnergyJ, null, 'shock energy escalation sequence is episode-specific');
+  assert.equal(checkAntiarrhythmic(state, 'amiodarone').ok, false);
+  assert.match(checkAntiarrhythmic(state, 'amiodarone').reason ?? '', /current rhythm is not recorded as shockable/);
+  assert.equal(checkEpinephrine(state, 300001).ok, false, 'medication sequence checks require a new rhythm assessment');
+  assert.match(checkEpinephrine(state, 300001).reason ?? '', /Record the current arrest episode rhythm/);
+
+  state = selectRhythm(advanceClock(state, 420000), 'SHOCKABLE', 420001);
+  assert.equal(checkAntiarrhythmic(state, 'amiodarone').ok, false, 'new VF rhythm alone is not three shocks');
+  assert.equal(checkEpinephrine(state, 420001).ok, false, 'first epi in new VF episode follows two episode shocks');
+  state = deliverShock(state, 420002);
+  state = selectRhythm(advanceClock(state, 540002), 'SHOCKABLE', 540003);
+  state = deliverShock(state, 540004);
+  state = selectRhythm(advanceClock(state, 660004), 'SHOCKABLE', 660005);
+  state = deliverShock(state, 660006);
+  assert.equal(state.episodeShocksCount, 3);
+  assert.equal(state.shocksCount, 6);
+  assert.equal(checkAntiarrhythmic(state, 'amiodarone').ok, true, 'sequence can qualify on episode 2');
+  assert.equal(giveAmiodarone(state).amioCount, 2, 'drug dose count remains cumulative across ROSC');
+});
+
 test('epinephrine rejects an early duplicate administration', () => {
   let state = startCprCycle(startCode(baseState(), 10000), 11000);
   state = selectRhythm(
