@@ -244,8 +244,7 @@ test('re-arrest resets rhythm and scopes shock-sequence gates to the new episode
   assert.equal(state.lastShockEnergyJ, null, 'shock energy escalation sequence is episode-specific');
   assert.equal(checkAntiarrhythmic(state, 'amiodarone').ok, false);
   assert.match(checkAntiarrhythmic(state, 'amiodarone').reason ?? '', /current rhythm is not recorded as shockable/);
-  assert.equal(checkEpinephrine(state, 300001).ok, false, 'medication sequence checks require a new rhythm assessment');
-  assert.match(checkEpinephrine(state, 300001).reason ?? '', /Record the current arrest episode rhythm/);
+  assert.equal(checkEpinephrine(state, 300001).ok, true, 'an overdue epinephrine interval remains due across ROSC; VF-specific gating waits for a documented shockable rhythm');
 
   state = selectRhythm(advanceClock(state, 420000), 'SHOCKABLE', 420001);
   assert.equal(checkAntiarrhythmic(state, 'amiodarone').ok, false, 'new VF rhythm alone is not three shocks');
