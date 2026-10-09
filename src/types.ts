@@ -258,7 +258,10 @@ export interface AclsState {
   cprTimeLeft: number;
   epiTimeLeft: number;
   totalTime: number;
+  /** Total shocks across the full code, including prior arrest episodes. */
   shocksCount: number;
+  /** Shocks delivered in the current arrest episode; resets after ROSC/re-arrest. */
+  episodeShocksCount?: number;
   epiCount: number;
   currentRhythm: PatientRhythm;
   cprCycleCount: number;
