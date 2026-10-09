@@ -191,6 +191,7 @@ export function startCode(prev: AclsState, now: number): AclsState {
       cprRemainingMs: CPR_MS,
       isTimerRunning: false,
       shocksCount: 0,
+      episodeShocksCount: 0,
       epiCount: 0,
       currentRhythm: 'UNKNOWN',
       cprCycleCount: 0,
@@ -221,6 +222,12 @@ function reArrestIfInRosc(prev: AclsState, now: number): AclsState {
     // Each re-arrest after ROSC is a new arrest episode within the same code.
     arrestEpisodeNumber: (prev.arrestEpisodeNumber || 1) + 1,
     arrestEpisodeStartedAt: now,
+    // Never carry the prior episode's rhythm or shock-sequence eligibility
+    // into a new arrest. Total case counts and drug exposure remain cumulative.
+    currentRhythm: 'UNKNOWN',
+    episodeShocksCount: 0,
+    lastShockEnergyJ: null,
+    lastShockDefibType: null,
     rhythmCheckCount: 0,
   };
 }
@@ -329,6 +336,7 @@ export function deliverShock(prev: AclsState, now: number, opts: ActionOptions =
       isTimerRunning: false,
       cprEndsAt: null,
       shocksCount: prev.shocksCount + 1,
+      episodeShocksCount: (prev.episodeShocksCount ?? 0) + 1,
       lastShockEnergyJ: prev.selectedEnergy,
       lastShockDefibType: prev.defibType,
       currentRhythm: 'SHOCKABLE',
@@ -569,8 +577,12 @@ export function recordAirway(
 export function checkEpinephrine(prev: AclsState, now: number): ActionCheck {
   if (!isCodeActive(prev)) return notNow(noArrestReason(prev));
   const s = advanceClock(prev, now);
-  if (s.currentRhythm === 'SHOCKABLE' && s.shocksCount < 2 && s.epiCount === 0) {
-    return flagged(`In VF/pVT, AHA gives the first epinephrine after the 2nd shock (shocks so far: ${s.shocksCount}).`);
+  if (s.currentRhythm === 'UNKNOWN') {
+    return flagged('Record the current arrest episode rhythm before checking medication sequence eligibility.');
+  }
+  const episodeShocks = s.episodeShocksCount ?? 0;
+  if (s.currentRhythm === 'SHOCKABLE' && episodeShocks < 2 && s.epiCount === 0) {
+    return flagged(`In VF/pVT, AHA gives the first epinephrine after the 2nd shock in this arrest episode (episode shocks so far: ${episodeShocks}).`);
   }
   if (s.epiCount > 0 && s.epiTimeLeft > 0) {
     const sinceLast = (now - (s.epiAnchorAt ?? now)) / 1000;
@@ -590,8 +602,9 @@ export function checkAntiarrhythmic(prev: AclsState, drug: 'amiodarone' | 'lidoc
   if (prev.currentRhythm !== 'SHOCKABLE') {
     return flagged(`${name} is for VF/pVT that persists after shocks, and the current rhythm is not recorded as shockable.`);
   }
-  if (prev.shocksCount < 3) {
-    return flagged(`AHA gives the first antiarrhythmic dose after the 3rd shock (shocks so far: ${prev.shocksCount}).`);
+  const episodeShocks = prev.episodeShocksCount ?? 0;
+  if (episodeShocks < 3) {
+    return flagged(`AHA gives an antiarrhythmic for shock-refractory VF/pVT after the 3rd shock in the current arrest episode (episode shocks so far: ${episodeShocks}).`);
   }
   return FITS;
 }
