@@ -577,9 +577,6 @@ export function recordAirway(
 export function checkEpinephrine(prev: AclsState, now: number): ActionCheck {
   if (!isCodeActive(prev)) return notNow(noArrestReason(prev));
   const s = advanceClock(prev, now);
-  if (s.currentRhythm === 'UNKNOWN') {
-    return flagged('Record the current arrest episode rhythm before checking medication sequence eligibility.');
-  }
   const episodeShocks = s.episodeShocksCount ?? 0;
   if (s.currentRhythm === 'SHOCKABLE' && episodeShocks < 2 && s.epiCount === 0) {
     return flagged(`In VF/pVT, AHA gives the first epinephrine after the 2nd shock in this arrest episode (episode shocks so far: ${episodeShocks}).`);
