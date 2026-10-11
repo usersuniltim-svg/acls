@@ -19,6 +19,8 @@ const EPI_MS = EPI_INTERVAL * 1000;
 const RHYTHM_CHECK_MS = RHYTHM_CHECK_SECONDS * 1000;
 /** Re-sound the "epinephrine due" alert this often while it is overdue. */
 const EPI_REALERT_SECONDS = 7;
+/** How long after a shock the "compressions restarted" confirmation stays open. */
+export const POST_SHOCK_CONFIRM_SECONDS = 15;
 
 export const AMIODARONE_MAX_DOSES = 2; // 300 mg, then 150 mg
 /** 2025 AHA: biphasic per manufacturer (e.g. initial 120-200 J; maximum if unknown); monophasic 360 J. */
@@ -87,6 +89,8 @@ export function clearedClockFields(): Partial<AclsState> {
     rhythmCheckCount: 0,
     epiDueElapsed: 0,
     lastAntiarrhythmicShockCount: null,
+    awaitingCprAfterShockAt: null,
+    postShockElapsedSeconds: 0,
   };
 }
 
@@ -192,7 +196,18 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
     }
   }
 
-  next = { ...next, totalTime, cprTimeLeft, epiTimeLeft, rhythmCheckTimeLeft, pauseElapsedSeconds, epiDueElapsed, roscElapsedSeconds };
+  // 5. After a shock: wait (briefly) for the recorder to confirm compressions restarted.
+  let postShockElapsedSeconds = 0;
+  if (next.awaitingCprAfterShockAt != null) {
+    const sinceShockMs = now - next.awaitingCprAfterShockAt;
+    if (next.roscAt || sinceShockMs > POST_SHOCK_CONFIRM_SECONDS * 1000) {
+      next = { ...next, awaitingCprAfterShockAt: null }; // not confirmed: nothing is guessed
+    } else {
+      postShockElapsedSeconds = Math.max(0, Math.floor(sinceShockMs / 1000));
+    }
+  }
+
+  next = { ...next, totalTime, cprTimeLeft, epiTimeLeft, rhythmCheckTimeLeft, pauseElapsedSeconds, epiDueElapsed, roscElapsedSeconds, postShockElapsedSeconds };
 
   const unchanged =
     next.totalTime === prev.totalTime &&
@@ -200,6 +215,8 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
     next.epiTimeLeft === prev.epiTimeLeft &&
     next.rhythmCheckTimeLeft === prev.rhythmCheckTimeLeft &&
     (next.pauseElapsedSeconds ?? 0) === (prev.pauseElapsedSeconds ?? 0) &&
+    (next.postShockElapsedSeconds ?? 0) === (prev.postShockElapsedSeconds ?? 0) &&
+    (next.awaitingCprAfterShockAt ?? null) === (prev.awaitingCprAfterShockAt ?? null) &&
     next.epiDueElapsed === prev.epiDueElapsed &&
     next.roscElapsedSeconds === prev.roscElapsedSeconds &&
     next.activePrompt === prev.activePrompt &&
@@ -418,6 +435,7 @@ export function deliverShock(prev: AclsState, now: number, opts: ActionOptions =
       shocksCount: prev.shocksCount + 1,
       episodeShocksCount: episodeShocks,
       episodeSecondShockAt: episodeShocks === 2 ? now : prev.episodeSecondShockAt ?? null,
+      awaitingCprAfterShockAt: now,
       lastShockEnergyJ: prev.selectedEnergy,
       lastShockDefibType: prev.defibType,
       currentRhythm: 'SHOCKABLE',
@@ -425,6 +443,24 @@ export function deliverShock(prev: AclsState, now: number, opts: ActionOptions =
     },
     now
   );
+}
+
+/** The recorder can still confirm that compressions restarted after the last shock. */
+export function awaitingCompressionsAfterShock(s: AclsState): boolean {
+  return isCodeActive(s) && s.awaitingCprAfterShockAt != null;
+}
+
+/**
+ * "Compressions restarted" after a shock. The 2-minute cycle already started
+ * at the shock (AHA: CPR straight after the shock); this only records when
+ * compressions really restarted, so the post-shock pause can be audited.
+ * Refused once the confirmation window has closed.
+ */
+export function confirmCompressionsRestarted(prev: AclsState, now: number): AclsState {
+  if (!awaitingCompressionsAfterShock(prev)) return prev;
+  const current = advanceClock(prev, now);
+  if (!awaitingCompressionsAfterShock(current)) return prev;
+  return { ...current, awaitingCprAfterShockAt: null, postShockElapsedSeconds: 0 };
 }
 
 /**
@@ -480,6 +516,7 @@ export function confirmRosc(prev: AclsState, now: number): AclsState {
       activePrompt: null,
       rhythmCheckStartedAt: null,
       rhythmCheckTimeLeft: 0,
+      awaitingCprAfterShockAt: null,
     },
     now
   );
@@ -505,6 +542,8 @@ export function terminateResuscitation(prev: AclsState, now: number): AclsState 
     rhythmCheckStartedAt: null,
     rhythmCheckTimeLeft: 0,
     epiDueElapsed: 0,
+    awaitingCprAfterShockAt: null,
+    postShockElapsedSeconds: 0,
     alert: prev.alert ?? null, // no alarm sound at the moment of stopping
   };
 }

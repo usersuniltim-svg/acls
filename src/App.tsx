@@ -84,6 +84,7 @@ import {
   pauseAction,
   resumeAction,
   analyzeRhythmAction,
+  compressionsRestartedAction,
   rhythmAction,
   roscAction,
   shockAction,
@@ -1127,6 +1128,12 @@ export default function App() {
     runAction(stopResuscitationAction(timeOfDeath), now);
   };
 
+  /** Compressions restarted after a shock: records the post-shock pause. */
+  const handleCompressionsRestarted = () => {
+    vibrateDevice(40);
+    runAction(compressionsRestartedAction());
+  };
+
   /** Pads are on: stop compressions and open the first rhythm check now. */
   const handleAnalyzeRhythm = () => {
     vibrateDevice(50);
@@ -1850,6 +1857,7 @@ export default function App() {
         handleRhythmSelect={handleRhythmSelect}
         onVascularAccess={handleVascularAccess}
         onAnalyzeRhythm={handleAnalyzeRhythm}
+        onCompressionsRestarted={handleCompressionsRestarted}
         effectiveProfile={effectiveProfile}
         handleStartCPR={handleStartCPR}
         hapticDuration={hapticDuration}

@@ -44,6 +44,8 @@ import {
   clearedClockFields,
   isCodeActive,
   canAnalyzeRhythmNow,
+  awaitingCompressionsAfterShock,
+  POST_SHOCK_CONFIRM_SECONDS,
   epinephrineWait,
   antiarrhythmicDue as isAntiarrhythmicDue,
   amiodaroneDoseLabel,
@@ -98,6 +100,8 @@ interface MobileDashboardProps {
   onVascularAccess: () => void;
   /** Pads are on: stop compressions and open the first rhythm check of the episode. */
   onAnalyzeRhythm: () => void;
+  /** Compressions restarted after the last shock (records the post-shock pause). */
+  onCompressionsRestarted: () => void;
   effectiveProfile: UserProfile;
   handleStartCPR: () => void;
   hapticDuration: number;
@@ -156,6 +160,7 @@ export default function MobileDashboard({
   handleRhythmSelect,
   onVascularAccess,
   onAnalyzeRhythm,
+  onCompressionsRestarted,
   effectiveProfile,
   handleStartCPR,
   hapticDuration,
@@ -426,6 +431,8 @@ export default function MobileDashboard({
           </div>
         </div>
 
+        {renderPostShockBanner()}
+
         {/* Post-ROSC care replaces the CPR ring while the patient has a pulse */}
         {state.roscAt && !state.terminatedAt && (
           <PostRoscPanel
@@ -557,9 +564,26 @@ export default function MobileDashboard({
     );
   };
 
+  /** After a shock: one tap when compressions actually restart, so the post-shock pause is recorded.
+      The 2-minute cycle already started at the shock; this never blocks other actions. */
+  const renderPostShockBanner = () =>
+    awaitingCompressionsAfterShock(state) ? (
+      <button
+        type="button"
+        onClick={onCompressionsRestarted}
+        className="w-full h-14 rounded-2xl font-bold uppercase tracking-wider text-[11px] flex flex-col items-center justify-center bg-amber-500 hover:bg-amber-600 text-white border-none shadow-md cursor-pointer active:scale-95 transition-all shrink-0"
+      >
+        <span>Compressions restarted</span>
+        <span className="text-[9px] font-mono font-semibold normal-case tracking-normal opacity-95">
+          Since shock: {state.postShockElapsedSeconds ?? 0}s (tap when hands are back on the chest; closes after {POST_SHOCK_CONFIRM_SECONDS}s)
+        </span>
+      </button>
+    ) : null;
+
   const renderMobileInterventionsTab = () => {
     return (
       <div className="space-y-3.5 text-left">
+        {renderPostShockBanner()}
         <div>
           <h2 className={`text-base font-display font-bold uppercase tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
             ACLS Treatments & Meds

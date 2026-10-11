@@ -13,6 +13,7 @@ import {
   amiodaroneAction,
   analyzeRhythmAction,
   appendRecord,
+  compressionsRestartedAction,
   applyAction,
   applyRoscAtRhythmCheck,
   codeIsOpen,
@@ -30,7 +31,7 @@ import {
 } from '../src/lib/clinicalActions';
 import { codePhase, stateInvariantViolations } from '../src/lib/codeInvariants';
 import { episodeOfEvents, summarizeEpisodes } from '../src/lib/arrestEpisodes';
-import { calculateResuscitationMetrics } from '../src/lib/resuscitationMetrics';
+import { calculateResuscitationMetrics, shockPausesOf } from '../src/lib/resuscitationMetrics';
 
 const T0 = 1_000_000_000_000; // a non-zero epoch: 0 would read as "no code"
 const at = (seconds: number) => T0 + seconds * 1000;
@@ -140,6 +141,42 @@ test('CPR first (AHA step 1): pads on at 40 s, VF, epinephrine prompted at the 2
   assert.equal(m.timeToFirstShockSeconds, 47);
   assert.equal(m.timeToFirstEpinephrineSeconds, 180);
   assert.equal(m.cprCycleCount, 3, 'the CPR before the pads counts as cycle 1');
+});
+
+test('pauses around each shock are recorded: before (from the rhythm check) and after (confirmed restart)', () => {
+  let s = startPadsOn(); // analysis pause starts at 0
+  s = act(s, 6, rhythmAction('SHOCKABLE'));
+  s = act(s, 9, shockAction()); // 9 s hands-off before shock 1
+  const shock1 = ofKind(s, 'SHOCK')[0];
+  assert.equal(shock1.payload.preShockPauseSeconds, 9);
+  s = act(s, 12, compressionsRestartedAction()); // 3 s after the shock
+  const restart = ofKind(s, 'CPR_RESUME').at(-1)!;
+  assert.equal(restart.payload.reason, 'post_shock');
+  assert.equal(restart.payload.shockNumber, 1);
+  assert.equal(restart.payload.postShockPauseSeconds, 3);
+  assert.match(s.logs[0].description, /Compressions restarted 3 s after shock #1/);
+
+  // Shock 2: nobody confirms the restart.
+  s = rhythmCheckThen(s, 129, 'SHOCKABLE'); // cycle ended at 129, rhythm read at 134
+  s = act(s, 136, shockAction()); // 7 s before shock 2
+  s = tick(s, 160); // window closed
+  refused(s, 161, compressionsRestartedAction());
+
+  const pauses = shockPausesOf(s.clinicalEvents);
+  assert.deepEqual(pauses, [
+    { shockNumber: 1, arrestEpisodeNumber: 1, preShockSeconds: 9, postShockSeconds: 3, perishockSeconds: 12 },
+    { shockNumber: 2, arrestEpisodeNumber: 1, preShockSeconds: 7, postShockSeconds: null, perishockSeconds: null },
+  ]);
+  assert.deepEqual(calculateResuscitationMetrics(s.clinicalEvents, s.logs).shockPauses, pauses);
+});
+
+test('a shock given during running CPR has no pre-shock pause to record', () => {
+  let s = startPadsOn();
+  s = act(s, 5, rhythmAction('NON_SHOCKABLE'));
+  s = act(s, 8, cprCycleAction);
+  s = act(s, 30, shockAction({ override: true }, 'VF seen on the monitor'));
+  assert.equal(ofKind(s, 'SHOCK')[0].payload.preShockPauseSeconds, undefined);
+  assert.equal(shockPausesOf(s.clinicalEvents)[0].preShockSeconds, null);
 });
 
 test('VF/pVT: shock, CPR, epinephrine after the 2nd shock, amiodarone after the 3rd, ROSC at a rhythm check', () => {
@@ -356,6 +393,7 @@ const STEPS: Step[] = [
   { name: 'start', run: (s, now) => (codeIsOpen(s) && !s.roscAt ? s : applyAction(s, startCodeAction(), now, ACTOR)) },
   { name: 'pause/resume', run: (s, now) => applyAction(s, s.isTimerRunning ? pauseAction() : resumeAction(s), now, ACTOR) },
   { name: 'analyze rhythm now', run: (s, now) => applyAction(s, analyzeRhythmAction(), now, ACTOR) },
+  { name: 'compressions restarted', run: (s, now) => applyAction(s, compressionsRestartedAction(), now, ACTOR) },
   { name: 'next cycle', run: (s, now) => applyAction(s, cprCycleAction(s), now, ACTOR) },
   { name: 'rhythm VF', run: (s, now) => applyAction(s, rhythmAction('SHOCKABLE'), now, ACTOR) },
   { name: 'rhythm PEA', run: (s, now) => applyAction(s, rhythmAction('NON_SHOCKABLE'), now, ACTOR) },
