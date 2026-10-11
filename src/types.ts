@@ -57,6 +57,12 @@ export interface CprPausePayload extends EpisodeScopedPayload {
 
 export interface CprResumePayload extends EpisodeScopedPayload {
   cprCycle?: number;
+  /** 'post_shock': the recorder confirmed compressions restarted after a shock. */
+  reason?: 'post_shock';
+  /** The shock this restart followed (post_shock only). */
+  shockNumber?: number;
+  /** Seconds from the shock to compressions restarting (post_shock only). */
+  postShockPauseSeconds?: number;
 }
 
 export interface RhythmCheckPayload extends EpisodeScopedPayload {
@@ -72,6 +78,8 @@ export interface ShockPayload extends EpisodeScopedPayload {
   shockNumber: number;
   /** CPR cycle automatically started by the shock action, if applicable. */
   cprCycleNumber?: number;
+  /** Seconds from compressions stopping for the rhythm check to the shock, when the shock followed a rhythm check. */
+  preShockPauseSeconds?: number;
   /** Set when the clinician recorded the shock outside the usual AHA sequence; says why it was flagged. */
   protocolNote?: string;
 }
@@ -314,6 +322,13 @@ export interface AclsState {
   rhythmCheckCount?: number;
   amioCount?: number;
   lidoCount?: number;
+  /**
+   * When the last shock was given, while the app waits for the recorder to
+   * confirm compressions restarted (cleared on confirmation or after the window).
+   */
+  awaitingCprAfterShockAt?: number | null;
+  /** Seconds since that shock (0 when not waiting). */
+  postShockElapsedSeconds?: number;
   /** Total shocks (shocksCount) when the last amiodarone or lidocaine dose was given. */
   lastAntiarrhythmicShockCount?: number | null;
   alert?: { seq: number; kind: 'cycleEnd' | 'urgent' | 'epi' } | null;
@@ -381,6 +396,17 @@ export type CopilotRole =
   | 'pals_pediatric'
   | 'post_rosc_care';
 
+export interface ShockPause {
+  shockNumber: number;
+  arrestEpisodeNumber: number;
+  /** Compressions stopped for the rhythm check -> shock. */
+  preShockSeconds: number | null;
+  /** Shock -> compressions restarted (confirmed by the recorder). */
+  postShockSeconds: number | null;
+  /** Pre + post, when both are known. */
+  perishockSeconds: number | null;
+}
+
 export interface ResuscitationMetrics {
   codeStartAt: number | null;
   firstCprAt: number | null;
@@ -430,6 +456,8 @@ export interface ResuscitationMetrics {
   dispositionAt?: number | null;
   /** Energy of each shock, in order (J). */
   shockEnergiesJ?: number[];
+  /** Pauses around each shock, in order. null = not recorded (pre) or not confirmed (post). */
+  shockPauses?: ShockPause[];
   advancedAirwayDevice?: AdvancedAirwayDevice | null;
   timeToAdvancedAirwaySeconds?: number | null;
   airwayConfirmedByCapnography?: boolean | null;

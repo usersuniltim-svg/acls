@@ -23,6 +23,7 @@ import {
   amiodaroneDoseLabel,
   analyzeRhythmNow,
   arrestSeconds,
+  confirmCompressionsRestarted,
   confirmRosc,
   episodeArrestSeconds,
   deliverShock,
@@ -208,18 +209,45 @@ export const rhythmAction = (rhythm: PatientRhythm): ActionSpec => ({
   }),
 });
 
+/** Seconds with one decimal, from a span in milliseconds. */
+const seconds1 = (ms: number) => Math.round(Math.max(0, ms) / 100) / 10;
+
+/** Compressions stopped for the rhythm check -> this shock; unknown for a shock given during CPR. */
+const preShockPause = (prev: AclsState, now: number): number | undefined =>
+  prev.rhythmCheckStartedAt != null && !prev.isTimerRunning ? seconds1(now - prev.rhythmCheckStartedAt) : undefined;
+
 export const shockAction = (opts: ActionOptions = {}, note?: string): ActionSpec => ({
   type: 'SHOCK',
   kind: 'SHOCK',
   transition: (prev, now) => deliverShock(prev, now, opts),
-  description: (prev, next) => `Defibrillation administered: ${prev.selectedEnergy}J (Shock #${next.shocksCount}) - Resuming CPR Cycle immediately${deviationSuffix(note)}`,
-  payload: (prev, next) => ({
+  description: (prev, next, now) => {
+    const pre = preShockPause(prev, now);
+    return `Defibrillation administered: ${prev.selectedEnergy}J (Shock #${next.shocksCount})${pre != null ? `, ${pre} s after compressions stopped` : ''} - Resuming CPR Cycle immediately${deviationSuffix(note)}`;
+  },
+  payload: (prev, next, now) => ({
     energyJ: prev.selectedEnergy,
     defibType: prev.defibType,
     shockNumber: next.shocksCount,
     cprCycleNumber: next.cprCycleCount,
+    ...(preShockPause(prev, now) != null ? { preShockPauseSeconds: preShockPause(prev, now) } : {}),
     arrestEpisodeNumber: next.arrestEpisodeNumber,
     ...(note ? { protocolNote: note } : {}),
+  }),
+});
+
+/** "Compressions restarted" after a shock: records the post-shock pause. */
+export const compressionsRestartedAction = (): ActionSpec => ({
+  type: 'INFO',
+  kind: 'CPR_RESUME',
+  transition: confirmCompressionsRestarted,
+  description: (prev, _next, now) =>
+    `Compressions restarted ${seconds1(now - (prev.awaitingCprAfterShockAt ?? now))} s after shock #${prev.shocksCount}`,
+  payload: (prev, next, now) => ({
+    reason: 'post_shock',
+    shockNumber: prev.shocksCount,
+    postShockPauseSeconds: seconds1(now - (prev.awaitingCprAfterShockAt ?? now)),
+    cprCycle: prev.cprCycleCount,
+    arrestEpisodeNumber: next.arrestEpisodeNumber,
   }),
 });
 

@@ -5,6 +5,7 @@ import { normalizeCaseClinicalEvents } from '../lib/clinicalEvents';
 import { CAUSE_STATUS_LABEL, causeLabel, causeSummaryByEpisode } from '../lib/reversibleCauses';
 import { DISPOSITION_LABEL, postRoscItemLabel, postRoscResultLabel } from '../lib/postRosc';
 import { episodeOfEvents, summarizeEpisodes } from '../lib/arrestEpisodes';
+import { shockPausesOf } from '../lib/resuscitationMetrics';
 
 interface PrintableReportProps {
   /** Identifies this report so printReport() can print it on its own. */
@@ -89,6 +90,8 @@ export default function PrintableReport({
   currentRhythm,
 }: PrintableReportProps) {
   const normalizedEvents = normalizeCaseClinicalEvents(clinicalEvents, logs);
+  const shockPauses = shockPausesOf(normalizedEvents);
+  const pauseCell = (v: number | null | undefined, missing: string) => (v == null ? missing : `${v} s`);
   const chronologicalLogs: LogEvent[] = normalizedEvents.map((event) => ({
     id: event.id,
     timestamp: event.timestamp,
@@ -349,16 +352,22 @@ export default function PrintableReport({
             {shockLogs.length === 0 ? (
               <div className="acls-print-empty">No defibrillation events were recorded.</div>
             ) : (
-              <table className="acls-print-table">
-                <thead><tr><th>Shock</th><th>Time</th><th>Documented Details</th></tr></thead>
+              <table className="acls-print-table acls-print-shocks-table">
+                <thead><tr><th>Shock</th><th>Time</th><th>Documented Details</th><th>Pause before</th><th>Pause after</th><th>Total</th></tr></thead>
                 <tbody>
-                  {shockLogs.map((log, idx) => (
-                    <tr key={log.id || `${log.timestamp}-${idx}`}>
-                      <td>#{idx + 1}</td>
-                      <td className="mono">{formatTime(log.timestamp)}</td>
-                      <td>{log.description}</td>
-                    </tr>
-                  ))}
+                  {shockLogs.map((log, idx) => {
+                    const pause = shockPauses.find(p => p.shockNumber === idx + 1);
+                    return (
+                      <tr key={log.id || `${log.timestamp}-${idx}`}>
+                        <td>#{idx + 1}</td>
+                        <td className="mono">{formatTime(log.timestamp)}</td>
+                        <td>{log.description}</td>
+                        <td className="mono">{pauseCell(pause?.preShockSeconds, '-')}</td>
+                        <td className="mono">{pauseCell(pause?.postShockSeconds, 'Not confirmed')}</td>
+                        <td className="mono">{pauseCell(pause?.perishockSeconds, '-')}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

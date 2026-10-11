@@ -1,4 +1,4 @@
-import { ClinicalEvent, ClinicalEventKind, PatientRhythm, ResuscitationMetrics } from '../types';
+import { ClinicalEvent, ClinicalEventKind, PatientRhythm, ResuscitationMetrics, ShockPause } from '../types';
 import { normalizeCaseClinicalEvents } from './clinicalEvents';
 import { causeSummaryByEpisode } from './reversibleCauses';
 import { postRoscChecklist } from './postRosc';
@@ -8,6 +8,35 @@ import { summarizeEpisodes } from './arrestEpisodes';
  * Derives objective timeline metrics from recorded events only.
  * This function does not decide whether care was guideline-concordant.
  */
+/**
+ * Pauses around each shock: compressions stopped for the rhythm check -> shock
+ * (recorded with the shock), and shock -> compressions restarted (confirmed by
+ * the recorder). A post-shock pause nobody confirmed stays null.
+ */
+export function shockPausesOf(events: ClinicalEvent[]): ShockPause[] {
+  const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp || a.sequence - b.sequence);
+  const restarts = new Map<number, number>();
+  for (const e of sorted) {
+    if (e.kind === 'CPR_RESUME' && e.payload.reason === 'post_shock' && e.payload.shockNumber != null && e.payload.postShockPauseSeconds != null) {
+      if (!restarts.has(e.payload.shockNumber)) restarts.set(e.payload.shockNumber, e.payload.postShockPauseSeconds);
+    }
+  }
+  return sorted
+    .filter((e): e is Extract<ClinicalEvent, { kind: 'SHOCK' }> => e.kind === 'SHOCK')
+    .map((e, i) => {
+      const shockNumber = e.payload.shockNumber ?? i + 1;
+      const pre = e.payload.preShockPauseSeconds ?? null;
+      const post = restarts.get(shockNumber) ?? null;
+      return {
+        shockNumber,
+        arrestEpisodeNumber: e.payload.arrestEpisodeNumber ?? 1,
+        preShockSeconds: pre,
+        postShockSeconds: post,
+        perishockSeconds: pre != null && post != null ? Math.round((pre + post) * 10) / 10 : null,
+      };
+    });
+}
+
 export function calculateResuscitationMetrics(
   events: ClinicalEvent[] | undefined,
   logs: import('../types').LogEvent[] | undefined
@@ -164,6 +193,7 @@ export function calculateResuscitationMetrics(
     disposition: dispositionEvent?.payload.destination ?? null,
     dispositionAt: dispositionEvent?.timestamp ?? null,
     shockEnergiesJ,
+    shockPauses: shockPausesOf(normalized),
     advancedAirwayDevice: lastAirway?.payload.device ?? null,
     timeToAdvancedAirwaySeconds: delta(firstAirway?.timestamp ?? null),
     airwayConfirmedByCapnography: lastAirway

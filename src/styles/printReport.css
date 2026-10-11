@@ -322,6 +322,19 @@
   width: 20%;
 }
 
+/* Shock history: three short pause columns after the details. */
+.acls-print-shocks-table th:nth-child(4),
+.acls-print-shocks-table td:nth-child(4),
+.acls-print-shocks-table th:nth-child(6),
+.acls-print-shocks-table td:nth-child(6) {
+  width: 10%;
+}
+
+.acls-print-shocks-table th:nth-child(5),
+.acls-print-shocks-table td:nth-child(5) {
+  width: 13%;
+}
+
 /* Tables that start with the time: wider time column, the rest wraps normally. */
 .acls-print-time-first th:first-child,
 .acls-print-time-first td:first-child {

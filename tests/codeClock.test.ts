@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   startCode,
+  confirmCompressionsRestarted,
+  awaitingCompressionsAfterShock,
+  POST_SHOCK_CONFIRM_SECONDS,
   analyzeRhythmNow,
   canAnalyzeRhythmNow,
   epinephrineWait,
@@ -878,4 +881,50 @@ test('the dashboard\'s "antiarrhythmic due" uses the same rule as the safety che
   assert.equal(ep2.shocksCount, 3);
   assert.equal(antiarrhythmicDue(ep2), false, 'episode 2 has no shocks yet');
   assert.equal(checkAntiarrhythmic(ep2, 'amiodarone').ok, false, 'and the safety check agrees');
+});
+
+// ---------------------------------------------------------------------------
+// Post-shock pause: "compressions restarted"
+// ---------------------------------------------------------------------------
+
+test('after a shock the app waits for "compressions restarted"; the 2-minute cycle starts at the shock regardless', () => {
+  let s = selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 14000);
+  s = deliverShock(s, 16000);
+  assert.equal(s.isTimerRunning, true);
+  assert.equal(s.cprEndsAt, 16000 + 120000, 'cycle timed from the shock');
+  assert.equal(awaitingCompressionsAfterShock(s), true);
+  assert.equal(s.awaitingCprAfterShockAt, 16000);
+
+  const ticking = advanceClock(s, 19000);
+  assert.equal(ticking.postShockElapsedSeconds, 3);
+
+  const confirmed = confirmCompressionsRestarted(ticking, 19400);
+  assert.equal(awaitingCompressionsAfterShock(confirmed), false);
+  assert.equal(confirmed.cprEndsAt, s.cprEndsAt, 'confirming does not move the cycle');
+  assert.strictEqual(confirmCompressionsRestarted(confirmed, 20000), confirmed, 'only once per shock');
+});
+
+test('an unconfirmed restart closes after the window and is never guessed', () => {
+  let s = deliverShock(selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 14000), 16000);
+  const atEdge = advanceClock(s, 16000 + POST_SHOCK_CONFIRM_SECONDS * 1000);
+  assert.equal(awaitingCompressionsAfterShock(atEdge), true, 'still open at exactly the window');
+  const closed = advanceClock(s, 16000 + POST_SHOCK_CONFIRM_SECONDS * 1000 + 1000);
+  assert.equal(awaitingCompressionsAfterShock(closed), false);
+  assert.equal(closed.postShockElapsedSeconds, 0);
+  assert.strictEqual(confirmCompressionsRestarted(closed, 16000 + 17000), closed, 'too late to confirm');
+  // A late tap on the state from before the expiry is refused too.
+  assert.strictEqual(confirmCompressionsRestarted(s, 16000 + 17000), s);
+});
+
+test('ROSC and stopping resuscitation close the post-shock wait', () => {
+  const s = deliverShock(selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 14000), 16000);
+  assert.equal(awaitingCompressionsAfterShock(confirmRosc(s, 18000)), false);
+  assert.equal(awaitingCompressionsAfterShock(terminateResuscitation(s, 18000)), false);
+});
+
+test('a confirmed shock outside the sequence starts a new wait from that shock', () => {
+  let s = deliverShock(selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 14000), 16000);
+  s = confirmCompressionsRestarted(s, 18000);
+  s = deliverShock(s, 40000, { override: true });
+  assert.equal(s.awaitingCprAfterShockAt, 40000);
 });
