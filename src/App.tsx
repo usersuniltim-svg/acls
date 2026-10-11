@@ -83,6 +83,7 @@ import {
   lidocaineAction,
   pauseAction,
   resumeAction,
+  analyzeRhythmAction,
   rhythmAction,
   roscAction,
   shockAction,
@@ -1126,6 +1127,12 @@ export default function App() {
     runAction(stopResuscitationAction(timeOfDeath), now);
   };
 
+  /** Pads are on: stop compressions and open the first rhythm check now. */
+  const handleAnalyzeRhythm = () => {
+    vibrateDevice(50);
+    runAction(analyzeRhythmAction());
+  };
+
   const handleRhythmSelect = (rhythm: PatientRhythm) => {
     vibrateDevice(50);
     if (rhythm === 'NON_SHOCKABLE') {
@@ -1842,6 +1849,7 @@ export default function App() {
         handleLidocaine={handleLidocaine}
         handleRhythmSelect={handleRhythmSelect}
         onVascularAccess={handleVascularAccess}
+        onAnalyzeRhythm={handleAnalyzeRhythm}
         effectiveProfile={effectiveProfile}
         handleStartCPR={handleStartCPR}
         hapticDuration={hapticDuration}
@@ -1950,6 +1958,9 @@ export default function App() {
                   <div>
                     <h3 className="text-xl font-display font-black text-red-600 uppercase tracking-tight">Shock Advised!</h3>
                     <p className="text-black text-xs font-black uppercase tracking-wider">CLEAR ALL STANDERS</p>
+                    <p className={`text-[10px] font-mono font-bold mt-1 ${(state.pauseElapsedSeconds ?? 0) > 10 ? 'text-red-600 animate-pulse' : 'text-gray-600'}`}>
+                      Hands off {state.pauseElapsedSeconds ?? 0}s. Keep pauses under 10s.
+                    </p>
                   </div>
 
                   {/* Energy for this shock (2025 AHA: biphasic per manufacturer, same or higher for later shocks; monophasic 360 J) */}
@@ -2020,6 +2031,9 @@ export default function App() {
                   <div>
                     <h3 className="text-xl font-display font-black text-black uppercase tracking-tight">Non-Shockable protocol</h3>
                     <p className="text-gray-600 text-[9.5px] uppercase font-bold tracking-widest mt-1">Dispense drug & continue chest loops</p>
+                    <p className={`text-[10px] font-mono font-bold mt-1 ${(state.pauseElapsedSeconds ?? 0) > 10 ? 'text-red-600 animate-pulse' : 'text-gray-600'}`}>
+                      Hands off {state.pauseElapsedSeconds ?? 0}s. Keep pauses under 10s.
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-2 pt-2">

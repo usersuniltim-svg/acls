@@ -11,6 +11,7 @@ import {
   type ActionSpec,
   airwayAction,
   amiodaroneAction,
+  analyzeRhythmAction,
   appendRecord,
   applyAction,
   applyRoscAtRhythmCheck,
@@ -105,10 +106,44 @@ const rhythmCheckThen = (s: AclsState, seconds: number, rhythm: PatientRhythm) =
   return act(ticked, seconds + 5, rhythmAction(rhythm));
 };
 
+
+/** Code started with the pads already on: CPR starts, then the first rhythm check opens at once. */
+function startPadsOn(s: AclsState = idle(), seconds = 0): AclsState {
+  return act(act(s, seconds, startCodeAction()), seconds, analyzeRhythmAction());
+}
+
 // ---------------------------------------------------------------------------
 
-test('VF/pVT: shock, CPR, epinephrine after the 2nd shock, amiodarone after the 3rd, ROSC at a rhythm check', () => {
+test('CPR first (AHA step 1): pads on at 40 s, VF, epinephrine prompted at the 2nd shock', () => {
   let s = act(idle(), 0, startCodeAction());
+  assert.equal(s.isTimerRunning, true, 'compressions start with the code');
+  assert.equal(s.activePrompt, null);
+  s = tick(s, 30);
+  assert.equal(s.alert ?? null, null, 'no pause alarm while compressions run');
+
+  s = act(s, 40, analyzeRhythmAction());
+  assert.equal(s.activePrompt, 'RHYTHM_CHECK');
+  assert.deepEqual(kinds(s), ['CODE_START'], 'the analysis pause is recorded by the rhythm check itself');
+  s = act(s, 44, rhythmAction('SHOCKABLE'));
+  s = act(s, 47, shockAction());
+  s = tick(s, 150);
+  assert.notEqual(s.activePrompt, 'EPI_DUE', 'no epinephrine prompt after one shock');
+  s = rhythmCheckThen(s, 167, 'SHOCKABLE');
+  s = act(s, 175, shockAction());
+  assert.equal(s.activePrompt, 'EPI_DUE', 'epinephrine falls due at the 2nd shock');
+  s = act(s, 180, epinephrineAction());
+  assert.equal(s.clinicalEvents.filter(e => (e.payload as { protocolNote?: string }).protocolNote).length, 0, 'nothing flagged');
+
+  const m = calculateResuscitationMetrics(s.clinicalEvents, s.logs);
+  assert.equal(m.timeToFirstCprSeconds, 0);
+  assert.equal(m.timeToFirstRhythmCheckSeconds, 40);
+  assert.equal(m.timeToFirstShockSeconds, 47);
+  assert.equal(m.timeToFirstEpinephrineSeconds, 180);
+  assert.equal(m.cprCycleCount, 3, 'the CPR before the pads counts as cycle 1');
+});
+
+test('VF/pVT: shock, CPR, epinephrine after the 2nd shock, amiodarone after the 3rd, ROSC at a rhythm check', () => {
+  let s = startPadsOn();
   assert.equal(codePhase(s), 'ARREST');
   assert.equal(s.activePrompt, 'RHYTHM_CHECK');
 
@@ -155,7 +190,7 @@ test('VF/pVT: shock, CPR, epinephrine after the 2nd shock, amiodarone after the 
 });
 
 test('asystole/PEA: epinephrine early, every 3-5 minutes, then resuscitation stopped', () => {
-  let s = act(idle(), 0, startCodeAction());
+  let s = startPadsOn();
   s = act(s, 8, rhythmAction('NON_SHOCKABLE'));
   assert.equal(s.activePrompt, 'EPI_ADVISED');
   s = act(s, 10, epinephrineAction());
@@ -188,7 +223,7 @@ test('asystole/PEA: epinephrine early, every 3-5 minutes, then resuscitation sto
 });
 
 test('two ROSCs: re-arrest from "next CPR cycle" opens episode 2 and every event is attributed to its episode', () => {
-  let s = act(idle(), 0, startCodeAction());
+  let s = startPadsOn();
   s = act(s, 5, rhythmAction('SHOCKABLE'));
   s = act(s, 10, shockAction());
   s = rhythmCheckThen(s, 130, 'SHOCKABLE');
@@ -256,7 +291,7 @@ test('two ROSCs: re-arrest from "next CPR cycle" opens episode 2 and every event
 });
 
 test('re-arrest from the main "Re-Arrest: Restart CPR" button is recorded the same way', () => {
-  let s = act(idle(), 0, startCodeAction());
+  let s = startPadsOn();
   s = act(s, 5, rhythmAction('NON_SHOCKABLE'));
   s = act(s, 60, roscAction());
   s = act(s, 90, resumeAction);
@@ -266,7 +301,7 @@ test('re-arrest from the main "Re-Arrest: Restart CPR" button is recorded the sa
 });
 
 test('a pause at the exact end of the CPR cycle becomes the rhythm check and records no pause', () => {
-  let s = act(idle(), 0, startCodeAction());
+  let s = startPadsOn();
   s = act(s, 5, rhythmAction('NON_SHOCKABLE'));
   s = act(s, 10, cprCycleAction); // ends at +130
   const ticked = advanceClock(s, at(129));
@@ -277,7 +312,7 @@ test('a pause at the exact end of the CPR cycle becomes the rhythm check and rec
 });
 
 test('out-of-sequence actions are recorded only when confirmed, and carry the reason', () => {
-  let s = act(idle(), 0, startCodeAction());
+  let s = startPadsOn();
   s = act(s, 5, rhythmAction('NON_SHOCKABLE'));
   s = act(s, 10, cprCycleAction);
   refused(s, 20, shockAction()); // CPR running, non-shockable: not without confirmation
@@ -290,7 +325,7 @@ test('out-of-sequence actions are recorded only when confirmed, and carry the re
 });
 
 test('starting a new code clears the previous patient\'s record', () => {
-  let s = act(idle(), 0, startCodeAction());
+  let s = startPadsOn();
   s = act(s, 5, rhythmAction('SHOCKABLE'));
   s = act(s, 10, shockAction());
   s = act(s, 100, stopResuscitationAction('10:00'));
@@ -320,6 +355,7 @@ type Step = { name: string; run: (s: AclsState, now: number) => AclsState };
 const STEPS: Step[] = [
   { name: 'start', run: (s, now) => (codeIsOpen(s) && !s.roscAt ? s : applyAction(s, startCodeAction(), now, ACTOR)) },
   { name: 'pause/resume', run: (s, now) => applyAction(s, s.isTimerRunning ? pauseAction() : resumeAction(s), now, ACTOR) },
+  { name: 'analyze rhythm now', run: (s, now) => applyAction(s, analyzeRhythmAction(), now, ACTOR) },
   { name: 'next cycle', run: (s, now) => applyAction(s, cprCycleAction(s), now, ACTOR) },
   { name: 'rhythm VF', run: (s, now) => applyAction(s, rhythmAction('SHOCKABLE'), now, ACTOR) },
   { name: 'rhythm PEA', run: (s, now) => applyAction(s, rhythmAction('NON_SHOCKABLE'), now, ACTOR) },
@@ -392,7 +428,7 @@ test('randomized: 400 random codes keep every state rule and attribute every eve
 });
 
 test('the rules catch the old bug: CPR restarted in ROSC but recorded as a plain CPR start', () => {
-  let s = act(idle(), 0, startCodeAction());
+  let s = startPadsOn();
   s = act(s, 5, rhythmAction('NON_SHOCKABLE'));
   s = act(s, 60, roscAction());
   const oldStyle: ActionSpec = { ...cprCycleAction({ ...s, roscAt: null }), transition: cprCycleAction(s).transition };

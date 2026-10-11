@@ -21,6 +21,7 @@ import {
   LIDOCAINE_MAX_DOSES,
   type ActionOptions,
   amiodaroneDoseLabel,
+  analyzeRhythmNow,
   arrestSeconds,
   confirmRosc,
   episodeArrestSeconds,
@@ -124,8 +125,22 @@ export const startCodeAction = (): ActionSpec => ({
   type: 'CPR_START',
   kind: 'CODE_START',
   transition: startCode,
-  description: () => 'Resuscitation started - Initial 10s Rhythm Assessment evaluation started.',
-  payload: (_p, next) => ({ reason: 'user_started_resuscitation', initialRhythmAssessment: true, arrestEpisodeNumber: next.arrestEpisodeNumber }),
+  description: () => 'Resuscitation started - CPR started; attach the monitor/defibrillator and analyze the rhythm as soon as it is ready.',
+  payload: (_p, next) => ({ reason: 'user_started_resuscitation', cprCycleNumber: next.cprCycleCount, arrestEpisodeNumber: next.arrestEpisodeNumber }),
+});
+
+/**
+ * "Analyze rhythm now": pads are on, so compressions stop for the first rhythm
+ * check of the episode. Like a rhythm check at the end of a cycle it is not
+ * recorded on its own: the rhythm-check event records when the pause began.
+ */
+export const analyzeRhythmAction = (): ActionSpec => ({
+  type: 'INFO',
+  kind: 'CPR_PAUSE',
+  transition: analyzeRhythmNow,
+  description: () => 'Compressions paused for rhythm analysis',
+  payload: (p, next) => ({ cprCycle: p.cprCycleCount, arrestEpisodeNumber: next.arrestEpisodeNumber }),
+  shouldRecord: () => false,
 });
 
 export const pauseAction = (): ActionSpec => ({

@@ -35,7 +35,10 @@ export type ClinicalEventSource = 'user' | 'system' | 'import';
 
 export interface CodeStartPayload extends EpisodeScopedPayload {
   reason?: string;
+  /** Older records: the code started with an immediate rhythm check (no CPR first). */
   initialRhythmAssessment?: boolean;
+  /** CPR began at code start; this is its cycle number (1). */
+  cprCycleNumber?: number;
 }
 
 export interface EpisodeScopedPayload {
@@ -297,11 +300,22 @@ export interface AclsState {
   roscPausedMs?: number;
   cprEndsAt?: number | null;
   cprRemainingMs?: number;
+  /**
+   * When compressions stopped for the current rhythm check. Stays set while the
+   * team acts on the result (shock advised, epinephrine advised) and clears when
+   * compressions restart, so the whole hands-off pause is timed.
+   */
   rhythmCheckStartedAt?: number | null;
+  /** Seconds since compressions stopped for the current rhythm check (0 while CPR runs). */
+  pauseElapsedSeconds?: number;
   epiAnchorAt?: number | null;
+  /** When the 2nd shock of the current arrest episode was given (first epinephrine in VF/pVT falls due then). */
+  episodeSecondShockAt?: number | null;
   rhythmCheckCount?: number;
   amioCount?: number;
   lidoCount?: number;
+  /** Total shocks (shocksCount) when the last amiodarone or lidocaine dose was given. */
+  lastAntiarrhythmicShockCount?: number | null;
   alert?: { seq: number; kind: 'cycleEnd' | 'urgent' | 'epi' } | null;
 }
 

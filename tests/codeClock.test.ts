@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   startCode,
+  analyzeRhythmNow,
+  canAnalyzeRhythmNow,
+  epinephrineWait,
+  antiarrhythmicDue,
   startCprCycle,
   deliverShock,
   confirmRosc,
@@ -59,13 +63,18 @@ function baseState(): AclsState {
   };
 }
 
+/** Code started with the pads already on: CPR starts, then the first rhythm check opens at once. */
+const startPadsOn = (s: AclsState, now: number) => analyzeRhythmNow(startCode(s, now), now);
+
 test('startCode creates a clean case boundary while preserving device preferences', () => {
   const next = startCode(baseState(), 10000);
 
   assert.equal(next.codeStartedAt, 10000);
   assert.equal(next.shocksCount, 0);
   assert.equal(next.epiCount, 0);
-  assert.equal(next.cprCycleCount, 0);
+  assert.equal(next.cprCycleCount, 1, 'CPR starts with the code (AHA step 1)');
+  assert.equal(next.isTimerRunning, true);
+  assert.equal(next.cprEndsAt, 10000 + 120000);
   assert.equal(next.currentRhythm, 'UNKNOWN');
   assert.deepEqual(next.logs, []);
   assert.deepEqual(next.clinicalEvents, []);
@@ -75,11 +84,12 @@ test('startCode creates a clean case boundary while preserving device preference
   assert.equal(next.alert, null);
   assert.equal(next.defibType, 'BIPHASIC');
   assert.equal(next.selectedEnergy, 200);
-  assert.equal(next.activePrompt, 'RHYTHM_CHECK');
+  assert.equal(next.activePrompt, null, 'no rhythm check until the pads are on');
+  assert.equal(canAnalyzeRhythmNow(next), true);
 });
 
 test('shock starts the next CPR cycle and increments the state cycle count once', () => {
-  const started = selectRhythm(startCode(baseState(), 10000), 'SHOCKABLE', 10001);
+  const started = selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 10001);
   const shock = deliverShock({ ...started, cprCycleCount: 1 }, 20000);
 
   assert.equal(shock.shocksCount, 1);
@@ -89,7 +99,7 @@ test('shock starts the next CPR cycle and increments the state cycle count once'
 });
 
 test('ROSC stops the active CPR cycle', () => {
-  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const started = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   const rosc = confirmRosc(started, 50000);
 
   assert.equal(rosc.roscAt, 50000);
@@ -100,7 +110,7 @@ test('ROSC stops the active CPR cycle', () => {
 
 
 test('epinephrine interval runs on the real clock through ROSC and re-arrest', () => {
-  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const started = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   const afterEpi = { ...started, epiAnchorAt: 11000, epiCount: 1 };
   const rosc = confirmRosc(afterEpi, 70000);
   const duringRosc = rosc;
@@ -113,7 +123,7 @@ test('epinephrine interval runs on the real clock through ROSC and re-arrest', (
 
 
 test('CPR deadline is resolved exactly at the timestamp boundary', () => {
-  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const started = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   const atDeadline = advanceClock(started, 131000);
 
   assert.equal(atDeadline.activePrompt, 'RHYTHM_CHECK');
@@ -124,7 +134,7 @@ test('CPR deadline is resolved exactly at the timestamp boundary', () => {
 });
 
 test('CPR deadline is resolved after background/sleep time is skipped', () => {
-  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const started = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   const afterSleep = advanceClock(started, 250000);
 
   assert.equal(afterSleep.activePrompt, 'RHYTHM_CHECK');
@@ -134,7 +144,7 @@ test('CPR deadline is resolved after background/sleep time is skipped', () => {
 });
 
 test('rhythm-check timeout fires at exactly 10 seconds', () => {
-  const started = startCode(baseState(), 10000);
+  const started = startPadsOn(baseState(), 10000);
   const timedOut = advanceClock(started, 20000);
 
   assert.equal(timedOut.activePrompt, 'RHYTHM_CHECK');
@@ -143,8 +153,8 @@ test('rhythm-check timeout fires at exactly 10 seconds', () => {
 });
 
 test('epinephrine becomes due exactly at the interval boundary', () => {
-  const started = startCprCycle(startCode(baseState(), 10000), 11000);
-  const running = { ...started, epiAnchorAt: 1000, cprEndsAt: 500000 };
+  const started = startCprCycle(startPadsOn(baseState(), 10000), 11000);
+  const running = { ...started, epiAnchorAt: 1000, epiCount: 1, cprEndsAt: 500000 };
   const due = advanceClock(running, 181000);
 
   assert.equal(due.epiTimeLeft, 0);
@@ -153,7 +163,7 @@ test('epinephrine becomes due exactly at the interval boundary', () => {
 });
 
 test('pause action at the exact CPR deadline cannot freeze an expired cycle', () => {
-  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const started = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   const pausedAtDeadline = pauseCpr(started, 131000);
 
   assert.equal(pausedAtDeadline.activePrompt, 'RHYTHM_CHECK');
@@ -174,9 +184,9 @@ test('shock cannot occur without an active shockable arrest', () => {
   const idle = { ...baseState(), codeStartedAt: null, roscAt: null };
   assert.strictEqual(deliverShock(idle, 50000), idle);
 
-  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const started = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   const nonShockable = selectRhythm(
-    startCode(baseState(), 10000),
+    startPadsOn(baseState(), 10000),
     'NON_SHOCKABLE',
     10001
   );
@@ -186,7 +196,7 @@ test('shock cannot occur without an active shockable arrest', () => {
 });
 
 test('rhythm selection is rejected outside the rhythm-check transition', () => {
-  const started = startCprCycle(startCode(baseState(), 10000), 11000);
+  const started = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   const next = selectRhythm(started, 'SHOCKABLE', 20000);
 
   assert.strictEqual(next, started);
@@ -202,7 +212,7 @@ test('medication actions cannot create or continue a non-existent arrest', () =>
 
 test('antiarrhythmics are gated until a shockable rhythm has received three shocks', () => {
   let state = selectRhythm(
-    startCode(baseState(), 10000),
+    startPadsOn(baseState(), 10000),
     'SHOCKABLE',
     10001
   );
@@ -225,7 +235,7 @@ test('antiarrhythmics are gated until a shockable rhythm has received three shoc
 
 
 test('re-arrest resets rhythm and scopes shock-sequence gates to the new episode while retaining drug exposure', () => {
-  let state = selectRhythm(startCode(baseState(), 10000), 'SHOCKABLE', 10001);
+  let state = selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 10001);
   state = deliverShock(state, 10002);
   state = selectRhythm(advanceClock(state, 130002), 'SHOCKABLE', 130003);
   state = deliverShock(state, 130004);
@@ -244,7 +254,10 @@ test('re-arrest resets rhythm and scopes shock-sequence gates to the new episode
   assert.equal(state.lastShockEnergyJ, null, 'shock energy escalation sequence is episode-specific');
   assert.equal(checkAntiarrhythmic(state, 'amiodarone').ok, false);
   assert.match(checkAntiarrhythmic(state, 'amiodarone').reason ?? '', /current rhythm is not recorded as shockable/);
-  assert.equal(checkEpinephrine(state, 300001).ok, true, 'an overdue epinephrine interval remains due across ROSC; VF-specific gating waits for a documented shockable rhythm');
+  // No epinephrine was given in episode 1, so the first dose waits for this episode's rhythm.
+  assert.equal(epinephrineWait(state), 'RHYTHM');
+  assert.match(checkEpinephrine(state, 300001).reason ?? '', /rhythm has not been checked/);
+  assert.notEqual(advanceClock(state, 400000).activePrompt, 'EPI_DUE', 'no epinephrine alert before the rhythm is known');
 
   state = selectRhythm(advanceClock(state, 420000), 'SHOCKABLE', 420001);
   assert.equal(checkAntiarrhythmic(state, 'amiodarone').ok, false, 'new VF rhythm alone is not three shocks');
@@ -261,9 +274,9 @@ test('re-arrest resets rhythm and scopes shock-sequence gates to the new episode
 });
 
 test('epinephrine rejects an early duplicate administration', () => {
-  let state = startCprCycle(startCode(baseState(), 10000), 11000);
+  let state = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   state = selectRhythm(
-    startCode(baseState(), 10000),
+    startPadsOn(baseState(), 10000),
     'NON_SHOCKABLE',
     10001
   );
@@ -275,7 +288,7 @@ test('epinephrine rejects an early duplicate administration', () => {
 
 test('shockable epinephrine is not available before two initial shocks', () => {
   let state = selectRhythm(
-    startCode(baseState(), 10000),
+    startPadsOn(baseState(), 10000),
     'SHOCKABLE',
     10001
   );
@@ -307,7 +320,7 @@ test('starting a new code cannot overwrite an active arrest timeline', () => {
 
 test('lidocaine cannot be administered beyond the second AHA-specified dose', () => {
   let state = selectRhythm(
-    startCode(baseState(), 10000),
+    startPadsOn(baseState(), 10000),
     'SHOCKABLE',
     10001
   );
@@ -318,8 +331,12 @@ test('lidocaine cannot be administered beyond the second AHA-specified dose', ()
   state = deliverShock(state, 260004);
 
   state = giveLidocaine(state);
+  state = selectRhythm(advanceClock(state, 380004), 'SHOCKABLE', 380005);
+  state = deliverShock(state, 380006); // VF persists after a further shock
   state = giveLidocaine(state);
   assert.equal(state.lidoCount, 2);
+  state = selectRhythm(advanceClock(state, 500006), 'SHOCKABLE', 500007);
+  state = deliverShock(state, 500008);
   assert.strictEqual(giveLidocaine(state), state);
 });
 
@@ -329,7 +346,7 @@ test('lidocaine cannot be administered beyond the second AHA-specified dose', ()
 // ---------------------------------------------------------------------------
 
 test('after a long ROSC, a re-arrest finds epinephrine already due', () => {
-  let state = selectRhythm(startCode(baseState(), 10000), 'NON_SHOCKABLE', 10001);
+  let state = selectRhythm(startPadsOn(baseState(), 10000), 'NON_SHOCKABLE', 10001);
   state = giveEpinephrine(state, 12000);                 // dose 1 at 12 s
   state = startCprCycle(state, 13000);
   state = confirmRosc(state, 60000);                     // ROSC at 60 s
@@ -342,7 +359,7 @@ test('after a long ROSC, a re-arrest finds epinephrine already due', () => {
 });
 
 test('a brief ROSC does not reset the epinephrine interval', () => {
-  let state = selectRhythm(startCode(baseState(), 10000), 'NON_SHOCKABLE', 10001);
+  let state = selectRhythm(startPadsOn(baseState(), 10000), 'NON_SHOCKABLE', 10001);
   state = giveEpinephrine(state, 12000);
   state = startCprCycle(state, 13000);
   state = confirmRosc(state, 60000);
@@ -357,7 +374,7 @@ test('a brief ROSC does not reset the epinephrine interval', () => {
 // ---------------------------------------------------------------------------
 
 test('stopping resuscitation closes the code and freezes every timer', () => {
-  let state = startCprCycle(startCode(baseState(), 10000), 11000);
+  let state = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   state = terminateResuscitation(state, 10000 + 25 * 60 * 1000);
 
   assert.equal(state.terminatedAt, 10000 + 25 * 60 * 1000);
@@ -373,7 +390,7 @@ test('stopping resuscitation closes the code and freezes every timer', () => {
 });
 
 test('after stopping, CPR, ROSC and drugs cannot be added to that code', () => {
-  const stopped = terminateResuscitation(startCprCycle(startCode(baseState(), 10000), 11000), 300000);
+  const stopped = terminateResuscitation(startCprCycle(startPadsOn(baseState(), 10000), 11000), 300000);
 
   assert.strictEqual(startCprCycle(stopped, 310000), stopped);
   assert.strictEqual(resumeCpr(stopped, 310000), stopped);
@@ -384,8 +401,8 @@ test('after stopping, CPR, ROSC and drugs cannot be added to that code', () => {
 });
 
 test('a new code can start after resuscitation was stopped', () => {
-  const stopped = terminateResuscitation(startCode(baseState(), 10000), 300000);
-  const next = startCode(stopped, 400000);
+  const stopped = terminateResuscitation(startPadsOn(baseState(), 10000), 300000);
+  const next = startPadsOn(stopped, 400000);
 
   assert.equal(next.codeStartedAt, 400000);
   assert.equal(next.terminatedAt, null);
@@ -394,7 +411,7 @@ test('a new code can start after resuscitation was stopped', () => {
 });
 
 test('resuscitation cannot be stopped during ROSC or with no code running', () => {
-  const rosc = confirmRosc(startCprCycle(startCode(baseState(), 10000), 11000), 60000);
+  const rosc = confirmRosc(startCprCycle(startPadsOn(baseState(), 10000), 11000), 60000);
   assert.strictEqual(terminateResuscitation(rosc, 70000), rosc);
 
   const idle = { ...baseState(), codeStartedAt: null, roscAt: null };
@@ -406,7 +423,7 @@ test('resuscitation cannot be stopped during ROSC or with no code running', () =
 // ---------------------------------------------------------------------------
 
 test('early epinephrine is flagged with a reason and recorded only with override', () => {
-  let state = selectRhythm(startCode(baseState(), 10000), 'NON_SHOCKABLE', 10001);
+  let state = selectRhythm(startPadsOn(baseState(), 10000), 'NON_SHOCKABLE', 10001);
   state = giveEpinephrine(state, 10002);
 
   const check = checkEpinephrine(state, 70002);
@@ -421,7 +438,7 @@ test('early epinephrine is flagged with a reason and recorded only with override
 });
 
 test('epinephrine before the 2nd shock in VF is flagged, and recordable', () => {
-  const state = selectRhythm(startCode(baseState(), 10000), 'SHOCKABLE', 10001);
+  const state = selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 10001);
   const check = checkEpinephrine(state, 20000);
 
   assert.equal(check.ok, false);
@@ -430,7 +447,7 @@ test('epinephrine before the 2nd shock in VF is flagged, and recordable', () => 
 });
 
 test('a shock during a running CPR cycle is flagged; when confirmed it starts a fresh cycle', () => {
-  const running = startCprCycle(selectRhythm(startCode(baseState(), 10000), 'NON_SHOCKABLE', 10001), 11000);
+  const running = startCprCycle(selectRhythm(startPadsOn(baseState(), 10000), 'NON_SHOCKABLE', 10001), 11000);
   const check = checkShock(running, 50000);
 
   assert.equal(check.ok, false);
@@ -446,12 +463,12 @@ test('a shock during a running CPR cycle is flagged; when confirmed it starts a 
 });
 
 test('the normal shock after a VF rhythm check is not flagged', () => {
-  const state = selectRhythm(startCode(baseState(), 10000), 'SHOCKABLE', 10001);
+  const state = selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 10001);
   assert.equal(checkShock(state, 12000).ok, true);
 });
 
 test('antiarrhythmics before the 3rd shock or beyond the maximum are flagged, and recordable', () => {
-  let state = selectRhythm(startCode(baseState(), 10000), 'SHOCKABLE', 10001);
+  let state = selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 10001);
   const early = checkAntiarrhythmic(state, 'amiodarone');
   assert.equal(early.ok, false);
   assert.match(early.reason ?? '', /3rd shock/);
@@ -472,7 +489,7 @@ test('nothing can be recorded against a code that is not running, even with over
   assert.strictEqual(giveEpinephrine(idle, 1000, { override: true }), idle);
   assert.strictEqual(giveAmiodarone(idle, { override: true }), idle);
 
-  const rosc = confirmRosc(startCprCycle(startCode(baseState(), 10000), 11000), 60000);
+  const rosc = confirmRosc(startCprCycle(startPadsOn(baseState(), 10000), 11000), 60000);
   const inRosc = checkEpinephrine(rosc, 61000);
   assert.equal(inRosc.canRecord, false);
   assert.match(inRosc.reason ?? '', /ROSC/);
@@ -480,7 +497,7 @@ test('nothing can be recorded against a code that is not running, even with over
 
 
 test('arrest episode increments on re-arrest and rhythm numbering restarts locally', () => {
-  let state = startCode(baseState(), 10000);
+  let state = startPadsOn(baseState(), 10000);
   assert.equal(state.arrestEpisodeNumber, 1);
 
   state = selectRhythm(state, 'NON_SHOCKABLE', 10001);
@@ -499,7 +516,7 @@ test('arrest episode increments on re-arrest and rhythm numbering restarts local
 });
 
 test('a new code resets the arrest episode number to episode 1', () => {
-  let state = startCode(baseState(), 10000);
+  let state = startPadsOn(baseState(), 10000);
   state = selectRhythm(state, 'NON_SHOCKABLE', 10001);
   state = startCprCycle(state, 10002);
   state = confirmRosc(state, 60000);
@@ -507,7 +524,7 @@ test('a new code resets the arrest episode number to episode 1', () => {
   assert.equal(state.arrestEpisodeNumber, 2);
 
   state = terminateResuscitation(state, 250000);
-  state = startCode(state, 300000);
+  state = startPadsOn(state, 300000);
   assert.equal(state.arrestEpisodeNumber, 1);
 });
 
@@ -517,7 +534,7 @@ test('a new code resets the arrest episode number to episode 1', () => {
 // ---------------------------------------------------------------------------
 
 test('time since ROSC is live during ROSC and resets on re-arrest', () => {
-  let state = confirmRosc(startCprCycle(startCode(baseState(), 10000), 11000), 60000);
+  let state = confirmRosc(startCprCycle(startPadsOn(baseState(), 10000), 11000), 60000);
   state = advanceClock(state, 60000 + 95000);
   assert.equal(state.roscElapsedSeconds, 95);
 
@@ -527,7 +544,7 @@ test('time since ROSC is live during ROSC and resets on re-arrest', () => {
 });
 
 test('disposition closes the case: ROSC timer freezes, no re-arrest can be added', () => {
-  let state = confirmRosc(startCprCycle(startCode(baseState(), 10000), 11000), 60000);
+  let state = confirmRosc(startCprCycle(startPadsOn(baseState(), 10000), 11000), 60000);
   state = recordDisposition(state, 60000 + 30 * 60 * 1000, 'ICU');
 
   assert.equal(state.disposition, 'ICU');
@@ -540,11 +557,11 @@ test('disposition closes the case: ROSC timer freezes, no re-arrest can be added
 });
 
 test('disposition is only possible in ROSC, and a new code clears it', () => {
-  const arrest = startCprCycle(startCode(baseState(), 10000), 11000);
+  const arrest = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   assert.strictEqual(recordDisposition(arrest, 50000, 'ICU'), arrest);
 
   const closed = recordDisposition(confirmRosc(arrest, 60000), 70000, 'CATH_LAB');
-  const next = startCode(closed, 100000);
+  const next = startPadsOn(closed, 100000);
   assert.equal(next.dispositionAt, null);
   assert.equal(next.disposition, null);
   assert.equal(next.roscElapsedSeconds, 0);
@@ -557,7 +574,7 @@ test('disposition is only possible in ROSC, and a new code clears it', () => {
 // ---------------------------------------------------------------------------
 
 const shockReady = (energy: number, defibType: 'BIPHASIC' | 'MONOPHASIC' = 'BIPHASIC') =>
-  selectRhythm(startCode({ ...baseState(), selectedEnergy: energy, defibType }, 10000), 'SHOCKABLE', 10001);
+  selectRhythm(startPadsOn({ ...baseState(), selectedEnergy: energy, defibType }, 10000), 'SHOCKABLE', 10001);
 
 test('shocks record their energy; same or higher next time is not flagged', () => {
   let state = deliverShock(shockReady(150), 12000);
@@ -622,7 +639,7 @@ test('sequence and energy reasons are combined in one question', () => {
 // ---------------------------------------------------------------------------
 
 test('airway placement is kept for the code; confirming later keeps the placement time', () => {
-  let state = startCprCycle(startCode(baseState(), 10000), 11000);
+  let state = startCprCycle(startPadsOn(baseState(), 10000), 11000);
   state = recordAirway(state, 60000, 'ETT', false);
   assert.deepEqual(state.advancedAirway, { device: 'ETT', at: 60000, confirmedByCapnography: false });
 
@@ -639,13 +656,13 @@ test('airway placement is kept for the code; confirming later keeps the placemen
 });
 
 test('exchanging the device is a new placement; a new code clears the airway', () => {
-  let state = recordAirway(startCode(baseState(), 10000), 40000, 'SGA', false);
+  let state = recordAirway(startPadsOn(baseState(), 10000), 40000, 'SGA', false);
   state = recordAirway(state, 70000, 'ETT', true);
   assert.deepEqual(state.advancedAirway, { device: 'ETT', at: 70000, confirmedByCapnography: true });
 
   const closed = terminateResuscitation(state, 100000);
   assert.strictEqual(recordAirway(closed, 110000, 'SGA', true), closed);
-  assert.equal(startCode(closed, 200000).advancedAirway, null);
+  assert.equal(startPadsOn(closed, 200000).advancedAirway, null);
 });
 
 
@@ -656,7 +673,7 @@ test('exchanging the device is a new placement; a new code clears the airway', (
 test('episode arrest time restarts at each re-arrest', () => {
   const min = 60_000;
   const T0 = 1_000_000_000;
-  let state = startCprCycle(startCode(baseState(), T0), T0 + 1000);
+  let state = startCprCycle(startPadsOn(baseState(), T0), T0 + 1000);
   assert.equal(episodeArrestSeconds(state, T0 + 10 * min), 600);
 
   state = confirmRosc(state, T0 + 15 * min);
@@ -668,14 +685,14 @@ test('episode arrest time restarts at each re-arrest', () => {
   assert.equal(episodeArrestSeconds(state, T0 + 35 * min), 5 * 60);
   assert.equal(arrestSeconds(state, T0 + 35 * min), 20 * 60, 'whole-code arrest time still counts both episodes');
 
-  assert.equal(startCode(terminateResuscitation(state, T0 + 40 * min), T0 + 50 * min).arrestEpisodeStartedAt, T0 + 50 * min);
+  assert.equal(startPadsOn(terminateResuscitation(state, T0 + 40 * min), T0 + 50 * min).arrestEpisodeStartedAt, T0 + 50 * min);
 });
 
 test('EtCO2 stop-decision note needs 20 minutes within the current episode', () => {
   const min = 60_000;
   const T0 = 1_000_000_000;
   // Episode 1: 15 min of CPR with EtCO2 25, then ROSC; re-arrest at 30 min.
-  let state = startCprCycle(startCode(baseState(), T0), T0 + 1000);
+  let state = startCprCycle(startPadsOn(baseState(), T0), T0 + 1000);
   state = resumeCpr(confirmRosc(state, T0 + 15 * min), T0 + 30 * min);
   const events = [
     createClinicalEvent({ kind: 'ETCO2', timestamp: T0 + 10 * min, payload: { valueMmHg: 25, airway: 'ETT', flags: [], arrestEpisodeNumber: 1 } }, 1),
@@ -689,4 +706,176 @@ test('EtCO2 stop-decision note needs 20 minutes within the current episode', () 
   // 20 minutes into episode 2 with no reading above 10 in it: note shown.
   const at20 = assessEtco2(8, etco2Context(events, 2, 'ETT', episodeArrestSeconds(state, T0 + 50 * min)));
   assert.ok(at20.some(f => note.test(f)), 'after 20 minutes of this episode');
+});
+
+// ---------------------------------------------------------------------------
+// 2025 AHA VF/pVT alignment
+// ---------------------------------------------------------------------------
+
+/** VF from the first check; first shock at `firstShockS` seconds after the code started at 0 (ms base 1_000_000). */
+function vfToSecondShock(firstShockS: number) {
+  const t = (sec: number) => 1_000_000 + sec * 1000;
+  let s = startPadsOn(baseState(), t(0));
+  s = selectRhythm(s, 'SHOCKABLE', t(firstShockS - 3));
+  s = deliverShock(s, t(firstShockS));
+  const checkAt = firstShockS + 120;
+  s = selectRhythm(advanceClock(s, t(checkAt)), 'SHOCKABLE', t(checkAt + 3));
+  return { s, t, secondShockS: checkAt + 6 };
+}
+
+test('VF/pVT: no "epinephrine due" alert before the 2nd shock, even when the first shock is late', () => {
+  const { s, t } = vfToSecondShock(75); // pads on late: first shock at 1:15
+  // 3:01 into the code, CPR running after only one shock.
+  const runningAfterOne = deliverShock(selectRhythm(startPadsOn(baseState(), t(0)), 'SHOCKABLE', t(72)), t(75));
+  const at301 = advanceClock(runningAfterOne, t(181));
+  assert.notEqual(at301.activePrompt, 'EPI_DUE');
+  assert.notEqual(at301.alert?.kind, 'epi');
+  assert.equal(epinephrineWait(at301), 'SECOND_SHOCK');
+  assert.equal(at301.epiTimeLeft, 180, 'the countdown is not shown as due');
+  assert.equal(s.activePrompt, 'SHOCK_ADVISED');
+});
+
+test('VF/pVT: the first epinephrine falls due at the 2nd shock (AHA: after initial defibrillation attempts fail)', () => {
+  for (const firstShockS of [10, 75]) {
+    const { s, t, secondShockS } = vfToSecondShock(firstShockS);
+    const afterSecond = deliverShock(s, t(secondShockS));
+    assert.equal(afterSecond.isTimerRunning, true, 'CPR resumes at once after the shock');
+    assert.equal(afterSecond.activePrompt, 'EPI_DUE', `first shock at ${firstShockS}s: epinephrine due right after shock 2`);
+    assert.equal(afterSecond.alert?.kind, 'epi');
+    assert.equal(afterSecond.episodeSecondShockAt, t(secondShockS));
+    assert.equal(checkEpinephrine(afterSecond, t(secondShockS + 1)).ok, true);
+    // After the dose, the next one is due 3 minutes later.
+    const dosed = giveEpinephrine(afterSecond, t(secondShockS + 5));
+    assert.equal(dosed.activePrompt, null);
+    assert.equal(advanceClock(dosed, t(secondShockS + 5 + 179)).epiTimeLeft, 1);
+    assert.equal(advanceClock(dosed, t(secondShockS + 5 + 180)).epiTimeLeft, 0);
+  }
+});
+
+test('asystole/PEA still advises epinephrine as soon as the rhythm is identified', () => {
+  const s = selectRhythm(startPadsOn(baseState(), 10000), 'NON_SHOCKABLE', 15000);
+  assert.equal(s.activePrompt, 'EPI_ADVISED');
+  assert.equal(epinephrineWait(s), null);
+  assert.equal(checkEpinephrine(s, 15001).ok, true);
+});
+
+test('a code starts with CPR; the first rhythm check opens when the pads are on', () => {
+  let s = startCode(baseState(), 10000);
+  assert.equal(s.isTimerRunning, true);
+  assert.equal(s.activePrompt, null);
+  // Compressions while the pads go on are not a hands-off pause: no alarm.
+  s = advanceClock(s, 21000);
+  assert.equal(s.alert, null);
+  assert.equal(s.rhythmCheckTimeLeft, 0);
+  assert.equal(epinephrineWait(s), 'RHYTHM');
+
+  s = analyzeRhythmNow(s, 45000);
+  assert.equal(s.activePrompt, 'RHYTHM_CHECK');
+  assert.equal(s.isTimerRunning, false);
+  assert.equal(s.rhythmCheckStartedAt, 45000);
+  assert.equal(s.rhythmCheckTimeLeft, 10);
+  assert.equal(canAnalyzeRhythmNow(s), false, 'already analyzing');
+  assert.equal(advanceClock(s, 55000).alert?.kind, 'urgent', 'the analysis pause is timed from the moment it started');
+
+  // Once the first rhythm check is done, checks follow the 2-minute cycles.
+  s = deliverShock(selectRhythm(s, 'SHOCKABLE', 48000), 50000);
+  assert.equal(canAnalyzeRhythmNow(s), false);
+  assert.strictEqual(analyzeRhythmNow(s, 60000), s);
+});
+
+test('if nobody taps "analyze", the rhythm check opens when the first 2-minute cycle ends', () => {
+  const s = advanceClock(startCode(baseState(), 10000), 130000);
+  assert.equal(s.activePrompt, 'RHYTHM_CHECK');
+  assert.equal(s.rhythmCheckStartedAt, 130000);
+});
+
+test('"analyze rhythm now" is offered again at the start of a re-arrest', () => {
+  let s = selectRhythm(startPadsOn(baseState(), 10000), 'NON_SHOCKABLE', 12000);
+  s = startCprCycle(giveEpinephrine(s, 13000), 14000);
+  s = confirmRosc(s, 60000);
+  assert.equal(canAnalyzeRhythmNow(s), false, 'not in ROSC');
+  s = startCprCycle(s, 90000); // re-arrest
+  assert.equal(canAnalyzeRhythmNow(s), true);
+  assert.equal(analyzeRhythmNow(s, 95000).activePrompt, 'RHYTHM_CHECK');
+});
+
+test('the hands-off pause is timed until compressions restart, through the shock decision', () => {
+  let s = startPadsOn(baseState(), 10000);
+  s = selectRhythm(s, 'SHOCKABLE', 16000); // rhythm read at 6 s
+  assert.equal(s.activePrompt, 'SHOCK_ADVISED');
+  assert.equal(s.rhythmCheckStartedAt, 10000, 'the pause began with the rhythm check');
+  assert.equal(advanceClock(s, 19000).alert, null, '9 s: still within 10 s');
+  const late = advanceClock(s, 21000);
+  assert.equal(late.alert?.kind, 'urgent', 'shock still not given at 11 s');
+  assert.equal(late.pauseElapsedSeconds, 11);
+  // One alarm per pause: no repeat while it continues.
+  assert.equal(advanceClock(late, 25000).alert?.seq, late.alert?.seq);
+  // The shock restarts compressions and ends the pause.
+  const shocked = deliverShock(late, 26000);
+  assert.equal(shocked.rhythmCheckStartedAt, null);
+  assert.equal(shocked.pauseElapsedSeconds, 0);
+});
+
+test('an alarm already raised during the rhythm check is not repeated after the rhythm is chosen', () => {
+  let s = advanceClock(startPadsOn(baseState(), 10000), 21000);
+  assert.equal(s.alert?.kind, 'urgent');
+  const seq = s.alert?.seq;
+  s = selectRhythm(s, 'NON_SHOCKABLE', 22000);
+  assert.equal(s.activePrompt, 'EPI_ADVISED');
+  assert.equal(advanceClock(s, 30000).alert?.seq, seq);
+  // "Begin CPR" ends the pause.
+  const cpr = startCprCycle(s, 31000);
+  assert.equal(cpr.isTimerRunning, true);
+  assert.equal(cpr.pauseElapsedSeconds, 0);
+});
+
+/** VF with three shocks in this episode. */
+function vfAfterThreeShocks() {
+  let s = selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 10001);
+  s = deliverShock(s, 10002);
+  s = selectRhythm(advanceClock(s, 130002), 'SHOCKABLE', 130003);
+  s = deliverShock(s, 130004);
+  s = selectRhythm(advanceClock(s, 250004), 'SHOCKABLE', 250005);
+  return deliverShock(s, 250006);
+}
+
+test('a second antiarrhythmic dose needs a further shock first', () => {
+  let s = giveAmiodarone(vfAfterThreeShocks());
+  assert.equal(s.amioCount, 1);
+  const tooSoon = checkAntiarrhythmic(s, 'amiodarone');
+  assert.equal(tooSoon.ok, false);
+  assert.match(tooSoon.reason ?? '', /No shock has been given since the last amiodarone dose/);
+  assert.strictEqual(giveAmiodarone(s), s, 'not recorded without confirmation');
+  assert.equal(giveAmiodarone(s, { override: true }).amioCount, 2, 'recorded when confirmed');
+
+  s = selectRhythm(advanceClock(s, 370006), 'SHOCKABLE', 370007);
+  s = deliverShock(s, 370008);
+  assert.equal(checkAntiarrhythmic(s, 'amiodarone').ok, true, 'VF persists after a further shock');
+  assert.equal(giveAmiodarone(s).amioCount, 2);
+});
+
+test('amiodarone or lidocaine, not both', () => {
+  const afterAmio = giveAmiodarone(vfAfterThreeShocks());
+  const lido = checkAntiarrhythmic(afterAmio, 'lidocaine');
+  assert.equal(lido.ok, false);
+  assert.match(lido.reason ?? '', /Amiodarone has already been given/);
+  assert.strictEqual(giveLidocaine(afterAmio), afterAmio);
+
+  const afterLido = giveLidocaine(vfAfterThreeShocks());
+  assert.match(checkAntiarrhythmic(afterLido, 'amiodarone').reason ?? '', /Lidocaine has already been given/);
+});
+
+test('the dashboard\'s "antiarrhythmic due" uses the same rule as the safety check, per episode', () => {
+  const s = vfAfterThreeShocks();
+  assert.equal(antiarrhythmicDue(s), true);
+  assert.equal(checkAntiarrhythmic(s, 'amiodarone').ok, true);
+  assert.equal(antiarrhythmicDue(giveAmiodarone(s)), false, 'not due once given');
+
+  // Three shocks in episode 1, no drug, then ROSC and VF again.
+  let ep2 = startCprCycle(confirmRosc(s, 260000), 300000);
+  ep2 = analyzeRhythmNow(ep2, 310000);
+  ep2 = selectRhythm(ep2, 'SHOCKABLE', 312000);
+  assert.equal(ep2.shocksCount, 3);
+  assert.equal(antiarrhythmicDue(ep2), false, 'episode 2 has no shocks yet');
+  assert.equal(checkAntiarrhythmic(ep2, 'amiodarone').ok, false, 'and the safety check agrees');
 });
