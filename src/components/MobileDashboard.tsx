@@ -43,6 +43,9 @@ import { CPR_CYCLE_DURATION, EPI_INTERVAL } from '../constants';
 import {
   clearedClockFields,
   isCodeActive,
+  canAnalyzeRhythmNow,
+  epinephrineWait,
+  antiarrhythmicDue as isAntiarrhythmicDue,
   amiodaroneDoseLabel,
   lidocaineDoseLabel,
   AMIODARONE_MAX_DOSES,
@@ -93,6 +96,8 @@ interface MobileDashboardProps {
   handleRhythmSelect: (rhythm: PatientRhythm) => void;
   /** Record IV/IO access (a procedure in the current arrest episode). */
   onVascularAccess: () => void;
+  /** Pads are on: stop compressions and open the first rhythm check of the episode. */
+  onAnalyzeRhythm: () => void;
   effectiveProfile: UserProfile;
   handleStartCPR: () => void;
   hapticDuration: number;
@@ -150,6 +155,7 @@ export default function MobileDashboard({
   handleLidocaine,
   handleRhythmSelect,
   onVascularAccess,
+  onAnalyzeRhythm,
   effectiveProfile,
   handleStartCPR,
   hapticDuration,
@@ -463,7 +469,7 @@ export default function MobileDashboard({
               {state.activePrompt === 'RHYTHM_CHECK' ? formatTime(state.rhythmCheckTimeLeft) : formatTime(state.cprTimeLeft)}
             </div>
             <p className={`text-[9px] uppercase font-bold tracking-wider mt-0.5 ${textMuted}`}>CPR Timeline</p>
-            <p className="text-[8.5px] font-mono text-red-600 uppercase mt-0.5 font-extrabold">Cycle #{state.cprCycleCount + 1}</p>
+            <p className="text-[8.5px] font-mono text-red-600 uppercase mt-0.5 font-extrabold">Cycle #{state.isTimerRunning ? Math.max(1, state.cprCycleCount) : state.cprCycleCount + 1}</p>
           </div>
         </div>
         )}
@@ -510,6 +516,18 @@ export default function MobileDashboard({
           </button>
         </div>
 
+        {/* AHA step 1: CPR first while the pads go on, then analyze the rhythm as soon as the defibrillator is ready. */}
+        {canAnalyzeRhythmNow(state) && (
+          <button
+            type="button"
+            onClick={onAnalyzeRhythm}
+            className="w-full h-12 rounded-2xl font-bold uppercase tracking-wider text-[10px] flex flex-col items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white border-none shadow-md cursor-pointer active:scale-95 transition-all shrink-0"
+          >
+            <span>Pads on: analyze rhythm now</span>
+            <span className="text-[8px] font-semibold normal-case tracking-normal opacity-90">Keep compressing until the defibrillator is ready</span>
+          </button>
+        )}
+
         {/* Epinephrine Countdown Monitor */}
         <div className={`w-full p-3.5 rounded-2xl border space-y-2 text-left shrink-0 ${
           isDark ? 'bg-blue-950/30 border-blue-500/30' : 'bg-blue-50/80 border-blue-200'
@@ -527,7 +545,11 @@ export default function MobileDashboard({
               <motion.div className="h-full bg-blue-600" animate={{ width: `${epiProgress}%` }} />
             </div>
             <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 tabular-nums">
-              {formatTime(state.epiTimeLeft)}
+              {epinephrineWait(state) === 'SECOND_SHOCK'
+                ? 'After 2nd shock'
+                : epinephrineWait(state) === 'RHYTHM'
+                  ? 'After rhythm check'
+                  : formatTime(state.epiTimeLeft)}
             </span>
           </div>
         </div>
@@ -584,8 +606,8 @@ export default function MobileDashboard({
           const lidoGiven = state.lidoCount ?? 0;
           const amioDone = amioGiven >= AMIODARONE_MAX_DOSES;
           const lidoDone = lidoGiven >= LIDOCAINE_MAX_DOSES;
-          // AHA: first antiarrhythmic dose after the 3rd shock.
-          const antiarrhythmicDue = state.currentRhythm === 'SHOCKABLE' && state.shocksCount >= 3 && amioGiven + lidoGiven === 0;
+          // Same rule as the safety check: 3rd shock of this episode, none given yet.
+          const antiarrhythmicDue = isAntiarrhythmicDue(state);
           const cardBase = 'h-20 rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition-all shadow-md px-2 text-center';
           const activeCard = antiarrhythmicDue
             ? 'bg-violet-600 text-white border-violet-400 animate-pulse cursor-pointer active:scale-95'

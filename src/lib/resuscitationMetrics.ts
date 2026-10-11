@@ -17,7 +17,13 @@ export function calculateResuscitationMetrics(
   const first = (kind: ClinicalEventKind) => sorted.find(e => e.kind === kind)?.timestamp ?? null;
 
   const codeStartAt = first('CODE_START');
-  const firstCprAt = first('CPR_START');
+  const codeStartEvent = sorted.find((e): e is Extract<ClinicalEvent, { kind: 'CODE_START' }> => e.kind === 'CODE_START');
+  // Codes now begin with CPR (CODE_START carries cycle 1); older codes began with a rhythm check.
+  const cprAtCodeStart = codeStartEvent?.payload.cprCycleNumber ? codeStartEvent.timestamp : null;
+  const firstCprStart = first('CPR_START');
+  const firstCprAt = cprAtCodeStart != null && (firstCprStart == null || cprAtCodeStart <= firstCprStart)
+    ? cprAtCodeStart
+    : firstCprStart;
   const firstRhythmCheckEvent = sorted.find((e): e is Extract<ClinicalEvent, { kind: 'RHYTHM_CHECK' }> => e.kind === 'RHYTHM_CHECK');
   const firstRhythmCheckAt = firstRhythmCheckEvent?.payload.startedAt ?? firstRhythmCheckEvent?.timestamp ?? null;
   const firstShockAt = first('SHOCK');
@@ -62,7 +68,8 @@ export function calculateResuscitationMetrics(
   const explicitCprCycles = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'CPR_START' }> => e.kind === 'CPR_START').map(e => e.payload.cycleNumber ?? 0);
   const shockStartedCprCycles = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'SHOCK' }> => e.kind === 'SHOCK').map(e => e.payload.cprCycleNumber ?? 0);
   const reArrestStartedCprCycles = sorted.filter((e): e is Extract<ClinicalEvent, { kind: 'RE_ARREST' }> => e.kind === 'RE_ARREST').map(e => e.payload.cprCycleNumber ?? 0);
-  const cprCycleNumbers = [...explicitCprCycles, ...shockStartedCprCycles, ...reArrestStartedCprCycles].filter(n => n > 0);
+  const codeStartCprCycles = codeStartEvent?.payload.cprCycleNumber ? [codeStartEvent.payload.cprCycleNumber] : [];
+  const cprCycleNumbers = [...codeStartCprCycles, ...explicitCprCycles, ...shockStartedCprCycles, ...reArrestStartedCprCycles].filter(n => n > 0);
   const medications = sorted.filter(e =>
     e.kind === 'EPINEPHRINE' || e.kind === 'AMIODARONE' || e.kind === 'LIDOCAINE'
   );

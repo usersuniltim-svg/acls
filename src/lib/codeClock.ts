@@ -81,10 +81,44 @@ export function clearedClockFields(): Partial<AclsState> {
     cprEndsAt: null,
     cprRemainingMs: CPR_MS,
     rhythmCheckStartedAt: null,
+    pauseElapsedSeconds: 0,
     epiAnchorAt: null,
+    episodeSecondShockAt: null,
     rhythmCheckCount: 0,
     epiDueElapsed: 0,
+    lastAntiarrhythmicShockCount: null,
   };
+}
+
+/** Prompts during which compressions are stopped for a rhythm check or acting on its result. */
+const PAUSE_PROMPTS: ReadonlySet<AclsState['activePrompt']> = new Set(['RHYTHM_CHECK', 'SHOCK_ADVISED', 'EPI_ADVISED']);
+const inRhythmPause = (s: AclsState) =>
+  PAUSE_PROMPTS.has(s.activePrompt) && !s.isTimerRunning && s.rhythmCheckStartedAt != null;
+
+/**
+ * Why the first epinephrine dose is not due yet, or null if the normal
+ * 3-minute timer applies.
+ *  - 'RHYTHM': no dose yet and the rhythm is not known (start of the code, or a
+ *    re-arrest): the rhythm decides when the first dose is due.
+ *  - 'SECOND_SHOCK': no dose yet in VF/pVT and fewer than 2 shocks in this
+ *    episode. 2025 AHA: with a shockable rhythm, epinephrine is given after
+ *    initial defibrillation attempts have failed, i.e. after the 2nd shock.
+ */
+export function epinephrineWait(s: AclsState): 'RHYTHM' | 'SECOND_SHOCK' | null {
+  if (s.epiCount > 0) return null;
+  if (s.currentRhythm === 'UNKNOWN') return 'RHYTHM';
+  if (s.currentRhythm === 'SHOCKABLE' && (s.episodeShocksCount ?? 0) < 2) return 'SECOND_SHOCK';
+  return null;
+}
+
+/** When the next epinephrine dose is due, or null while it waits for the rhythm or the 2nd shock. */
+export function epinephrineDueAt(s: AclsState): number | null {
+  if (!s.codeStartedAt || epinephrineWait(s)) return null;
+  // VF/pVT, first dose: due at the 2nd shock of this episode.
+  if (s.epiCount === 0 && s.currentRhythm === 'SHOCKABLE' && s.episodeSecondShockAt != null) {
+    return s.episodeSecondShockAt;
+  }
+  return (s.epiAnchorAt ?? s.codeStartedAt) + EPI_MS;
 }
 
 /**
@@ -119,31 +153,36 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
       : Math.ceil((next.cprRemainingMs ?? CPR_MS) / 1000);
   // Epinephrine is timed on the real clock from the last dose. The drug wears
   // off whether or not the patient is in ROSC, so time in ROSC counts: after a
-  // long ROSC, a re-arrest finds the next dose already due.
-  const epiDueAt = (next.epiAnchorAt ?? next.codeStartedAt!) + EPI_MS;
-  const epiTimeLeft = Math.max(0, Math.ceil((epiDueAt - now) / 1000));
+  // long ROSC, a re-arrest finds the next dose already due. Before the first
+  // dose, the rhythm decides (see epinephrineWait): in VF/pVT it falls due at
+  // the 2nd shock, never before.
+  const epiDueAt = epinephrineDueAt(next);
+  const epiTimeLeft = epiDueAt == null ? EPI_INTERVAL : Math.max(0, Math.ceil((epiDueAt - now) / 1000));
   const roscElapsedSeconds = next.roscAt ? Math.max(0, Math.floor((now - next.roscAt) / 1000)) : 0;
-  const rhythmCheckTimeLeft =
-    next.activePrompt === 'RHYTHM_CHECK' && next.rhythmCheckStartedAt != null
-      ? Math.max(0, Math.ceil((next.rhythmCheckStartedAt + RHYTHM_CHECK_MS - now) / 1000))
-      : 0;
+  // The hands-off pause runs from the end of compressions for a rhythm check
+  // until compressions restart: the check itself, then the shock or the
+  // epinephrine that follows it.
+  const pausing = inRhythmPause(next);
+  const rhythmCheckTimeLeft = pausing
+    ? Math.max(0, Math.ceil((next.rhythmCheckStartedAt! + RHYTHM_CHECK_MS - now) / 1000))
+    : 0;
+  const pauseElapsedSeconds = pausing ? Math.max(0, Math.floor((now - next.rhythmCheckStartedAt!) / 1000)) : 0;
 
-  // 3. Rhythm-check pause has gone past 10 seconds -> urgent alert (once).
-  if (
-    next.activePrompt === 'RHYTHM_CHECK' &&
-    rhythmCheckTimeLeft === 0 &&
-    (prev.activePrompt !== 'RHYTHM_CHECK' || prev.rhythmCheckTimeLeft > 0)
-  ) {
+  // 3. The hands-off pause has gone past 10 seconds -> urgent alert (once per pause).
+  const alreadyAlerted =
+    inRhythmPause(prev) && prev.rhythmCheckStartedAt === next.rhythmCheckStartedAt && prev.rhythmCheckTimeLeft === 0;
+  if (pausing && rhythmCheckTimeLeft === 0 && !alreadyAlerted) {
     next = withAlert(next, prev, 'urgent');
   }
 
   // 4. Epinephrine due while compressions are running and nothing else is on screen.
-  if (next.isTimerRunning && !next.roscAt && epiTimeLeft === 0 && next.activePrompt === null) {
+  if (next.isTimerRunning && !next.roscAt && epiTimeLeft === 0 && epiDueAt != null && next.activePrompt === null) {
     next = withAlert({ ...next, activePrompt: 'EPI_DUE' }, prev, 'epi');
   }
+  if (next.activePrompt === 'EPI_DUE' && epiDueAt == null) next = { ...next, activePrompt: null };
 
   let epiDueElapsed = 0;
-  if (next.activePrompt === 'EPI_DUE') {
+  if (next.activePrompt === 'EPI_DUE' && epiDueAt != null) {
     epiDueElapsed = Math.max(0, Math.floor((now - epiDueAt) / 1000));
     if (
       prev.activePrompt === 'EPI_DUE' &&
@@ -153,13 +192,14 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
     }
   }
 
-  next = { ...next, totalTime, cprTimeLeft, epiTimeLeft, rhythmCheckTimeLeft, epiDueElapsed, roscElapsedSeconds };
+  next = { ...next, totalTime, cprTimeLeft, epiTimeLeft, rhythmCheckTimeLeft, pauseElapsedSeconds, epiDueElapsed, roscElapsedSeconds };
 
   const unchanged =
     next.totalTime === prev.totalTime &&
     next.cprTimeLeft === prev.cprTimeLeft &&
     next.epiTimeLeft === prev.epiTimeLeft &&
     next.rhythmCheckTimeLeft === prev.rhythmCheckTimeLeft &&
+    (next.pauseElapsedSeconds ?? 0) === (prev.pauseElapsedSeconds ?? 0) &&
     next.epiDueElapsed === prev.epiDueElapsed &&
     next.roscElapsedSeconds === prev.roscElapsedSeconds &&
     next.activePrompt === prev.activePrompt &&
@@ -173,7 +213,12 @@ export function advanceClock(prev: AclsState, now: number): AclsState {
 // Actions. Each takes the current state and the time the button was pressed.
 // ---------------------------------------------------------------------------
 
-/** Start a new code: arrest clock starts, first rhythm check begins. */
+/**
+ * Start a new code: the arrest clock starts and CPR begins at once, as in
+ * step 1 of the 2025 AHA algorithm (start CPR, attach the monitor/defibrillator).
+ * The first rhythm check opens with analyzeRhythmNow as soon as the pads are
+ * on, or by itself when this first 2-minute cycle ends.
+ */
 export function startCode(prev: AclsState, now: number): AclsState {
   // Starting a new case while an arrest is active would erase the live
   // clinical timeline. Require the current arrest to be closed first.
@@ -187,14 +232,15 @@ export function startCode(prev: AclsState, now: number): AclsState {
       arrestEpisodeNumber: 1,
       arrestEpisodeStartedAt: now,
       epiAnchorAt: now,
-      rhythmCheckStartedAt: now,
+      rhythmCheckStartedAt: null,
+      cprEndsAt: now + CPR_MS,
       cprRemainingMs: CPR_MS,
-      isTimerRunning: false,
+      isTimerRunning: true,
       shocksCount: 0,
       episodeShocksCount: 0,
       epiCount: 0,
       currentRhythm: 'UNKNOWN',
-      cprCycleCount: 0,
+      cprCycleCount: 1,
       logs: [],
       clinicalEvents: [],
       savedEventSequence: 0,
@@ -202,11 +248,40 @@ export function startCode(prev: AclsState, now: number): AclsState {
       amioCount: 0,
       lidoCount: 0,
       alert: null,
-      activePrompt: 'RHYTHM_CHECK',
-      rhythmCheckTimeLeft: RHYTHM_CHECK_SECONDS,
+      activePrompt: null,
+      rhythmCheckTimeLeft: 0,
       totalTime: 0,
       cprTimeLeft: CPR_CYCLE_DURATION,
       epiTimeLeft: EPI_INTERVAL,
+    },
+    now
+  );
+}
+
+/**
+ * "Analyze rhythm now" is offered from the start of an arrest episode until
+ * its first rhythm check: the pads are on, so the team need not wait for the
+ * 2-minute cycle to end. Later checks follow the 2-minute cycles.
+ */
+export function canAnalyzeRhythmNow(s: AclsState): boolean {
+  return isCodeActive(s) && (s.rhythmCheckCount ?? 0) === 0 && !PAUSE_PROMPTS.has(s.activePrompt);
+}
+
+/** Pads are on: stop compressions and open the first rhythm check of this episode. */
+export function analyzeRhythmNow(prev: AclsState, now: number): AclsState {
+  if (!canAnalyzeRhythmNow(prev)) return prev;
+  // If the CPR cycle ends at this very moment, its own rhythm check stands.
+  const current = advanceClock(prev, now);
+  if (!canAnalyzeRhythmNow(current)) return current;
+  return advanceClock(
+    {
+      ...current,
+      isTimerRunning: false,
+      cprEndsAt: null,
+      cprRemainingMs: 0,
+      activePrompt: 'RHYTHM_CHECK',
+      rhythmCheckStartedAt: now,
+      rhythmCheckTimeLeft: RHYTHM_CHECK_SECONDS,
     },
     now
   );
@@ -226,6 +301,7 @@ function reArrestIfInRosc(prev: AclsState, now: number): AclsState {
     // into a new arrest. Total case counts and drug exposure remain cumulative.
     currentRhythm: 'UNKNOWN',
     episodeShocksCount: 0,
+    episodeSecondShockAt: null,
     lastShockEnergyJ: null,
     lastShockDefibType: null,
     rhythmCheckCount: 0,
@@ -295,7 +371,11 @@ export function resumeCpr(prev: AclsState, now: number): AclsState {
   );
 }
 
-/** Rhythm chosen at a rhythm check. Compressions stay on hold until the shock / "Begin CPR". */
+/**
+ * Rhythm chosen at a rhythm check. Compressions stay on hold until the shock /
+ * "Begin CPR", and the hands-off pause that began with the check keeps being
+ * timed until then.
+ */
 export function selectRhythm(prev: AclsState, rhythm: PatientRhythm, now: number): AclsState {
   // A rhythm selection is valid only during the explicit rhythm-check pause.
   // Reject stale/double taps and background UI actions after the check is closed.
@@ -310,8 +390,7 @@ export function selectRhythm(prev: AclsState, rhythm: PatientRhythm, now: number
       isTimerRunning: false,
       cprEndsAt: null,
       cprRemainingMs: CPR_MS,
-      rhythmCheckStartedAt: null,
-      rhythmCheckTimeLeft: 0,
+      rhythmCheckStartedAt: nextPrompt ? prev.rhythmCheckStartedAt ?? now : null,
       rhythmCheckCount: (prev.rhythmCheckCount ?? 0) + 1,
     },
     now
@@ -330,13 +409,15 @@ export function deliverShock(prev: AclsState, now: number, opts: ActionOptions =
   if (!isCodeActive(prev)) return prev;
   if (!opts.override && checkShock(prev, now).ok === false) return prev;
 
+  const episodeShocks = (prev.episodeShocksCount ?? 0) + 1;
   return startCprCycle(
     {
       ...prev,
       isTimerRunning: false,
       cprEndsAt: null,
       shocksCount: prev.shocksCount + 1,
-      episodeShocksCount: (prev.episodeShocksCount ?? 0) + 1,
+      episodeShocksCount: episodeShocks,
+      episodeSecondShockAt: episodeShocks === 2 ? now : prev.episodeSecondShockAt ?? null,
       lastShockEnergyJ: prev.selectedEnergy,
       lastShockDefibType: prev.defibType,
       currentRhythm: 'SHOCKABLE',
@@ -376,14 +457,14 @@ export function giveAmiodarone(prev: AclsState, opts: ActionOptions = {}): AclsS
   if (!isCodeActive(prev)) return prev;
   if (!opts.override && checkAntiarrhythmic(prev, 'amiodarone').ok === false) return prev;
 
-  return { ...prev, amioCount: (prev.amioCount ?? 0) + 1 };
+  return { ...prev, amioCount: (prev.amioCount ?? 0) + 1, lastAntiarrhythmicShockCount: prev.shocksCount };
 }
 
 export function giveLidocaine(prev: AclsState, opts: ActionOptions = {}): AclsState {
   if (!isCodeActive(prev)) return prev;
   if (!opts.override && checkAntiarrhythmic(prev, 'lidocaine').ok === false) return prev;
 
-  return { ...prev, lidoCount: (prev.lidoCount ?? 0) + 1 };
+  return { ...prev, lidoCount: (prev.lidoCount ?? 0) + 1, lastAntiarrhythmicShockCount: prev.shocksCount };
 }
 
 /** ROSC confirmed: the arrest clock stops, CPR and drug reminders stop. */
@@ -578,6 +659,9 @@ export function checkEpinephrine(prev: AclsState, now: number): ActionCheck {
   if (!isCodeActive(prev)) return notNow(noArrestReason(prev));
   const s = advanceClock(prev, now);
   const episodeShocks = s.episodeShocksCount ?? 0;
+  if (epinephrineWait(s) === 'RHYTHM') {
+    return flagged('The rhythm has not been checked yet. AHA times the first epinephrine by the rhythm: as soon as possible for asystole/PEA, after the 2nd shock for VF/pVT.');
+  }
   if (s.currentRhythm === 'SHOCKABLE' && episodeShocks < 2 && s.epiCount === 0) {
     return flagged(`In VF/pVT, AHA gives the first epinephrine after the 2nd shock in this arrest episode (episode shocks so far: ${episodeShocks}).`);
   }
@@ -603,5 +687,29 @@ export function checkAntiarrhythmic(prev: AclsState, drug: 'amiodarone' | 'lidoc
   if (episodeShocks < 3) {
     return flagged(`AHA gives an antiarrhythmic for shock-refractory VF/pVT after the 3rd shock in the current arrest episode (episode shocks so far: ${episodeShocks}).`);
   }
+  // 2025 AHA: amiodarone OR lidocaine, not both.
+  const otherGiven = (drug === 'amiodarone' ? prev.lidoCount : prev.amioCount) ?? 0;
+  if (otherGiven > 0) {
+    const other = drug === 'amiodarone' ? 'Lidocaine' : 'Amiodarone';
+    return flagged(`${other} has already been given. AHA uses amiodarone or lidocaine, not both.`);
+  }
+  // A second dose is for VF/pVT that persists after further shocks.
+  if (given > 0 && prev.lastAntiarrhythmicShockCount != null && prev.shocksCount <= prev.lastAntiarrhythmicShockCount) {
+    return flagged(`No shock has been given since the last ${name.toLowerCase()} dose. The second dose is for VF/pVT that persists after further shocks.`);
+  }
   return FITS;
+}
+
+/**
+ * The first antiarrhythmic dose is due: VF/pVT still present after the 3rd
+ * shock of this arrest episode and none given yet in this code. The dashboard
+ * highlights the drug buttons with this, so it agrees with checkAntiarrhythmic.
+ */
+export function antiarrhythmicDue(s: AclsState): boolean {
+  return (
+    isCodeActive(s) &&
+    s.currentRhythm === 'SHOCKABLE' &&
+    (s.episodeShocksCount ?? 0) >= 3 &&
+    (s.amioCount ?? 0) + (s.lidoCount ?? 0) === 0
+  );
 }
