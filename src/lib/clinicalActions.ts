@@ -289,13 +289,8 @@ export const lidocaineAction = (opts: ActionOptions = {}, note?: string): Action
   type: 'DRUG_LIDO',
   kind: 'LIDOCAINE',
   transition: (prev) => giveLidocaine(prev, opts),
-  description: (_p, next) => {
-    const dose = next.lidoCount ?? 0;
-    const base = dose > LIDOCAINE_MAX_DOSES
-      ? `Lidocaine IV/IO - additional dose #${dose} (beyond the usual ${LIDOCAINE_MAX_DOSES}-dose maximum; max total 3 mg/kg)`
-      : `Lidocaine ${lidocaineDoseLabel(dose)} IV/IO (dose ${dose}; max total 3 mg/kg)`;
-    return base + deviationSuffix(note);
-  },
+  // 2025 AHA algorithm: two doses (1-1.5 mg/kg, then 0.5-0.75 mg/kg); it sets no other cap.
+  description: (_p, next) => antiarrhythmicDescription('Lidocaine', lidocaineDoseLabel(next.lidoCount ?? 0), next.lidoCount ?? 0, LIDOCAINE_MAX_DOSES, note),
   payload: (_p, next) => ({
     doseLabel: lidocaineDoseLabel(next.lidoCount ?? 0),
     route: 'IV/IO',

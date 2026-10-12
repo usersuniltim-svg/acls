@@ -153,7 +153,8 @@ export type PostRoscItemId =
   | 'FOLLOWS_COMMANDS'
   | 'TEMPERATURE_CONTROL'
   | 'EEG'
-  | 'GLUCOSE';
+  | 'GLUCOSE'
+  | 'PROGNOSTICATION';
 
 /** A post-ROSC checklist item marked done (or un-marked) after ROSC. */
 export interface PostRoscCheckPayload extends EpisodeScopedPayload {
@@ -319,6 +320,12 @@ export interface AclsState {
   epiAnchorAt?: number | null;
   /** When the 2nd shock of the current arrest episode was given (first epinephrine in VF/pVT falls due then). */
   episodeSecondShockAt?: number | null;
+  /**
+   * When a rhythm check first showed asystole/PEA before any epinephrine was
+   * given. 2025 AHA: in a nonshockable rhythm the first dose is given as soon
+   * as possible, so it falls due at that moment.
+   */
+  nonShockableEpiDueAt?: number | null;
   rhythmCheckCount?: number;
   amioCount?: number;
   lidoCount?: number;

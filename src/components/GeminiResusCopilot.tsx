@@ -52,7 +52,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatMessage, GroundingChunk, CopilotRole } from '../types';
-import { queryAclsRag, ACLS_RAG_KNOWLEDGE_BASE } from '../lib/aclsRagKnowledge';
+import { queryAclsRag, ACLS_RAG_KNOWLEDGE_BASE, offlineNotesText } from '../lib/aclsRagKnowledge';
 
 interface GeminiResusCopilotProps {
   isOpen: boolean;
@@ -261,18 +261,16 @@ export default function GeminiResusCopilot({
       // Seamlessly retrieve from local verified RAG protocol engine
       const relevantRagDocs = queryAclsRag(textToSend, 3);
       const primaryRag = relevantRagDocs[0] || ACLS_RAG_KNOWLEDGE_BASE[0];
-      const fallbackContent = `**Offline ACLS reference notes** (AI assistant not connected)\n\n${primaryRag.protocolContent}\n\n*These are built-in notes, not a live AI answer. Check against the current AHA guidelines.*`;
+      const fallbackContent = offlineNotesText([primaryRag], `**Offline ACLS reference notes** (AI assistant not connected)\n\n${primaryRag.protocolContent}`);
 
       const assistantMsg: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
         content: fallbackContent,
         timestamp: Date.now(),
-        groundingChunks: relevantRagDocs.map(d => ({
-          uri: 'https://cpr.heart.org/en/resuscitation-science/cpr-and-ecc-guidelines',
-          title: d.title,
-        })),
-        webSearchQueries: [textToSend],
+        // No web search happened: the app's own notes are not search-grounded sources.
+        groundingChunks: [],
+        webSearchQueries: [],
         modelUsed: 'acls-rag-protocol',
       };
       setMessages((prev) => [...prev, assistantMsg]);
@@ -310,12 +308,9 @@ export default function GeminiResusCopilot({
       const relevantDocs = queryAclsRag(query, 4);
       const ragMatrix = relevantDocs.map(d => `### [${d.title}] (${d.category})\n**Summary**: ${d.summary}\n\n${d.protocolContent}`).join('\n\n---\n\n');
       setSearchResults({
-        text: `### Offline ACLS reference notes (AI assistant not connected)\n\n${ragMatrix}`,
-        groundingChunks: relevantDocs.map(d => ({
-          uri: 'https://cpr.heart.org/en/resuscitation-science/cpr-and-ecc-guidelines',
-          title: d.title
-        })),
-        webSearchQueries: [query]
+        text: offlineNotesText(relevantDocs, `### Offline ACLS reference notes (AI assistant not connected)\n\n${ragMatrix}`),
+        groundingChunks: [],
+        webSearchQueries: []
       });
     } finally {
       setIsSearchingEvidence(false);

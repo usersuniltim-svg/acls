@@ -63,3 +63,26 @@ test('checklist covers the 2025 AHA post-arrest algorithm boxes', () => {
     assert.ok(ids.includes(id), id);
   }
 });
+
+test('glucose above 180 mg/dL is flagged (2025 AHA: avoid hyperglycemia > 180)', () => {
+  assert.deepEqual(assessPostRoscVitals({ glucoseMgDl: 180 }), [], '180 is inside the target');
+  const flags = assessPostRoscVitals({ glucoseMgDl: 240 });
+  assert.equal(flags.length, 1);
+  assert.match(flags[0], /Glucose 240 mg\/dL is above 180 mg\/dL/);
+  assert.match(POST_ROSC_ITEMS.find(i => i.id === 'GLUCOSE')!.detail, /< 70 mg\/dL.*> 180 mg\/dL/);
+});
+
+test('post-ROSC items carry the 2025 AHA wording for angiography and prognostication', () => {
+  const item = (id: PostRoscItemId) => POST_ROSC_ITEMS.find(i => i.id === id)!;
+  assert.match(item('ECG_12_LEAD').detail, /Persistent ST elevation: emergent coronary angiography, even if comatose/);
+  const prognosis = item('PROGNOSTICATION');
+  assert.equal(prognosis.phase, 'Not following commands');
+  assert.match(prognosis.label, /72 h/);
+  assert.match(prognosis.detail, /Multimodal/);
+  assert.match(prognosis.detail, /72 h after normothermia/);
+  assert.match(item('TEMPERATURE_CONTROL').label, /32-37.5/);
+  assert.match(item('TEMPERATURE_CONTROL').detail, /at least 36 hours/);
+  assert.match(item('OXYGENATION').label, /90-98%/);
+  assert.match(item('MAP').label, /65/);
+  assert.ok(!POST_ROSC_ITEMS.some(i => /systolic|SBP/i.test(`${i.label} ${i.detail}`)), 'no systolic target in 2025');
+});

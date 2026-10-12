@@ -1,3 +1,18 @@
+/**
+ * Built-in reference notes for the AI copilot. They are shown word for word
+ * when the AI is offline, and sent to the AI as reference notes otherwise, so
+ * they must agree with the 2025 AHA Guidelines and with copilotRoles.ts.
+ *
+ * Each note says honestly what it is: app notes written from the AHA sources
+ * listed in `references` (cpr.heart.org), not AHA text. Anything that is not
+ * from AHA (common doses, European practice, toxicology) is labelled as such.
+ * tests/aclsKnowledge.test.ts checks the notes for outdated 2020 values.
+ */
+export interface RagReference {
+  title: string;
+  url: string;
+}
+
 export interface RagKnowledgeChunk {
   id: string;
   category: 'cardiac_arrest' | 'shockable' | 'non_shockable' | 'drugs' | 'hs_and_ts' | 'post_rosc' | 'pals' | 'tachycardia' | 'bradycardia' | 'toxicology';
@@ -5,235 +20,262 @@ export interface RagKnowledgeChunk {
   keywords: string[];
   summary: string;
   protocolContent: string;
+  /** What the note is and what it is based on. Never presented as AHA text. */
   source: string;
+  /** The AHA pages the note was written from (empty when it is not AHA based). */
+  references: RagReference[];
   updatedAt: string;
 }
+
+const AHA = 'https://cpr.heart.org/en/resuscitation-science/cpr-and-ecc-guidelines';
+const ALGO = 'https://cpr.heart.org/-/media/CPR-Files/CPR-Guidelines-Files/2025-Accessible';
+
+export const AHA_REFERENCES = {
+  adultAls: { title: '2025 AHA Guidelines Part 9: Adult Advanced Life Support', url: `${AHA}/adult-advanced-life-support` },
+  adultBls: { title: '2025 AHA Guidelines Part 7: Adult Basic Life Support', url: `${AHA}/adult-basic-life-support` },
+  specialCircumstances: { title: '2025 AHA Guidelines Part 10: Special Circumstances of Resuscitation', url: `${AHA}/adult-and-pediatric-special-circumstances-of-resuscitation` },
+  postArrest: { title: '2025 AHA Guidelines Part 11: Post-Cardiac Arrest Care', url: `${AHA}/post-cardiac-arrest-care` },
+  pals: { title: '2025 AHA Guidelines Part 8: Pediatric Advanced Life Support', url: `${AHA}/pediatric-advanced-life-support` },
+  arrestAlgorithm: { title: '2025 AHA Adult Cardiac Arrest Algorithm', url: `${ALGO}/Algorithm-ACLS-CA-LngDscrp-250725-Ed.pdf` },
+  postArrestAlgorithm: { title: '2025 AHA Adult Post-Cardiac Arrest Care Algorithm', url: `${ALGO}/Algorithm-ACLS-PCAC-LngDscrp-250726-Ed.pdf` },
+  bradycardiaAlgorithm: { title: '2025 AHA Adult Bradycardia With a Pulse Algorithm', url: `${ALGO}/Algorithm-ACLS-Bradycardia-LngDscrp-250725-Ed.pdf` },
+  tachycardiaAlgorithm: { title: '2025 AHA Adult Tachyarrhythmia With a Pulse Algorithm', url: `${ALGO}/Algorithm-ACLS-Tachyarrhythmia-LngDscrp-250726-Ed.pdf` },
+  cardioversionAlgorithm: { title: '2025 AHA Adult Electrical Cardioversion Algorithm', url: `${ALGO}/Algorithm-ACLS-Electrical-Cardioversion-LngDscrp-250725-Ed.pdf` },
+  palsAlgorithm: { title: '2025 AHA Pediatric Cardiac Arrest Algorithm', url: `${ALGO}/Algorithm-PALS-CA-LngDscrp-250729-Ed.pdf` },
+} satisfies Record<string, RagReference>;
+
+const R = AHA_REFERENCES;
+const CHECKED = '2025 AHA Guidelines (checked October 2026)';
 
 export const ACLS_RAG_KNOWLEDGE_BASE: RagKnowledgeChunk[] = [
   {
     id: 'rag-vf-pvt-shockable',
     category: 'shockable',
-    title: 'ACLS 2025 VF / Pulseless VT (Shockable Rhythm) Protocol',
+    title: 'Adult VF / Pulseless VT (Shockable Rhythm)',
     keywords: ['vf', 'vfib', 'ventricular fibrillation', 'vt', 'pvt', 'pulseless vt', 'shock', 'defib', 'defibrillation', 'amiodarone', 'lidocaine', 'epinephrine'],
-    summary: 'Immediate defibrillation (200J Biphasic), 2 minutes high-quality CPR, Epinephrine after 2nd shock, Amiodarone or Lidocaine after 3rd shock.',
-    protocolContent: `**ACLS 2025 Shockable Algorithm (VF / Pulseless VT):**
-1. **Initial Action**: Confirm cardiac arrest (unresponsive, absent breathing/carotid pulse <10 sec). Start CPR immediately. Attach Monitor/Defibrillator.
-2. **Rhythm Check**: VF / Pulseless VT -> **SHOCK #1** (200J Biphasic or manufacturer maximum).
-3. **Immediate CPR**: Resume CPR for 2 minutes immediately without pausing for rhythm check. Establish IV/IO access.
-4. **Rhythm Check (Cycle 2)**: If shockable -> **SHOCK #2**. Resume CPR 2 min.
-   - **Epinephrine 1 mg IV/IO** (1:10,000 solution) given during CPR cycle 2, repeated every 3 to 5 minutes.
-   - Consider advanced airway (endotracheal tube or supraglottic airway) with continuous waveform capnography (ETCO2 target >10-20 mmHg during CPR).
-5. **Rhythm Check (Cycle 3)**: If shockable -> **SHOCK #3**. Resume CPR 2 min.
-   - **Antiarrhythmic Agent**:
-     - **Amiodarone**: First dose 300 mg IV/IO bolus; second dose 150 mg IV/IO after subsequent shock.
-     - OR **Lidocaine**: First dose 1.0 - 1.5 mg/kg IV/IO; second dose 0.5 - 0.75 mg/kg IV/IO.
-6. **Treat Reversible Causes**: Concurrently assess and treat the 5 H's and 5 T's (especially Hypoxia, Hypokalemia/Hyperkalemia, Hypovolemia, Toxins, and Ischemia).`,
-    source: 'AHA/ILCOR 2025 Guidelines for CPR and Emergency Cardiovascular Care',
-    updatedAt: '2025/2026'
+    summary: 'Shock (biphasic at the device dose, e.g. 120 to 200 J, maximum if unknown; monophasic 360 J), CPR 2 min straight after each shock, epinephrine after the 2nd shock, amiodarone or lidocaine after the 3rd shock.',
+    protocolContent: `**2025 AHA Adult Cardiac Arrest Algorithm: VF / pulseless VT**
+1. **Start CPR**, give oxygen with bag-mask ventilation, attach the monitor/defibrillator. Pulse check no more than 10 s.
+2. VF/pVT: **Shock**. Biphasic: the device (manufacturer) recommendation, for example 120 to 200 J; if unknown, use the maximum available. Monophasic: 360 J. Later shocks: the same energy; higher energy may be considered.
+3. **CPR 2 min** straight after the shock, without a pulse or rhythm check first. Get IV/IO access.
+4. Rhythm check. Still shockable: **shock**, then CPR 2 min with **epinephrine 1 mg IV/IO**, repeated every 3 to 5 min. Consider an advanced airway and waveform capnography.
+5. Rhythm check. Still shockable: **shock**, then CPR 2 min with an antiarrhythmic and treatment of reversible causes:
+   - **Amiodarone** 300 mg IV/IO; second dose 150 mg. **Or lidocaine** 1 to 1.5 mg/kg; second dose 0.5 to 0.75 mg/kg.
+6. Keep going in 2-minute cycles. Shockable: shock again. Not shockable: follow the asystole/PEA loop. Signs of ROSC: post-cardiac arrest care.
+- Of uncertain benefit (2025): double sequential defibrillation, changing the pad vector, and beta blockers, bretylium, procainamide or sotalol for shock-refractory VF/pVT.
+- ETCO2 below 10 mm Hg or falling: reassess CPR quality (AHA supportive text: at least 10, ideally 20 mm Hg or more).`,
+    source: 'App reference notes based on the 2025 AHA Adult Cardiac Arrest Algorithm and Part 9 (Adult ALS)',
+    references: [R.arrestAlgorithm, R.adultAls],
+    updatedAt: CHECKED,
   },
   {
     id: 'rag-pea-asystole-non-shockable',
     category: 'non_shockable',
-    title: 'ACLS 2025 PEA / Asystole (Non-Shockable Rhythm) Protocol',
-    keywords: ['pea', 'asystole', 'pulseless electrical activity', 'non shockable', 'epinephrine', 'flatline', 'hs and ts'],
-    summary: 'High-quality CPR, immediate Epinephrine 1mg IV/IO ASAP, repeated q3-5m, aggressive search for reversible causes (Hs and Ts).',
-    protocolContent: `**ACLS 2025 Non-Shockable Algorithm (PEA / Asystole):**
-1. **Initial Action**: Identify non-shockable rhythm (organized rhythm with absent pulses = PEA; flatline verified in 2 leads = Asystole).
-2. **Immediate Drug**: Administer **Epinephrine 1 mg IV/IO as early as possible**.
-3. **High-Quality CPR**: Continuous CPR in 2-minute cycles (100-120 bpm, 5-6 cm depth, complete recoil, minimal interruptions).
-4. **Medication Timing**: Repeat **Epinephrine 1 mg IV/IO every 3 to 5 minutes**.
-5. **Priority Diagnostic Investigation**: Search and aggressively reverse the primary precipitant (5 H's and 5 T's).
-   - Hypovolemia -> Rapid warm crystalloid bolus (1-2 L).
-   - Hypoxia -> 100% FiO2, bag-valve-mask, secure airway.
-   - Hydrogen ion (Acidosis) -> Ensure ventilation; consider Sodium Bicarbonate 1 mEq/kg for preexisting severe metabolic acidosis.
-   - Hyperkalemia -> Calcium gluconate 10% 10-20 mL or Calcium chloride 10% 5-10 mL IV over 2-5 min, followed by regular insulin 10 units + 50 mL D50W, and Sodium Bicarbonate.
-   - Tension Pneumothorax -> Immediate needle decompression (2nd intercostal space midclavicular line or 4th/5th intercostal anterior axillary line) followed by tube thoracostomy.
-   - Cardiac Tamponade -> Emergency bedside ultrasound (POCUS) + pericardiocentesis.
-   - Toxins / Overdose -> Specific antidote (Naloxone, Lipid emulsion, Calcium, Glucagon).
-   - Thrombosis (PE/Coronary) -> Thrombolytic therapy / emergent PCI consideration.`,
-    source: 'AHA 2025 Resuscitation Standards & ERC Guidelines',
-    updatedAt: '2025/2026'
+    title: 'Adult PEA / Asystole (Nonshockable Rhythm)',
+    keywords: ['pea', 'asystole', 'pulseless electrical activity', 'non shockable', 'nonshockable', 'epinephrine', 'flatline', 'hs and ts'],
+    summary: 'High-quality CPR, epinephrine 1 mg IV/IO as soon as possible and every 3 to 5 min, and a search for reversible causes (H\'s and T\'s).',
+    protocolContent: `**2025 AHA Adult Cardiac Arrest Algorithm: asystole / PEA**
+1. Asystole/PEA: **epinephrine 1 mg IV/IO as soon as possible**, then every 3 to 5 min. Restart compressions straight after the rhythm check; give the drug during CPR.
+2. CPR in 2-minute cycles. IV/IO access. Consider an advanced airway (endotracheal tube or supraglottic airway) with waveform capnography.
+3. High-quality CPR: 100 to 120 per minute, at least 5 cm (2 in) but not more than 6 cm deep, full recoil, minimal interruptions, no excessive ventilation. 30:2 without an advanced airway; 1 breath every 6 s with one.
+4. Rhythm check every 2 min. Shockable: shock (VF/pVT loop). Organized rhythm: check for a pulse, no more than 10 s.
+5. Look for and treat reversible causes (H's and T's), for example:
+   - Hypovolemia: fluid; blood products and bleeding control for hemorrhage.
+   - Hypoxia: oxygen, effective ventilation, airway.
+   - Hydrogen ion (acidosis): effective ventilation without overventilating. Routine sodium bicarbonate is not recommended (2025 AHA).
+   - Hyperkalemia: AHA 2025 says evidence for IV calcium or sodium bicarbonate in hyperkalemic arrest is limited; follow local protocol.
+   - Tension pneumothorax: needle decompression, then a chest tube.
+   - Tamponade: bedside ultrasound and pericardiocentesis.
+   - Toxins: specific antidotes; an opioid antagonist may be reasonable if CPR is not interrupted.
+   - Thrombosis (pulmonary or coronary): thrombolysis per local protocol for PE; emergent coronary angiography after ROSC for persistent ST elevation.`,
+    source: 'App reference notes based on the 2025 AHA Adult Cardiac Arrest Algorithm, Part 9 (Adult ALS) and Part 10 (Special Circumstances)',
+    references: [R.arrestAlgorithm, R.adultAls, R.specialCircumstances],
+    updatedAt: CHECKED,
   },
   {
     id: 'rag-hs-and-ts-matrix',
     category: 'hs_and_ts',
-    title: 'Comprehensive Hs & Ts Reversible Causes Clinical Matrix',
-    keywords: ['hs and ts', 'reversible causes', 'hypovolemia', 'hypoxia', 'hydrogen ion', 'acidosis', 'hypokalemia', 'hyperkalemia', 'hypothermia', 'hypoglycemia', 'tension pneumothorax', 'tamponade', 'toxins', 'thrombosis', 'pulmonary embolism', 'myocardial infarction'],
-    summary: 'Differential diagnostic clues, bedside ultrasonography findings, and immediate treatment modalities for all 5 Hs and 5 Ts.',
-    protocolContent: `**The 5 H's and 5 T's Emergency Clinical Differential Matrix:**
+    title: 'Reversible Causes (H\'s and T\'s)',
+    keywords: ['hs and ts', 'reversible causes', 'hypovolemia', 'hypoxia', 'hydrogen ion', 'acidosis', 'hypokalemia', 'hyperkalemia', 'hypothermia', 'tension pneumothorax', 'tamponade', 'toxins', 'thrombosis', 'pulmonary embolism', 'myocardial infarction'],
+    summary: 'Clues, bedside ultrasound findings and first treatments for the 5 H\'s and 5 T\'s, with the 2025 AHA cautions on calcium, bicarbonate and ventilation.',
+    protocolContent: `**The 5 H's and 5 T's (2025 AHA list)**
 
-| Reversible Cause | Diagnostic Clues / POCUS | Immediate Emergency Management |
+| Reversible cause | Clues / POCUS | First management |
 | :--- | :--- | :--- |
-| **Hypovolemia** | Flat neck veins, history of bleeding, trauma, GI bleed, sepsis, collapsed IVC on ultrasound | Rapid 1-2L IV/IO crystalloid bolus, massive transfusion protocol (PRBC, FFP, Platelets 1:1:1), surgical hemostasis |
-| **Hypoxia** | Cyanosis, low SpO2 prior to arrest, airway obstruction, ETCO2 < 10 | 100% O2, bag-valve-mask, reposition airway, suction, endotracheal intubation |
-| **Hydrogen Ion (Acidosis)** | Known renal failure, DKA, prolonged arrest, arterial blood gas pH < 7.1 | Hyperventilation (ensure adequate minute ventilation), Sodium Bicarbonate 1 mEq/kg IV |
-| **Hyperkalemia** | Peaked T waves, wide QRS, ESRD/Dialysis patient, crush injury | 10% Calcium Gluconate 10-20 mL IV (membrane stabilization) + Regular Insulin 10 IU + 50 mL D50W + Sodium Bicarb 50 mEq |
-| **Hypokalemia** | Flattened T waves, U waves, diuretic use, prolonged vomiting/diarrhea | Magnesium Sulfate 1-2g IV, Potassium Chloride (cautious infusion, never rapid push) |
-| **Hypothermia** | Core body temp < 30°C (< 86°F), cold exposure | Active internal and external rewarming (warm IV fluids, heated humidified O2, warm pleural lavage), limit defib/epi until temp > 30°C |
-| **Tension Pneumothorax** | Asymmetric chest rise, absent breath sounds, tracheal deviation, subcutaneous emphysema | Immediate needle thoracostomy (2nd ICS midclavicular or 5th ICS anterior axillary line) -> Chest tube |
-| **Cardiac Tamponade** | Muffled heart sounds, distended neck veins, POCUS showing pericardial effusion + RV diastolic collapse | Emergent ultrasound-guided subxiphoid pericardiocentesis |
-| **Toxins / Overdose** | Constricted/dilated pupils, toxidrome, empty drug bottles | Naloxone (opioids), Calcium/High-dose insulin (CCB), Glucagon (Beta-blockers), 20% Lipid Emulsion (LAST/Local anesthetics) |
-| **Thrombosis (Pulmonary)** | DVT history, sudden dyspnea, dilated right ventricle on POCUS | Tenecteplase / Alteplase 50mg IV bolus, continue CPR for minimum 15-30 minutes post-thrombolysis |
-| **Thrombosis (Coronary)** | History of chest pain, ischemic ECG changes, STEMI presentation | Immediate post-ROSC catheterization lab activation (emergent PCI) |`,
-    source: 'ACLS 2025 Core Guidelines & Emergency Medicine Review',
-    updatedAt: '2025/2026'
+| **Hypovolemia** | Bleeding, trauma, GI bleed, sepsis; collapsed IVC | Fluid bolus; blood products (massive transfusion protocol) and bleeding control for hemorrhage |
+| **Hypoxia** | Low SpO2 before arrest, airway obstruction | Oxygen, bag-mask ventilation, clear the airway, advanced airway |
+| **Hydrogen ion (acidosis)** | Renal failure, DKA, prolonged arrest, pH < 7.1 | Effective ventilation without overventilating. Routine sodium bicarbonate is not recommended (2025 AHA); some protocols use it for known severe metabolic acidosis |
+| **Hyperkalemia** | Peaked T waves, wide QRS, dialysis patient, crush injury | AHA 2025: evidence for IV calcium or sodium bicarbonate in hyperkalemic arrest is limited. Many protocols give calcium (10% calcium chloride 5 to 10 mL or 10% calcium gluconate 15 to 30 mL), insulin with dextrose, and dialysis; follow local protocol |
+| **Hypokalemia** | Flat T waves, U waves, diuretics, vomiting/diarrhea | Potassium replacement (never as a rapid push); magnesium |
+| **Hypothermia** | Core temperature below 35 °C (severe below 30 °C), cold exposure | Rewarm alongside resuscitation (2025 AHA). European (ERC) guidance limits shocks to 3 and withholds epinephrine below 30 °C; follow local protocol. Consider ECLS rewarming |
+| **Tension pneumothorax** | Unequal chest rise, absent breath sounds, tracheal deviation | Needle decompression (2nd intercostal space midclavicular line or 4th/5th space anterior axillary line), then a chest tube |
+| **Tamponade, cardiac** | Distended neck veins; pericardial effusion with RV collapse on POCUS | Ultrasound-guided pericardiocentesis |
+| **Toxins** | Toxidrome, pupils, empty bottles | Specific antidotes (see toxicology notes); consider ECLS for refractory poisoning |
+| **Thrombosis, pulmonary** | DVT history, sudden dyspnea, dilated RV on POCUS | Thrombolysis per local protocol; ECLS may support selected patients |
+| **Thrombosis, coronary** | Chest pain, ischemic ECG | After ROSC: emergent coronary angiography for persistent ST elevation |`,
+    source: 'App reference notes based on the 2025 AHA Cardiac Arrest Algorithm, Part 9 and Part 10; treatments marked "local protocol" or "ERC" are not AHA recommendations',
+    references: [R.arrestAlgorithm, R.adultAls, R.specialCircumstances],
+    updatedAt: CHECKED,
   },
   {
     id: 'rag-resuscitation-medications-table',
     category: 'drugs',
-    title: 'ACLS Emergency Resuscitation Medication Dosages & Indications',
-    keywords: ['epinephrine', 'amiodarone', 'lidocaine', 'atropine', 'adenosine', 'magnesium', 'calcium', 'sodium bicarbonate', 'dopamine', 'norepinephrine', 'drug doses'],
-    summary: 'Exact drug concentrations, routes (IV/IO), initial and maintenance dosages, and clinical pearls for resuscitation pharmacotherapy.',
-    protocolContent: `**ACLS 2025 Emergency Pharmacotherapy Reference:**
+    title: 'Adult ACLS Drug Doses',
+    keywords: ['epinephrine', 'amiodarone', 'lidocaine', 'procainamide', 'atropine', 'adenosine', 'magnesium', 'calcium', 'sodium bicarbonate', 'dopamine', 'vasopressin', 'drug doses'],
+    summary: 'Doses from the 2025 AHA adult algorithms, and which drugs AHA does not recommend routinely in cardiac arrest.',
+    protocolContent: `**Adult drug doses (2025 AHA algorithms)**
 
-- **Epinephrine**:
-  - *Cardiac Arrest (Adult)*: 1 mg IV/IO (10 mL of 1:10,000 / 0.1 mg/mL) every 3-5 minutes, followed by 20 mL saline flush.
-  - *Post-ROSC / Bradycardia Infusion*: 2 - 10 mcg/min IV infusion, titrated to MAP ≥ 65 mmHg.
-- **Amiodarone**:
-  - *Shock-Refractory VF/pVT*: First dose 300 mg IV/IO rapid push diluted in 20 mL D5W. Second dose 150 mg IV/IO after subsequent shock.
-  - *Stable Wide-Complex Tachycardia*: 150 mg in 100 mL D5W infused over 10 minutes; maintenance infusion 1 mg/min for 6 hours, then 0.5 mg/min.
-- **Lidocaine**:
-  - *Shockable Arrest*: First dose 1.0 - 1.5 mg/kg IV/IO. Second dose 0.5 - 0.75 mg/kg. Max cumulative dose 3 mg/kg.
-- **Atropine**:
-  - *Symptomatic Bradycardia*: 1 mg IV bolus every 3-5 minutes. Maximum cumulative dose 3 mg. (Do not use in cardiac arrest).
-- **Adenosine**:
-  - *Stable SVT / Regular Narrow Tachycardia*: First dose 6 mg rapid IV push over 1-2 sec via antecubital vein with immediate 20 mL saline flush. Second dose 12 mg if no conversion in 1-2 minutes.
-- **Magnesium Sulfate**:
-  - *Torsades de Pointes (Polymorphic VT with prolonged QT)*: 1 - 2 g IV/IO diluted in 10 mL D5W given over 1-2 minutes in arrest (or over 15 min if pulse present).
-- **Calcium Gluconate 10% / Calcium Chloride 10%**:
-  - *Hyperkalemia / Hypocalcemia / CCB Overdose*: Calcium gluconate 10% 15-30 mL (or Calcium chloride 10% 5-10 mL) IV/IO over 2-5 minutes.
-- **Sodium Bicarbonate 8.4%**:
-  - *Severe Acidosis / TCA Overdose / Hyperkalemia*: 1 mEq/kg (approx 50-100 mEq) IV push.`,
-    source: 'American Heart Association / ERC Resuscitation Drug Compendium',
-    updatedAt: '2025/2026'
+- **Epinephrine**
+  - *Cardiac arrest*: 1 mg IV/IO (10 mL of 0.1 mg/mL) every 3 to 5 min. Asystole/PEA: as soon as possible. VF/pVT: after the 2nd shock.
+  - *Bradycardia infusion*: 2 to 10 mcg/min, titrated to response.
+- **Amiodarone**
+  - *Shock-refractory VF/pVT*: 300 mg IV/IO; second dose 150 mg.
+  - *Stable wide-complex tachycardia*: 150 mg over 10 min, repeat as needed if VT recurs; then 1 mg/min for the first 6 hours.
+- **Lidocaine** (*shock-refractory VF/pVT*): 1 to 1.5 mg/kg IV/IO; second dose 0.5 to 0.75 mg/kg. The algorithm gives these two doses.
+- **Procainamide** (*stable wide-complex tachycardia*): 20 to 50 mg/min until the arrhythmia stops, hypotension, QRS widening above 50%, or 17 mg/kg in total. Maintenance 1 to 4 mg/min. Avoid with prolonged QT or heart failure.
+- **Atropine** (*bradycardia*): 1 mg IV every 3 to 5 min, maximum 3 mg. Not part of the cardiac arrest algorithm.
+- **Adenosine** (*regular narrow-complex, or regular monomorphic wide-complex tachycardia*): 6 mg rapid IV push with a saline flush; second dose 12 mg.
+- **Dopamine** (*bradycardia*): 5 to 20 mcg/kg/min.
+- **Magnesium**: may be considered for recurrent polymorphic VT (torsades de pointes); not recommended for polymorphic VT with a normal QT. 1 to 2 g IV is the common dose.
+
+**Not recommended routinely in adult cardiac arrest (2025 AHA)**: calcium, sodium bicarbonate and magnesium. Vasopressin, alone or with epinephrine, offers no advantage over epinephrine. Calcium and bicarbonate are still used for specific problems (hyperkalemia, calcium channel blocker or sodium channel blocker poisoning) under local protocol; doses: 10% calcium chloride 5 to 10 mL or 10% calcium gluconate 15 to 30 mL; sodium bicarbonate 1 mEq/kg.`,
+    source: 'App reference notes based on the 2025 AHA adult algorithms and Part 9 (Adult ALS); "common dose" items are not from AHA',
+    references: [R.arrestAlgorithm, R.tachycardiaAlgorithm, R.bradycardiaAlgorithm, R.adultAls],
+    updatedAt: CHECKED,
   },
   {
     id: 'rag-pals-pediatric-resus',
     category: 'pals',
-    title: 'PALS 2025 Pediatric Advanced Life Support Guidelines',
+    title: 'Pediatric Cardiac Arrest (PALS)',
     keywords: ['pals', 'pediatric', 'child', 'infant', 'weight', 'broselow', 'pediatric defib', 'pediatric epi', 'pediatric arrest'],
-    summary: 'Weight-based resuscitation formulas, pediatric shock voltages (2-4 J/kg), Epinephrine (0.01 mg/kg), and CPR ratios.',
-    protocolContent: `**PALS 2025 Pediatric Cardiac Arrest Reference:**
+    summary: 'Weight-based pediatric cardiac arrest doses: shocks 2 J/kg then 4 J/kg (up to 10 J/kg or the adult dose), epinephrine 0.01 mg/kg, amiodarone 5 mg/kg (max 300 mg, later doses max 150 mg).',
+    protocolContent: `**2025 AHA Pediatric Cardiac Arrest Algorithm**
 
-- **Compression-to-Ventilation Ratio**:
-  - *Single Rescuer*: 30:2 compressions to breaths.
-  - *2 Rescuers (Healthcare providers)*: 15:2 compressions to breaths.
-  - *With Advanced Airway*: Continuous compressions (100-120 bpm) with 1 breath every 2-3 seconds (20-30 breaths/min).
-- **Defibrillation Energy (Pediatric)**:
-  - *Initial Shock*: **2 J/kg**
-  - *Second Shock*: **4 J/kg**
-  - *Subsequent Shocks*: ≥ 4 J/kg (up to 10 J/kg or adult maximum of 200J).
-- **Pediatric Medications**:
-  - **Epinephrine**: **0.01 mg/kg** (0.1 mL/kg of 1:10,000 solution) IV/IO every 3-5 minutes. Maximum single dose 1 mg.
-  - **Amiodarone**: **5 mg/kg** IV/IO bolus (may repeat up to 2 times for refractory VF/pVT, max single dose 300 mg).
-  - **Lidocaine**: Loading dose 1 mg/kg IV/IO.
-  - **Fluid Resuscitation**: Normal Saline / Ringer's Lactate **20 mL/kg** IV/IO bolus over 5-10 minutes for hypovolemia/septic shock.`,
-    source: 'PALS 2025 Guidelines / ILCOR Pediatric Task Force',
-    updatedAt: '2025/2026'
+- **CPR**: 100 to 120 per minute, at least one third of the chest depth. 1 rescuer: 30:2. 2 rescuers: 15:2 before puberty, 30:2 after puberty starts. With an advanced airway: 1 breath every 2 to 3 s, compressions continuous.
+- **Shocks**: first 2 J/kg; second 4 J/kg; later shocks at least 4 J/kg, up to 10 J/kg or the adult dose.
+- **Epinephrine**: 0.01 mg/kg IV/IO (0.1 mL/kg of 0.1 mg/mL), maximum 1 mg, every 3 to 5 min. Nonshockable rhythm: as soon as possible.
+- **Amiodarone**: 5 mg/kg IV/IO bolus (maximum 300 mg); may repeat up to 3 doses for refractory VF/pVT, maximum 150 mg for later doses. **Or lidocaine** 1 mg/kg IV/IO.
+- **Arterial line in place**: aim for diastolic pressure of at least 25 mm Hg in infants and 30 mm Hg in children.
+- **Reversible causes**: the H's and T's, plus hypoglycemia.
+- **Not recommended routinely**: sodium bicarbonate and calcium.
+- **Fluid for shock** (not arrest): 10 to 20 mL/kg boluses, reassessing after each.`,
+    source: 'App reference notes based on the 2025 AHA Pediatric Cardiac Arrest Algorithm and Part 8 (PALS)',
+    references: [R.palsAlgorithm, R.pals],
+    updatedAt: CHECKED,
   },
   {
     id: 'rag-post-rosc-care',
     category: 'post_rosc',
-    title: 'Post-Cardiac Arrest Care & Targeted Temperature Management (ROSC)',
-    keywords: ['rosc', 'post arrest', 'return of spontaneous circulation', 'ttm', 'targeted temperature management', 'hypothermia', 'map', 'ecg', 'cath lab'],
-    summary: 'Systematic post-resuscitation bundle: Airway/oxygenation targets, hemodynamic stabilization (MAP > 65), 12-lead ECG, and TTM (32-36°C).',
-    protocolContent: `**Post-Cardiac Arrest / ROSC Care Protocol:**
+    title: 'Adult Post-Cardiac Arrest Care (ROSC)',
+    keywords: ['rosc', 'post arrest', 'return of spontaneous circulation', 'ttm', 'temperature control', 'targeted temperature management', 'hypothermia', 'map', 'ecg', 'cath lab', 'prognosis'],
+    summary: 'SpO2 90 to 98%, PaCO2 35 to 45 mm Hg, MAP at least 65 mm Hg, early 12-lead ECG, temperature control 32 to 37.5 °C for at least 36 h if not following commands, glucose 70 to 180 mg/dL, prognosis no earlier than 72 h.',
+    protocolContent: `**2025 AHA Adult Post-Cardiac Arrest Care**
 
-1. **Airway & Respiratory Optimization**:
-   - Maintain SpO2 between 92% - 98% (avoid hyperoxia and hypoxia).
-   - Maintain PaCO2 between 35 - 45 mmHg (avoid hyperventilation).
-2. **Hemodynamic Targets**:
-   - Maintain Mean Arterial Pressure (**MAP**) ≥ **65 mmHg** (Systolic BP > 90 mmHg).
-   - Use IV crystalloids and vasopressor infusions:
-     - **Norepinephrine**: 0.1 - 0.5 mcg/kg/min.
-     - **Epinephrine**: 0.1 - 0.5 mcg/kg/min.
-     - **Dopamine**: 5 - 20 mcg/kg/min.
-3. **Emergent Cardiac Evaluation**:
-   - Immediate 12-lead ECG: Check for ST-elevation (STEMI) or high-risk features.
-   - Emergent coronary angiography / PCI for suspected cardiac etiology.
-4. **Neurological Protection & Targeted Temperature Management (TTM)**:
-   - For all comatose patients (not following commands): Maintain constant target temperature between **32°C and 36°C** (or prevent fever < 37.5°C) for at least 24 hours.
-   - Sedation, neuromuscular blockade if shivering occurs, continuous EEG monitoring to detect non-convulsive status epilepticus.
-   - Avoid prognostication earlier than 72 hours post-arrest.`,
-    source: 'AHA/Neurocritical Care Society 2025 ROSC Recommendations',
-    updatedAt: '2025/2026'
+1. **Airway and breathing**
+   - Place or exchange an advanced airway as needed and confirm placement.
+   - 100% oxygen until SpO2 or PaO2 can be measured reliably, then **SpO2 90 to 98%** (PaO2 60 to 105 mm Hg).
+   - **PaCO2 35 to 45 mm Hg** (unless severe acidemia).
+2. **Circulation**
+   - **MAP at least 65 mm Hg**. The 2025 guidelines removed the old systolic pressure target.
+   - Fluids and vasopressors as needed. AHA finds no evidence to prefer a specific vasopressor.
+3. **Find and treat the cause**
+   - **12-lead ECG** as soon as feasible.
+   - Persistent ST elevation: **emergent coronary angiography**, even if the patient is comatose.
+   - Cardiogenic shock, recurrent ventricular arrhythmias or ongoing ischemia: emergency angiography is reasonable; consider mechanical circulatory support.
+   - Comatose without ST elevation: emergency angiography is not recommended over a delayed or selective approach.
+   - Consider CT (head, chest, abdomen, pelvis) and echo/POCUS.
+4. **Not following commands**
+   - Deliberate temperature control at **32 to 37.5 °C for at least 36 hours**. Avoid rewarming faster than 0.5 °C per hour. No routine rapid cold IV fluids before hospital.
+   - Prompt **EEG**. Treat clinical seizures; treating nonconvulsive seizures is reasonable. No routine seizure prophylaxis; do not treat myoclonus that has no EEG correlate.
+   - **Prognostication**: multimodal, never on a single finding, and no earlier than **72 hours after normothermia** and after sedation is stopped.
+5. **Glucose**: avoid hypoglycemia (**below 70 mg/dL**) and hyperglycemia (**above 180 mg/dL**).
+6. **Before discharge**: coronary angiography for survivors with a suspected cardiac cause, especially after an initial shockable rhythm, with unexplained left ventricular dysfunction, or with severe ischemia.`,
+    source: 'App reference notes based on the 2025 AHA Post-Cardiac Arrest Care Algorithm and Part 11',
+    references: [R.postArrestAlgorithm, R.postArrest],
+    updatedAt: CHECKED,
   },
   {
     id: 'rag-tachycardia-algorithm',
     category: 'tachycardia',
-    title: 'Tachycardia with Pulse Algorithm (Stable vs Unstable)',
-    keywords: ['tachycardia', 'svt', 'afib', 'atrial fibrillation', 'flutter', 'vt with pulse', 'cardioversion', 'adenosine', 'diltiazem'],
-    summary: 'Stepwise differentiation of stable vs unstable tachycardia (hypotension, altered mental status, ischemic chest pain, acute heart failure).',
-    protocolContent: `**Tachycardia with Pulse Algorithm (Heart Rate typically ≥ 150 bpm):**
+    title: 'Adult Tachyarrhythmia With a Pulse',
+    keywords: ['tachycardia', 'tachyarrhythmia', 'svt', 'afib', 'atrial fibrillation', 'flutter', 'vt with pulse', 'cardioversion', 'adenosine', 'diltiazem', 'procainamide'],
+    summary: 'Unstable: synchronized cardioversion (AF and flutter 200 J, narrow-complex and monomorphic VT 100 J, polymorphic VT defibrillation). Stable: vagal maneuvers and adenosine for regular narrow QRS; antiarrhythmic infusion for wide QRS.',
+    protocolContent: `**2025 AHA Adult Tachyarrhythmia With a Pulse (heart rate typically 150 or more)**
 
-- **Assess Unstable Signs**:
-  1. Hypotension (SBP < 90 mmHg)
-  2. Acutely altered mental status
-  3. Signs of shock (pale, diaphoretic, poor perfusion)
-  4. Ischemic chest discomfort
-  5. Acute heart failure / pulmonary edema
-- **If Unstable**:
-  - Immediate **Synchronized Cardioversion**:
-    - Narrow Regular (SVT/Flutter): 50 - 100 J
-    - Narrow Irregular (AFib): 120 - 200 J Biphasic
-    - Wide Regular (Monomorphic VT): 100 J
-    - Wide Irregular (Polymorphic VT): Defibrillation shock (200J unsynchronized)
-- **If Stable**:
-  - **Narrow QRS (< 0.12 sec)**:
-    - Regular: Vagal maneuvers -> **Adenosine 6 mg rapid IV push** (if no conversion, 12 mg).
-    - If converted: Probable SVT. If not: Beta-blocker (Metoprolol 5mg IV) or Calcium Channel Blocker (Diltiazem 0.25 mg/kg IV).
-  - **Wide QRS (≥ 0.12 sec)**:
-    - If regular & monomorphic: **Amiodarone 150 mg IV over 10 min** OR **Procainamide 20-50 mg/min** (max 17 mg/kg). Avoid adenosine in irregular wide-complex tachycardia (risk of degenerating into VF).`,
-    source: 'ACLS 2025 Arrhythmia Management Guidelines',
-    updatedAt: '2025/2026'
+- **Is the tachyarrhythmia causing** hypotension, acutely altered mental status, signs of shock, ischemic chest discomfort or acute heart failure?
+- **Yes: synchronized cardioversion.** Sedate whenever feasible. If regular and narrow, consider adenosine.
+  - Energies (2025 AHA Electrical Cardioversion Algorithm): atrial fibrillation 200 J; atrial flutter 200 J; narrow-complex tachycardia 100 J; monomorphic VT 100 J.
+  - Polymorphic VT: an unsynchronized, high-energy shock (defibrillation dose).
+  - If the energy for your device is not known, use the maximum. If cardioversion fails, consider a higher energy, the underlying cause, an antiarrhythmic and expert advice.
+  - Resynchronize after each shock; if synchronizing delays care in a critical patient, give unsynchronized shocks.
+- **No, narrow QRS (below 0.12 s)**: vagal maneuvers (if regular), **adenosine 6 mg** rapid IV push, then 12 mg (if regular); a beta blocker or calcium channel blocker; expert consultation. Common doses (not AHA): metoprolol 5 mg IV, diltiazem 0.25 mg/kg IV.
+- **No, wide QRS (0.12 s or more)**: adenosine only if regular and monomorphic; an antiarrhythmic infusion: **procainamide** 20 to 50 mg/min (maximum 17 mg/kg; avoid with prolonged QT or heart failure) or **amiodarone 150 mg over 10 min**; expert consultation.
+- **Do not give** verapamil or diltiazem for wide-complex tachycardia, or adenosine for unstable, irregular or polymorphic wide-complex tachycardia (harm).`,
+    source: 'App reference notes based on the 2025 AHA Tachyarrhythmia and Electrical Cardioversion Algorithms and Part 9 (Adult ALS)',
+    references: [R.tachycardiaAlgorithm, R.cardioversionAlgorithm, R.adultAls],
+    updatedAt: CHECKED,
   },
   {
     id: 'rag-bradycardia-algorithm',
     category: 'bradycardia',
-    title: 'Bradycardia with Pulse Algorithm (Heart Rate < 50 bpm)',
-    keywords: ['bradycardia', 'heart block', 'av block', 'atropine', 'pacing', 'transcutaneous pacing', 'dopamine'],
-    summary: 'Management of symptomatic bradycardia: Atropine 1mg, Transcutaneous Pacing, Dopamine and Epinephrine chronotropic infusions.',
-    protocolContent: `**Symptomatic Bradycardia with Pulse Algorithm (Heart Rate < 50 bpm):**
+    title: 'Adult Bradycardia With a Pulse',
+    keywords: ['bradycardia', 'heart block', 'av block', 'atropine', 'pacing', 'transcutaneous pacing', 'transvenous pacing', 'dopamine'],
+    summary: 'Bradycardia with cardiopulmonary compromise: atropine 1 mg (maximum 3 mg); if ineffective, transcutaneous pacing and/or dopamine or epinephrine infusion; consider transvenous pacing.',
+    protocolContent: `**2025 AHA Adult Bradycardia With a Pulse (heart rate typically below 50)**
 
-1. **Assess for Serious Signs of Hypoperfusion**:
-   - Hypotension, acute altered mental status, chest pain, acute heart failure.
-2. **First-Line Drug**:
-   - **Atropine**: **1 mg IV bolus** every 3-5 minutes (maximum 3 mg).
-   - Note: Ineffective in Mobitz Type II second-degree AV block and Third-degree (Complete) AV block with wide QRS, or cardiac transplant patients.
-3. **If Atropine Ineffective**:
-   - **Transcutaneous Pacing (TCP)**: Set demand mode, initial rate 60-80 bpm, increase current (mA) until electrical and mechanical capture confirmed. Provide analgesia/sedation.
-   - OR **Dopamine Infusion**: 5 to 20 mcg/kg/min chronotropic infusion.
-   - OR **Epinephrine Infusion**: 2 to 10 mcg/min IV infusion.
-4. **Prepare for Transvenous Pacing** and consult Cardiology.`,
-    source: 'AHA/ACC 2025 Bradycardia Guidelines',
-    updatedAt: '2025/2026'
+1. **Look for cardiopulmonary compromise**: hypotension, acutely altered mental status, signs of shock, ischemic chest discomfort, acute heart failure. Support the airway, give oxygen if needed, monitor, 12-lead ECG.
+2. **Atropine** 1 mg IV, repeat every 3 to 5 min, maximum 3 mg. Often not effective in Mobitz II or complete heart block with wide QRS, or after heart transplant.
+3. **If atropine is not effective**: transcutaneous pacing and/or **dopamine** 5 to 20 mcg/kg/min or **epinephrine** 2 to 10 mcg/min, titrated to response.
+   - Pacing in practice (not AHA): demand mode, rate about 60 to 80, increase the current until both electrical and mechanical capture; give analgesia and sedation.
+4. **Consider** expert consultation and **transvenous pacing**. New in 2025: for persistent unstable bradycardia that does not respond to drugs, temporary transvenous pacing is reasonable.
+5. **Possible causes**: myocardial ischemia or infarction; drugs and toxins (calcium channel blockers, beta blockers, digoxin); hypoxia; electrolyte problems such as hyperkalemia.`,
+    source: 'App reference notes based on the 2025 AHA Bradycardia With a Pulse Algorithm and Part 9 (Adult ALS)',
+    references: [R.bradycardiaAlgorithm, R.adultAls],
+    updatedAt: CHECKED,
   },
   {
     id: 'rag-toxicology-antidotes',
     category: 'toxicology',
-    title: 'Emergency Toxicology & Targeted Resuscitation Antidotes',
+    title: 'Toxicology and Antidotes in Resuscitation',
     keywords: ['toxins', 'toxicology', 'overdose', 'naloxone', 'calcium', 'glucagon', 'insulin', 'lipid emulsion', 'flumazenil', 'digibind', 'cyanide'],
-    summary: 'Targeted antidotes and advanced resuscitation protocols for acute overdose and poisoning cardiac arrests.',
-    protocolContent: `**Resuscitation Toxicology & Critical Antidote Reference:**
+    summary: 'Common antidotes for poisoning in or near cardiac arrest. Not an AHA guideline: check doses with a poison center or local protocol.',
+    protocolContent: `**Toxicology antidotes (general practice, not AHA text; check with a poison center)**
 
-- **Opioid Overdose**:
-  - **Naloxone**: 0.4 - 2 mg IV/IO/IM/IN, repeat every 2-3 minutes as needed. In cardiac arrest, prioritize high-quality CPR and airway over rapid naloxone delivery.
-- **Beta-Blocker Toxicity**:
-  - **Glucagon**: 3 - 10 mg IV push over 3-5 min, followed by infusion 3-5 mg/hr.
-  - **High-Dose Insulin Euglycemia (HIE)**: 1 unit/kg regular insulin bolus + 0.5 - 1 unit/kg/hr infusion with 10% or 50% Dextrose.
-- **Calcium Channel Blocker (CCB) Toxicity**:
-  - **10% Calcium Gluconate**: 30-60 mL IV (or 10% Calcium Chloride 10-20 mL).
-  - High-Dose Insulin Euglycemia (HIE) + Vasopressors (Norepinephrine / Epinephrine).
-- **Local Anesthetic Systemic Toxicity (LAST - Bupivacaine/Lidocaine)**:
-  - **20% Intralipid (Lipid Emulsion)**: 1.5 mL/kg IV bolus over 1 min, followed by infusion 0.25 mL/kg/min.
-- **Organophosphate Poisoning**:
-  - **Atropine**: 2 - 5 mg IV repeated every 5-10 minutes until secretions dry (clearing of bronchorrhea). **Pralidoxime (2-PAM)** 1-2 g IV over 15-30 min.
-- **Tricyclic Antidepressants (TCA) / Sodium Channel Blockers**:
-  - **Sodium Bicarbonate 8.4%**: 1 - 2 mEq/kg IV push until QRS narrows < 100 ms and serum pH reaches 7.50-7.55.`,
-    source: 'American College of Medical Toxicology / ACLS 2025 Tox Guidelines',
-    updatedAt: '2025/2026'
+- **Opioids**: naloxone 0.4 to 2 mg IV/IO/IM/IN, repeat every 2 to 3 min as needed. AHA 2025: give an opioid antagonist for respiratory arrest; in cardiac arrest it may be reasonable if high-quality CPR is not interrupted.
+- **Beta blocker toxicity**: glucagon 3 to 10 mg IV over 3 to 5 min, then 3 to 5 mg/h; high-dose insulin (1 unit/kg bolus, then 0.5 to 1 unit/kg/h) with dextrose.
+- **Calcium channel blocker toxicity**: 10% calcium gluconate 30 to 60 mL (or 10% calcium chloride 10 to 20 mL); high-dose insulin with dextrose; vasopressors.
+- **Local anesthetic toxicity**: 20% lipid emulsion 1.5 mL/kg IV over 1 min, then 0.25 mL/kg/min.
+- **Organophosphates**: atropine 2 to 5 mg IV, repeated every 5 to 10 min until secretions dry; pralidoxime 1 to 2 g IV over 15 to 30 min.
+- **Tricyclic antidepressants and other sodium channel blockers**: sodium bicarbonate 1 to 2 mEq/kg IV until the QRS narrows (target pH about 7.50 to 7.55).
+- **Refractory shock or arrest from poisoning**: AHA 2025 notes that ECLS (for example VA-ECMO) may support selected patients.`,
+    source: 'App reference notes from general toxicology practice; not an AHA guideline except where AHA is named',
+    references: [R.specialCircumstances],
+    updatedAt: CHECKED,
   },
 ];
+
+/** Plain-text list of the AHA pages behind a set of notes, for the offline answers. */
+export function referenceLines(chunks: RagKnowledgeChunk[]): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const c of chunks) {
+    for (const r of c.references) {
+      if (seen.has(r.url)) continue;
+      seen.add(r.url);
+      lines.push(`- ${r.title}: ${r.url}`);
+    }
+  }
+  return lines.length ? `Based on:\n${lines.join('\n')}` : '';
+}
+
+/**
+ * An offline answer: the notes, the AHA pages they are based on, and a plain
+ * statement of what they are. Used by the server and by the browser fallback.
+ */
+export function offlineNotesText(chunks: RagKnowledgeChunk[], body: string): string {
+  const refs = referenceLines(chunks);
+  return `${body}${refs ? `\n\n${refs}` : ''}\n\n*These are the app's built-in reference notes, not a live AI answer and not AHA text. Check against the current AHA guidelines.*`;
+}
 
 /**
  * High-precision Retrieval-Augmented Generation (RAG) search engine

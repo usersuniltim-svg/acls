@@ -86,6 +86,7 @@ export function clearedClockFields(): Partial<AclsState> {
     pauseElapsedSeconds: 0,
     epiAnchorAt: null,
     episodeSecondShockAt: null,
+    nonShockableEpiDueAt: null,
     rhythmCheckCount: 0,
     epiDueElapsed: 0,
     lastAntiarrhythmicShockCount: null,
@@ -122,7 +123,17 @@ export function epinephrineDueAt(s: AclsState): number | null {
   if (s.epiCount === 0 && s.currentRhythm === 'SHOCKABLE' && s.episodeSecondShockAt != null) {
     return s.episodeSecondShockAt;
   }
+  // Asystole/PEA, first dose: due as soon as the rhythm is identified, so the
+  // reminder still comes if the team (rightly) restarts compressions first.
+  if (s.epiCount === 0 && s.currentRhythm === 'NON_SHOCKABLE' && s.nonShockableEpiDueAt != null) {
+    return s.nonShockableEpiDueAt;
+  }
   return (s.epiAnchorAt ?? s.codeStartedAt) + EPI_MS;
+}
+
+/** Epinephrine is due now (the timers must be current, i.e. after advanceClock). */
+export function epinephrineDueNow(s: AclsState): boolean {
+  return isCodeActive(s) && epinephrineDueAt(s) != null && s.epiTimeLeft === 0;
 }
 
 /**
@@ -319,6 +330,7 @@ function reArrestIfInRosc(prev: AclsState, now: number): AclsState {
     currentRhythm: 'UNKNOWN',
     episodeShocksCount: 0,
     episodeSecondShockAt: null,
+    nonShockableEpiDueAt: null,
     lastShockEnergyJ: null,
     lastShockDefibType: null,
     rhythmCheckCount: 0,
@@ -409,6 +421,10 @@ export function selectRhythm(prev: AclsState, rhythm: PatientRhythm, now: number
       cprRemainingMs: CPR_MS,
       rhythmCheckStartedAt: nextPrompt ? prev.rhythmCheckStartedAt ?? now : null,
       rhythmCheckCount: (prev.rhythmCheckCount ?? 0) + 1,
+      nonShockableEpiDueAt:
+        rhythm === 'NON_SHOCKABLE' && prev.epiCount === 0
+          ? prev.nonShockableEpiDueAt ?? now
+          : prev.nonShockableEpiDueAt ?? null,
     },
     now
   );

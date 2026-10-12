@@ -29,6 +29,7 @@ import {
   shockEnergyConcern,
   episodeArrestSeconds,
   arrestSeconds,
+  epinephrineDueNow,
 } from '../src/lib/codeClock';
 import { assessEtco2, etco2Context } from '../src/lib/capnography';
 import { createClinicalEvent } from '../src/lib/clinicalEvents';
@@ -760,6 +761,45 @@ test('asystole/PEA still advises epinephrine as soon as the rhythm is identified
   assert.equal(s.activePrompt, 'EPI_ADVISED');
   assert.equal(epinephrineWait(s), null);
   assert.equal(checkEpinephrine(s, 15001).ok, true);
+});
+
+test('asystole/PEA: the first epinephrine is due the moment the rhythm is identified, even if CPR restarts first', () => {
+  // Code started at 10 s, nonshockable at 25 s: well inside the first 3 minutes.
+  const advised = selectRhythm(startPadsOn(baseState(), 10000), 'NON_SHOCKABLE', 25000);
+  assert.equal(advised.activePrompt, 'EPI_ADVISED');
+  assert.equal(advised.nonShockableEpiDueAt, 25000);
+  assert.equal(epinephrineDueNow(advised), true, 'the asystole/PEA screen shows epinephrine as due');
+  assert.equal(advised.epiTimeLeft, 0);
+
+  // AHA: restart compressions straight away; the epinephrine reminder follows during CPR.
+  const cpr = startCprCycle(advised, 28000);
+  assert.equal(cpr.isTimerRunning, true);
+  assert.equal(cpr.activePrompt, 'EPI_DUE');
+  assert.equal(cpr.alert?.kind, 'epi');
+  assert.equal(advanceClock(cpr, 40000).epiDueElapsed, 15, 'overdue time counts from when the rhythm was identified');
+
+  // Once given, the next dose is due 3 minutes after it.
+  const dosed = giveEpinephrine(cpr, 45000);
+  assert.equal(dosed.activePrompt, null);
+  assert.equal(epinephrineDueNow(dosed), false);
+  assert.equal(epinephrineDueNow(advanceClock(dosed, 45000 + 180000)), true);
+});
+
+test('VF/pVT that turns into asystole/PEA makes the first epinephrine due at once', () => {
+  let s = deliverShock(selectRhythm(startPadsOn(baseState(), 10000), 'SHOCKABLE', 13000), 15000);
+  assert.equal(epinephrineDueNow(s), false, 'one shock in VF: not yet');
+  s = advanceClock(s, 135000);
+  s = selectRhythm(s, 'NON_SHOCKABLE', 138000);
+  assert.equal(epinephrineDueNow(s), true);
+  assert.equal(startCprCycle(s, 140000).activePrompt, 'EPI_DUE');
+});
+
+test('a re-arrest does not carry the old asystole/PEA due time forward', () => {
+  let s = selectRhythm(startPadsOn(baseState(), 10000), 'NON_SHOCKABLE', 25000);
+  s = confirmRosc(startCprCycle(s, 27000), 60000);
+  const rearrest = startCprCycle(s, 900000);
+  assert.equal(rearrest.nonShockableEpiDueAt, null);
+  assert.equal(epinephrineWait(rearrest), 'RHYTHM', 'the rhythm decides again');
 });
 
 test('a code starts with CPR; the first rhythm check opens when the pads are on', () => {

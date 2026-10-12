@@ -8,7 +8,7 @@
  */
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { GoogleGenAI } from '@google/genai';
-import { ACLS_RAG_KNOWLEDGE_BASE, queryAclsRag } from '../src/lib/aclsRagKnowledge';
+import { ACLS_RAG_KNOWLEDGE_BASE, offlineNotesText, queryAclsRag } from '../src/lib/aclsRagKnowledge';
 import { COPILOT_ROLE_INSTRUCTIONS } from '../src/lib/copilotRoles';
 import { AuthError, authorizeClinician, type AuthDeps, type ClinicianAccess } from './auth';
 import { RateLimiter, codeContextLine, validateChatRequest, validateSearchRequest } from './copilotPolicy';
@@ -93,8 +93,9 @@ export function createApp(deps: AppDeps) {
 
     const primary = relevantRagDocs[0] || ACLS_RAG_KNOWLEDGE_BASE[0];
     return res.json({
-      text: `**Offline ACLS reference notes** (AI assistant not connected)\n\n${primary.protocolContent}\n\n*These are built-in notes, not a live AI answer. Check against the current AHA guidelines.*`,
-      groundingChunks: relevantRagDocs.map(d => ({ uri: 'https://cpr.heart.org', title: d.title })),
+      text: offlineNotesText([primary], `**Offline ACLS reference notes** (AI assistant not connected)\n\n${primary.protocolContent}`),
+      // No web search happened: never present the app's own notes as search-grounded sources.
+      groundingChunks: [],
       ragSources: relevantRagDocs.map(d => ({ title: d.title, category: d.category, source: d.source })),
       webSearchQueries: [],
     });
@@ -135,8 +136,8 @@ export function createApp(deps: AppDeps) {
     }
 
     return res.json({
-      text: `### Offline ACLS reference notes (AI assistant not connected)\n\n${ragContext}`,
-      groundingChunks: relevantDocs.map(d => ({ uri: 'https://cpr.heart.org/en/resuscitation-science/cpr-and-ecc-guidelines', title: d.title })),
+      text: offlineNotesText(relevantDocs, `### Offline ACLS reference notes (AI assistant not connected)\n\n${ragContext}`),
+      groundingChunks: [],
       webSearchQueries: [],
       ragSources: relevantDocs.map(d => ({ title: d.title, category: d.category, source: d.source })),
     });

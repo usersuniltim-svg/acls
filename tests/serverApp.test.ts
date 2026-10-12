@@ -63,6 +63,35 @@ test('approved doctor and admin get answers (reference notes when no Gemini key)
   } finally { await s.close(); }
 });
 
+test('offline answers never pose as search-grounded AHA sources; they list the AHA pages the notes are based on', async () => {
+  const s = await startApp();
+  try {
+    const chatRes = await (await s.post('/api/gemini/chat', chat, 'tok-approved')).json();
+    assert.deepEqual(chatRes.groundingChunks, []);
+    assert.match(chatRes.text, /Based on:\n- 2025 AHA /);
+    assert.match(chatRes.text, /https:\/\/cpr\.heart\.org\//);
+    assert.match(chatRes.text, /not AHA text/);
+    for (const src of chatRes.ragSources) assert.match(src.source, /^App reference notes/);
+
+    const searchRes = await (await s.post('/api/gemini/search', { query: 'post arrest temperature' }, 'tok-approved')).json();
+    assert.deepEqual(searchRes.groundingChunks, []);
+    assert.match(searchRes.text, /Based on:/);
+    assert.match(searchRes.text, /32 to 37\.5 °C for at least 36 hours/);
+  } finally { await s.close(); }
+});
+
+test('the AI receives 2025 notes that agree with its instructions', async () => {
+  const calls: any[] = [];
+  const genAI = { models: { generateContent: async (args: any) => { calls.push(args); return { text: 'ok', candidates: [] }; } } };
+  const s = await startApp({ genAI });
+  try {
+    await s.post('/api/gemini/chat', { messages: [{ role: 'user', content: 'post rosc targets after rosc' }], role: 'post_rosc_care' }, 'tok-approved');
+    const sys = calls[0].config.systemInstruction as string;
+    assert.match(sys, /SpO2 90 to 98%/);
+    assert.doesNotMatch(sys, /92% - 98%|Systolic BP > 90|32°C and 36°C/);
+  } finally { await s.close(); }
+});
+
 test('server picks the model and instructions; the client cannot override them', async () => {
   const calls: any[] = [];
   const genAI = { models: { generateContent: async (args: any) => { calls.push(args); return { text: 'ok', candidates: [] }; } } };
