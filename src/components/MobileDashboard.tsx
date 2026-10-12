@@ -57,6 +57,8 @@ import SavedCasesList from './SavedCasesList';
 import PostRoscPanel from './PostRoscPanel';
 import ReversibleCausesPanel from './ReversibleCausesPanel';
 import AirwayEtco2Panel from './AirwayEtco2Panel';
+import ArrestAlgorithmChart from './ArrestAlgorithmChart';
+import CompressionCueCard from './CompressionCueCard';
 import type { VitalsInput } from '../lib/postRosc';
 import { DISPOSITION_LABEL } from '../lib/postRosc';
 import LockedGuestOverlay from './LockedGuestOverlay';
@@ -481,6 +483,9 @@ export default function MobileDashboard({
         </div>
         )}
 
+        {/* AHA side boxes as rotating cues, only while compressions are running */}
+        <CompressionCueCard state={state} isDark={isDark} />
+
         {/* CPR Action Controls */}
         <div className="w-full flex gap-2 shrink-0">
           <button 
@@ -653,7 +658,7 @@ export default function MobileDashboard({
                   <Syringe className="w-4 h-4" />
                   <span className="text-[10px] uppercase tracking-wider font-black">Lidocaine ({lidoGiven})</span>
                   <span className="text-[8.5px] font-bold uppercase tracking-wide opacity-90">
-                    {lidoDone ? 'Max 3 mg/kg reached' : `Next: ${lidocaineDoseLabel(lidoGiven + 1)} IV/IO`}
+                    {lidoDone ? 'Max 2 doses given' : `Next: ${lidocaineDoseLabel(lidoGiven + 1)} IV/IO`}
                   </span>
                 </button>
               </div>
@@ -717,103 +722,7 @@ export default function MobileDashboard({
     );
   };
 
-  const renderMobileAlgorithmTab = () => {
-    return (
-      <div className="space-y-3 text-left">
-        <div>
-          <h2 className={`text-base font-display font-bold uppercase tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            Interactive ACLS Flowchart
-          </h2>
-          <p className={`text-[8.5px] uppercase font-bold tracking-widest mt-0.5 ${textMuted}`}>
-            Based on the 2025 AHA ACLS Cardiac Arrest Algorithm
-          </p>
-        </div>
-
-        <div className={`p-4 rounded-2xl border flex flex-col items-center ${cardClass}`}>
-          {/* Top block */}
-          <div className="w-full text-center space-y-1.5">
-            <div className={`p-3 rounded-xl border text-center transition-all ${
-              state.currentRhythm === 'UNKNOWN' 
-                ? 'bg-red-50 border-red-500 text-red-950 font-bold' 
-                : subCardClass
-            }`}>
-              <span className="text-[8.5px] font-bold block opacity-80 uppercase mb-0.5">CPR Entry Step</span>
-              <p className="text-[10px] font-extrabold uppercase">Provide Oxygen • Attach Defibrillator Monitor</p>
-            </div>
-            <div className="h-3 w-0.5 bg-gray-400 mx-auto" />
-            <div className={`px-3 py-1 rounded-full border text-[8.5px] font-bold uppercase tracking-wider w-fit mx-auto ${
-              isDark ? 'bg-slate-950 border-indigo-500/30 text-indigo-300' : 'bg-white border-indigo-300 text-indigo-700 shadow-sm'
-            }`}>
-              Check Cardiac Rhythm
-            </div>
-            <div className="h-3 w-0.5 bg-gray-400 mx-auto" />
-          </div>
-
-          <div className="flex w-full gap-3 text-left pt-1">
-            {/* Left: Shockable */}
-            <div className="w-1/2 flex flex-col">
-              <div className="text-center font-bold text-[8px] text-red-600 border border-red-300 px-2 py-0.5 bg-red-50 rounded-lg uppercase w-fit mx-auto mb-1.5">
-                SHOCKABLE
-              </div>
-              
-              <div className="space-y-2">
-                <div className={`p-2.5 rounded-xl border text-center transition-all ${
-                  state.currentRhythm === 'SHOCKABLE' 
-                    ? 'bg-red-600 text-white font-extrabold shadow-md' 
-                    : subCardClass
-                }`}>
-                  <h6 className="text-[9px] uppercase font-black tracking-tight">VF / pVT</h6>
-                  <p className="text-[8px] uppercase mt-0.5 opacity-90">Defibrillate ({state.selectedEnergy}J)</p>
-                </div>
-
-                <div className={`p-2 rounded-xl border text-center ${subCardClass}`}>
-                  <h6 className="text-[8.5px] uppercase font-bold">CPR 2m + IV/IO</h6>
-                </div>
-                
-                <div className={`p-2 rounded-xl border text-center ${subCardClass}`}>
-                  <h6 className="text-[8.5px] uppercase font-bold">Epinephrine Q3-5M</h6>
-                </div>
-
-                <div className={`p-2 rounded-xl border text-center ${subCardClass}`}>
-                  <h6 className="text-[8.5px] uppercase font-bold">Amiodarone 300mg</h6>
-                </div>
-              </div>
-            </div>
-
-            {/* Right: Non-Shockable */}
-            <div className="w-1/2 flex flex-col">
-              <div className="text-center font-bold text-[8px] text-blue-600 border border-blue-300 px-2 py-0.5 bg-blue-50 rounded-lg uppercase w-fit mx-auto mb-1.5">
-                NON-SHOCKABLE
-              </div>
-              
-              <div className="space-y-2">
-                <div className={`p-2.5 rounded-xl border text-center transition-all ${
-                  state.currentRhythm === 'NON_SHOCKABLE' 
-                    ? 'bg-blue-600 text-white font-extrabold shadow-md' 
-                    : subCardClass
-                }`}>
-                  <h6 className="text-[9px] uppercase font-black tracking-tight">Asystole / PEA</h6>
-                  <p className="text-[8px] uppercase mt-0.5 opacity-90">Epi ASAP (1mg)</p>
-                </div>
-
-                <div className={`p-2 rounded-xl border text-center ${subCardClass}`}>
-                  <h6 className="text-[8.5px] uppercase font-bold">CPR 2m + Intubate</h6>
-                </div>
-
-                <div className={`p-2 rounded-xl border text-center ${subCardClass}`}>
-                  <h6 className="text-[8.5px] uppercase font-bold">Review H's and T's</h6>
-                </div>
-
-                <div className={`p-2 rounded-xl border text-center ${subCardClass}`}>
-                  <h6 className="text-[8.5px] uppercase font-bold">Epi Q3-5 Min</h6>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const renderMobileAlgorithmTab = () => <ArrestAlgorithmChart state={state} isDark={isDark} />;
 
   const renderMobileLogsTab = () => {
     return (

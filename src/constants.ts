@@ -16,18 +16,4 @@ export const HS_AND_TS: { id: ReversibleCauseId; term: string; description: stri
   { id: 'CORONARY_THROMBOSIS', term: 'Thrombosis, Coronary', description: 'Myocardial infarction' },
 ];
 
-export const STEP_INSTRUCTIONS = {
-  SHOCKABLE: [
-    'Shock Given. Resume CPR immediately.',
-    'CPR 2 min. Obtain IV/IO access.',
-    'Rhythm check. If Shockable: Shock + Resume CPR.',
-    'CPR 2 min. Epinephrine 1mg every 3-5 min.',
-    'Rhythm check. If Shockable: Shock + Resume CPR. Amiodarone 300mg bolus.',
-  ],
-  NON_SHOCKABLE: [
-    'Epinephrine ASAP. Resume CPR.',
-    'CPR 2 min. Obtain IV/IO access.',
-    'Epinephrine every 3-5 min. Consider advanced airway.',
-    'Rhythm check. Treat reversible causes (H\'s & T\'s).',
-  ]
-};
+// The algorithm steps live in lib/arrestAlgorithm.ts (2025 AHA boxes 1 to 12).

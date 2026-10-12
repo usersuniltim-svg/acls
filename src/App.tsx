@@ -61,11 +61,13 @@ import {
   checkShock,
   clearedClockFields,
   episodeArrestSeconds,
+  epinephrineDueNow,
   ActionCheck,
   ActionOptions,
   isCodeActive,
   stopClock,
 } from './lib/codeClock';
+import { RHYTHM_CHECK_REMINDERS } from './lib/compressionCues';
 import {
   ActionSpec,
   RecordInput,
@@ -1910,6 +1912,14 @@ export default function App() {
                     <p className="text-gray-600 text-[9px] uppercase tracking-widest font-bold mt-1">Interrupted Chest Compressions (Max 10s)</p>
                   </div>
 
+                  <ul className="text-left space-y-1 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 list-none m-0" data-testid="rhythm-check-reminders">
+                    {RHYTHM_CHECK_REMINDERS.map(line => (
+                      <li key={line} className="text-[10px] font-bold text-amber-900 flex items-start gap-1.5">
+                        <span aria-hidden="true">•</span>{line}
+                      </li>
+                    ))}
+                  </ul>
+
                   {/* Progress evaluation timer bar */}
                   <div className="space-y-1 pb-1">
                     <div className="flex justify-between items-center text-[9px] font-mono font-bold text-gray-700">
@@ -2037,27 +2047,36 @@ export default function App() {
                     <Syringe className="w-7 h-7" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-display font-black text-black uppercase tracking-tight">Non-Shockable protocol</h3>
-                    <p className="text-gray-600 text-[9.5px] uppercase font-bold tracking-widest mt-1">Dispense drug & continue chest loops</p>
+                    <h3 className="text-xl font-display font-black text-black uppercase tracking-tight">Asystole / PEA</h3>
+                    <p className="text-gray-600 text-[9.5px] uppercase font-bold tracking-widest mt-1">Resume compressions now</p>
                     <p className={`text-[10px] font-mono font-bold mt-1 ${(state.pauseElapsedSeconds ?? 0) > 10 ? 'text-red-600 animate-pulse' : 'text-gray-600'}`}>
                       Hands off {state.pauseElapsedSeconds ?? 0}s. Keep pauses under 10s.
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-2 pt-2">
-                    <button 
-                      onClick={handleEpi}
-                      className="w-full h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase text-[9.5px] tracking-widest border-none flex items-center justify-center gap-1 shadow-md cursor-pointer"
-                    >
-                      <Syringe className="w-3.5 h-3.5" /> Administer 1mg Epi
-                    </button>
-                    
-                    <button 
-                      onClick={handleBeginCpr}
-                      className="w-full h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase text-[9.5px] tracking-widest cursor-pointer border-none"
-                    >
-                      Begin CPR
-                    </button>
+                  {/* 2025 AHA: compressions restart straight after the rhythm check; epinephrine is given during CPR. */}
+                  <button
+                    onClick={handleBeginCpr}
+                    className="w-full h-14 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[11px] tracking-widest cursor-pointer border-none shadow-md"
+                  >
+                    Resume CPR now
+                  </button>
+
+                  <div
+                    className={`rounded-xl border px-3 py-2 text-left text-[10px] font-bold leading-snug ${
+                      epinephrineDueNow(state) ? 'bg-blue-50 border-blue-300 text-blue-900' : 'bg-gray-50 border-gray-200 text-gray-700'
+                    }`}
+                    data-testid="nonshockable-epi-status"
+                  >
+                    <div className="flex items-start gap-1.5">
+                      <Syringe className="w-3.5 h-3.5 shrink-0 mt-px" />
+                      <span>
+                        {epinephrineDueNow(state)
+                          ? 'Epinephrine 1 mg IV/IO is due: give it as soon as possible, during compressions. The reminder stays on screen until it is recorded.'
+                          : `Epinephrine is not due yet: next dose in ${formatTime(state.epiTimeLeft)}.`}
+                      </span>
+                    </div>
+                    <p className="text-[9px] font-semibold text-gray-600 mt-1 pl-5">Look for reversible causes (H's and T's).</p>
                   </div>
                 </div>
               )}

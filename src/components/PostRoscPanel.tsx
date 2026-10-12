@@ -196,7 +196,7 @@ export default function PostRoscPanel({ state, isDark, onCheck, onVitals, onDisp
       {/* Vitals against AHA targets */}
       {!closed && (
         <div className="space-y-1.5">
-          <span className={`text-[8.5px] uppercase tracking-wider font-black block ${muted}`}>Vitals (targets: MAP ≥ 65, SpO2 90-98%, PaCO2 35-45)</span>
+          <span className={`text-[8.5px] uppercase tracking-wider font-black block ${muted}`}>Vitals (targets: MAP ≥ 65, SpO2 90-98%, PaCO2 35-45, glucose 70-180)</span>
           <div className="grid grid-cols-3 gap-1.5">
             {VITAL_FIELDS.map(f => (
               <label key={f.key} className="block">

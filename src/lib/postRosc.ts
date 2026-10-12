@@ -6,8 +6,10 @@
  *  - SpO2 90-98% (PaO2 60-105 mm Hg); 100% FiO2 until SpO2 is reliable
  *  - PaCO2 35-45 mm Hg
  *  - MAP >= 65 mm Hg
- *  - Not following commands: temperature control 32-37.5 C for >= 36 h, EEG
- *  - Avoid hypoglycaemia (< 70 mg/dL)
+ *  - Persistent ST elevation: emergent coronary angiography, even if comatose
+ *  - Not following commands: temperature control 32-37.5 C for >= 36 h, EEG,
+ *    multimodal prognostication no earlier than 72 h after normothermia
+ *  - Avoid hypoglycemia (< 70 mg/dL) and hyperglycemia (> 180 mg/dL)
  *
  * Pure functions only, so they can be tested without a browser.
  */
@@ -29,18 +31,22 @@ export const POST_ROSC_ITEMS: PostRoscItem[] = [
   { id: 'VENTILATION', phase: 'Initial stabilization', label: 'PaCO2 35-45 mm Hg', detail: 'Normal ventilation.' },
   { id: 'MAP', phase: 'Initial stabilization', label: 'MAP 65 mm Hg or higher', detail: 'Fluids and vasopressors as needed.' },
   {
-    id: 'ECG_12_LEAD', phase: 'Initial stabilization', label: '12-lead ECG', detail: 'STEMI with suspected cardiac cause: emergent coronary angiography.',
+    id: 'ECG_12_LEAD', phase: 'Initial stabilization', label: '12-lead ECG', detail: 'As soon as feasible. Persistent ST elevation: emergent coronary angiography, even if comatose.',
     results: [{ value: 'STEMI', label: 'STEMI' }, { value: 'NO_STEMI', label: 'No STEMI' }],
   },
   { id: 'IMAGING', phase: 'Initial stabilization', label: 'CT and/or ultrasound considered', detail: 'To find the cause and complications.' },
-  { id: 'CAUSE_TREATMENT', phase: 'Continued management', label: 'Cause and complications treated', detail: 'Consider emergent coronary angiography and mechanical circulatory support.' },
-  { id: 'GLUCOSE', phase: 'Continued management', label: 'Glucose checked', detail: 'Avoid hypoglycemia (< 70 mg/dL) and hyperglycemia.' },
+  { id: 'CAUSE_TREATMENT', phase: 'Continued management', label: 'Cause and complications treated', detail: 'Consider emergency coronary angiography and/or mechanical circulatory support (cardiogenic shock, recurrent ventricular arrhythmias, severe ischemia).' },
+  { id: 'GLUCOSE', phase: 'Continued management', label: 'Glucose checked', detail: 'Avoid hypoglycemia (< 70 mg/dL) and hyperglycemia (> 180 mg/dL).' },
   {
     id: 'FOLLOWS_COMMANDS', phase: 'Continued management', label: 'Follows commands?', detail: 'Assess off sedation / paralysis if feasible.',
     results: [{ value: 'YES', label: 'Yes' }, { value: 'NO_OR_UNSURE', label: 'No / unsure' }],
   },
   { id: 'TEMPERATURE_CONTROL', phase: 'Not following commands', label: 'Temperature control 32-37.5 °C', detail: 'Deliberate strategy, maintained for at least 36 hours.' },
   { id: 'EEG', phase: 'Not following commands', label: 'EEG for seizures', detail: 'Prompt EEG in patients not following commands.' },
+  {
+    id: 'PROGNOSTICATION', phase: 'Not following commands', label: 'Prognostication at 72 h or later',
+    detail: 'Multimodal, never on a single finding; not before 72 h after normothermia and off sedation.',
+  },
 ];
 
 export function postRoscItemLabel(id: PostRoscItemId): string {
@@ -101,6 +107,7 @@ export function assessPostRoscVitals(v: VitalsInput): string[] {
   if (v.tempC != null && v.tempC > 37.5) flags.push(`Temperature ${v.tempC} °C is above 37.5 °C (prevent fever)`);
   if (v.tempC != null && v.tempC < 32) flags.push(`Temperature ${v.tempC} °C is below 32 °C`);
   if (v.glucoseMgDl != null && v.glucoseMgDl < 70) flags.push(`Glucose ${v.glucoseMgDl} mg/dL is below 70 mg/dL`);
+  if (v.glucoseMgDl != null && v.glucoseMgDl > 180) flags.push(`Glucose ${v.glucoseMgDl} mg/dL is above 180 mg/dL`);
   return flags;
 }
 
